@@ -18,6 +18,24 @@ potluck mcp      # MCP server (stdio)
 potluck web      # Web UI (localhost:8000)
 ```
 
+## Versioning
+
+**Semantic versioning**: `MAJOR.MINOR.PATCH` (e.g., Phase 1 = `0.1.x`, Phase 12 = `1.0.x`)
+
+- **Version in code**: `pyproject.toml` → `version` field
+- **Tags**: `v{version}` format (e.g., `v0.1.0`)
+
+**Workflow**:
+
+1. Commit to `main` with issue references
+2. When milestone complete, update `pyproject.toml` version and tag: `git tag v0.1.0`
+3. Push tag to trigger GitHub release
+
+**Git hooks** (run `scripts/setup-hooks.sh`):
+
+- `pre-push`: Validates tag format matches semver, checks pyproject.toml version
+- `commit-msg`: Warns if commit doesn't reference an issue
+
 ## Key Files
 
 | Path | Purpose |
