@@ -12,7 +12,6 @@ def main() -> NoReturn:
         print("Commands:")
         print("  mcp      Start the MCP server (stdio transport)")
         print("  web      Start the web UI server")
-        print("  worker   Start the Celery worker")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -25,10 +24,6 @@ def main() -> NoReturn:
         from potluck.web.app import run_web_server
 
         run_web_server()
-    elif command == "worker":
-        from potluck.core.celery import run_worker
-
-        run_worker()
     else:
         print(f"Unknown command: {command}")
         sys.exit(1)

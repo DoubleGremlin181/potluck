@@ -70,12 +70,6 @@ potluck web
 # Visit http://localhost:8000
 ```
 
-### Celery Worker (for background jobs)
-
-```bash
-potluck worker
-```
-
 ## Project Structure
 
 ```
