@@ -33,8 +33,11 @@ potluck web      # Web UI (localhost:8000)
 
 **Git hooks** (run `scripts/setup-hooks.sh`):
 
+- `pre-commit`: Runs ruff + mypy on staged files
 - `pre-push`: Validates tag format matches semver, checks pyproject.toml version
 - `commit-msg`: Warns if commit doesn't reference an issue
+
+**Code style**: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs.
 
 ## Key Files
 
