@@ -89,9 +89,8 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Temporary files
-temp.txt
-*.tmp
+# Claude Code
+.claude/settings.local.json
 
 # uv
 uv.lock
