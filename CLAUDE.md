@@ -15,13 +15,14 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 
 1. Refer to GitHub issues for roadmap. Milestones break them into phases.
 2. Create a new branch for each phase: `phase-1-dev`. Do not push to `main` directly.
-3. Each commit should generally tie to one issue (feature or bug fix).
+3. Each commit should ~generally tie to one issue (feature or bug fix). Remember to include tests.
 4. When milestone complete, update `pyproject.toml` version, merge to `main` and tag: `git tag v0.1.0`  (use semantic versioning, e.g. Phase 1 = `0.1.x`)
 5. Push tag to trigger GitHub release
 
 **Tips and Tricks**:
 
 - Code style: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs.
+- Only add functionality as needed. Do not front load work. E.g. Only add exceptions to src/potluck/core/exceptions.py while creating the feature that will raise it.
 - Use Context7
 
 ## References
