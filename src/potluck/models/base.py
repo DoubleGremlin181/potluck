@@ -1,0 +1,148 @@
+"""Base SQLModel classes for Potluck entities."""
+
+from datetime import UTC, datetime
+from enum import Enum
+from typing import ClassVar
+from uuid import UUID, uuid4
+
+from pydantic import field_validator
+from sqlmodel import Field, SQLModel
+
+
+def _utc_now() -> datetime:
+    """Get current UTC time as timezone-aware datetime."""
+    return datetime.now(UTC)
+
+
+class SourceType(str, Enum):
+    """Enumeration of supported data sources."""
+
+    GOOGLE_TAKEOUT = "google_takeout"
+    REDDIT = "reddit"
+    WHATSAPP = "whatsapp"
+    YNAB = "ynab"
+    GENERIC = "generic"  # Bulk import of generic files (images, markdown, MBOX)
+    MANUAL = "manual"  # User-created content within Potluck (notes, annotations)
+
+
+class TimestampPrecision(str, Enum):
+    """Precision level for occurred_at timestamps."""
+
+    YEAR = "year"
+    MONTH = "month"
+    DAY = "day"
+    HOUR = "hour"
+    MINUTE = "minute"
+    SECOND = "second"
+
+
+class BaseEntity(SQLModel):
+    """Base class for all Potluck entities.
+
+    Provides common fields for identification, timestamps, and source tracking.
+    All entities derive from this class to ensure consistent metadata.
+    """
+
+    __abstract__: ClassVar[bool] = True
+
+    id: UUID = Field(
+        default_factory=uuid4,
+        primary_key=True,
+        description="Unique identifier for the entity",
+    )
+    created_at: datetime = Field(
+        default_factory=_utc_now,
+        description="When the entity was created in the database",
+    )
+    updated_at: datetime = Field(
+        default_factory=_utc_now,
+        sa_column_kwargs={"onupdate": _utc_now},
+        description="When the entity was last updated",
+    )
+    source_type: SourceType = Field(
+        description="The source system this entity was imported from",
+    )
+    source_id: str | None = Field(
+        default=None,
+        description="Original identifier from the source system",
+    )
+    content_hash: str | None = Field(
+        default=None,
+        index=True,
+        description="SHA256 hash of content for deduplication",
+    )
+
+
+class TimestampedEntity(BaseEntity):
+    """Base class for entities with a meaningful occurrence time.
+
+    Extends BaseEntity with fields for when the entity actually occurred
+    (as opposed to when it was imported), with configurable precision.
+
+    The occurred_at field is always stored as UTC. If the original timestamp
+    was in a different timezone, store that in source_timezone for display.
+    """
+
+    __abstract__: ClassVar[bool] = True
+
+    occurred_at: datetime | None = Field(
+        default=None,
+        index=True,
+        description="When this entity actually occurred in UTC (e.g., photo taken, message sent)",
+    )
+    occurred_at_precision: TimestampPrecision = Field(
+        default=TimestampPrecision.SECOND,
+        description="Precision of the occurred_at timestamp",
+    )
+    source_timezone: str | None = Field(
+        default=None,
+        description="IANA timezone of the original timestamp (e.g., 'America/New_York')",
+    )
+
+    @field_validator("occurred_at", mode="before")
+    @classmethod
+    def ensure_utc(cls, v: datetime | None) -> datetime | None:
+        """Ensure occurred_at is timezone-aware UTC.
+
+        - If naive datetime: assume UTC and make aware
+        - If aware datetime: convert to UTC
+        """
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            # Naive datetime - assume UTC
+            return v.replace(tzinfo=UTC)
+        # Convert to UTC
+        return v.astimezone(UTC)
+
+
+class GeolocatedEntity(TimestampedEntity):
+    """Base class for entities with geographic location.
+
+    Extends TimestampedEntity with latitude, longitude, and optional
+    location name for entities that have a physical location.
+    """
+
+    __abstract__: ClassVar[bool] = True
+
+    latitude: float | None = Field(
+        default=None,
+        ge=-90,
+        le=90,
+        description="Latitude coordinate (-90 to 90)",
+    )
+    longitude: float | None = Field(
+        default=None,
+        ge=-180,
+        le=180,
+        description="Longitude coordinate (-180 to 180)",
+    )
+    location_name: str | None = Field(
+        default=None,
+        description="Human-readable location name (e.g., 'New York, NY')",
+    )
+
+    @property
+    def has_location(self) -> bool:
+        """Check if this entity has valid coordinates."""
+        return self.latitude is not None and self.longitude is not None

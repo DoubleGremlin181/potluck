@@ -36,15 +36,9 @@ dependencies = [
     # MCP
     "mcp>=1.0.0",
 
-    # Embeddings
-    "sentence-transformers>=3.0.0",
-    "torch>=2.0.0",
-
-    # Image processing
+    # Image processing (lightweight)
     "pillow>=10.0.0",
     "imagehash>=4.3.0",
-    "easyocr>=1.7.0",
-    "face-recognition>=1.3.0",
     "exifread>=3.0.0",
 
     # Utilities
@@ -52,6 +46,9 @@ dependencies = [
     "httpx>=0.27.0",
     "python-dateutil>=2.9.0",
     "tqdm>=4.66.0",
+
+    # CLI
+    "typer>=0.15.0",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +58,18 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+]
+ml = [
+    # Embeddings (requires torch)
+    "sentence-transformers>=3.0.0",
+    "torch>=2.0.0",
+    # OCR
+    "easyocr>=1.7.0",
+    # Face recognition (requires cmake + dlib)
+    "face-recognition>=1.3.0",
+]
+all = [
+    "potluck[dev,ml]",
 ]
 
 [project.scripts]
