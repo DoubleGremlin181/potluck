@@ -11,35 +11,18 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 5. **Multiple embeddings per entity** - Single table stores different embedding types (text, CLIP, OCR) per entity
 6. **Hybrid search** - RRF fusion
 
-## CLI
-
-```bash
-potluck mcp      # MCP server (stdio)
-potluck web      # Web UI (localhost:8000)
-```
-
-## Versioning
-
-**Semantic versioning**: `MAJOR.MINOR.PATCH` (e.g., Phase 1 = `0.1.x`, Phase 12 = `1.0.x`)
-
-- **Version in code**: `pyproject.toml` → `version` field
-- **Tags**: `v{version}` format (e.g., `v0.1.0`)
-
 **Workflow**:
 
 1. Refer to GitHub issues for roadmap. Milestones break them into phases.
 2. Create a new branch for each phase: `phase-1-dev`. Do not push to `main` directly.
-3. Each commit should generally tie to one issue(feature or bug fix).
-4. When milestone complete, update `pyproject.toml` version, merge to `main` and tag: `git tag v0.1.0`
+3. Each commit should generally tie to one issue (feature or bug fix).
+4. When milestone complete, update `pyproject.toml` version, merge to `main` and tag: `git tag v0.1.0`  (use semantic versioning, e.g. Phase 1 = `0.1.x`)
 5. Push tag to trigger GitHub release
 
-**Git hooks** (run `scripts/setup-hooks.sh`):
+**Tips and Tricks**:
 
-- `pre-commit`: Runs ruff + mypy on staged files
-- `pre-push`: Validates tag format matches semver, checks pyproject.toml version
-- `commit-msg`: Warns if commit doesn't reference an issue
-
-**Code style**: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs.
+- Code style: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs.
+- Use Context7
 
 ## References
 
