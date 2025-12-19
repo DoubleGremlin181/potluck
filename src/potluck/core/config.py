@@ -1,0 +1,76 @@
+"""Application configuration using pydantic-settings."""
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Database (using str for flexibility with different drivers)
+    database_url: str = Field(
+        default="postgresql+asyncpg://potluck:potluck@localhost:5432/potluck",
+        description="Async database connection URL",
+    )
+    sync_database_url: str = Field(
+        default="postgresql://potluck:potluck@localhost:5432/potluck",
+        description="Sync database connection URL (for Alembic)",
+    )
+
+    # Redis
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL for Celery broker",
+    )
+
+    # Embedding settings
+    embedding_provider: str = Field(
+        default="sentence-transformers",
+        description="Embedding provider to use",
+    )
+    embedding_model: str = Field(
+        default="all-MiniLM-L6-v2",
+        description="Embedding model name",
+    )
+
+    # Web server
+    web_host: str = Field(
+        default="0.0.0.0",
+        description="Web server bind host",
+    )
+    web_port: int = Field(
+        default=8000,
+        description="Web server port",
+    )
+
+    # Logging
+    log_level: str = Field(
+        default="INFO",
+        description="Logging level",
+    )
+
+    # Data storage paths
+    data_dir: Path = Field(
+        default=Path("/app/data"),
+        description="Base directory for application data",
+    )
+    upload_dir: Path = Field(
+        default=Path("/app/uploads"),
+        description="Directory for uploaded files",
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()
