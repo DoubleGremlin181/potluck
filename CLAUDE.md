@@ -9,7 +9,7 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 3. **Pluggable ingesters** - Each source (Google Takeout, Reddit, etc.) has its own ingester package with auto-detection
 4. **Media: paths only, Text: store raw** - No blobs in DB for media; text stored for FTS
 5. **Multiple embeddings per entity** - Single table stores different embedding types (text, CLIP, OCR) per entity
-6. **Hybrid search** - RRF fusion: 30% FTS + 70% pgvector
+6. **Hybrid search** - RRF fusion
 
 ## CLI
 
@@ -27,9 +27,11 @@ potluck web      # Web UI (localhost:8000)
 
 **Workflow**:
 
-1. Commit to `main` with issue references
-2. When milestone complete, update `pyproject.toml` version and tag: `git tag v0.1.0`
-3. Push tag to trigger GitHub release
+1. Refer to GitHub issues for roadmap. Milestones break them into phases.
+2. Create a new branch for each phase: `phase-1-dev`. Do not push to `main` directly.
+3. Each commit should generally tie to one issue(feature or bug fix).
+4. When milestone complete, update `pyproject.toml` version, merge to `main` and tag: `git tag v0.1.0`
+5. Push tag to trigger GitHub release
 
 **Git hooks** (run `scripts/setup-hooks.sh`):
 
@@ -38,15 +40,6 @@ potluck web      # Web UI (localhost:8000)
 - `commit-msg`: Warns if commit doesn't reference an issue
 
 **Code style**: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs.
-
-## Key Files
-
-| Path | Purpose |
-|------|---------|
-| `core/config.py` | pydantic-settings |
-| `models/base.py` | BaseEntity, TimestampedEntity, GeolocatedEntity |
-| `ingesters/base.py` | BaseIngester protocol |
-| `search/hybrid.py` | RRF fusion |
 
 ## References
 
