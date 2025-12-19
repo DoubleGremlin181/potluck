@@ -1,5 +1,11 @@
 """Tests for CLI entry point."""
 
+import os
+
+# Disable Typer's terminal detection to prevent Rich ANSI codes in CI
+# Must be set BEFORE importing typer/app
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
 from typer.testing import CliRunner
 
 from potluck.core.cli import app
