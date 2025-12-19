@@ -40,8 +40,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: potluck-redis
-    ports:
-      - "6379:6379"
+    # Not exposed to host - only accessible within Docker network
+    # Use: docker exec -it potluck-redis redis-cli
     volumes:
       - potluck-redis:/data
     healthcheck:

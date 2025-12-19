@@ -5,6 +5,7 @@ from enum import Enum
 from typing import ClassVar
 from uuid import UUID, uuid4
 
+from pydantic import field_validator
 from sqlmodel import Field, SQLModel
 
 
@@ -77,6 +78,9 @@ class TimestampedEntity(BaseEntity):
 
     Extends BaseEntity with fields for when the entity actually occurred
     (as opposed to when it was imported), with configurable precision.
+
+    The occurred_at field is always stored as UTC. If the original timestamp
+    was in a different timezone, store that in source_timezone for display.
     """
 
     __abstract__: ClassVar[bool] = True
@@ -84,12 +88,32 @@ class TimestampedEntity(BaseEntity):
     occurred_at: datetime | None = Field(
         default=None,
         index=True,
-        description="When this entity actually occurred (e.g., photo taken, message sent)",
+        description="When this entity actually occurred in UTC (e.g., photo taken, message sent)",
     )
     occurred_at_precision: TimestampPrecision = Field(
         default=TimestampPrecision.SECOND,
         description="Precision of the occurred_at timestamp",
     )
+    source_timezone: str | None = Field(
+        default=None,
+        description="IANA timezone of the original timestamp (e.g., 'America/New_York')",
+    )
+
+    @field_validator("occurred_at", mode="before")
+    @classmethod
+    def ensure_utc(cls, v: datetime | None) -> datetime | None:
+        """Ensure occurred_at is timezone-aware UTC.
+
+        - If naive datetime: assume UTC and make aware
+        - If aware datetime: convert to UTC
+        """
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            # Naive datetime - assume UTC
+            return v.replace(tzinfo=UTC)
+        # Convert to UTC
+        return v.astimezone(UTC)
 
 
 class GeolocatedEntity(TimestampedEntity):

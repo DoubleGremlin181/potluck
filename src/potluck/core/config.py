@@ -1,7 +1,6 @@
 """Application configuration using pydantic-settings."""
 
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,16 +32,6 @@ class Settings(BaseSettings):
         description="Redis connection URL for Celery broker",
     )
 
-    # Embedding settings
-    embedding_provider: str = Field(
-        default="sentence-transformers",
-        description="Embedding provider to use",
-    )
-    embedding_model: str = Field(
-        default="all-MiniLM-L6-v2",
-        description="Embedding model name",
-    )
-
     # Web server
     web_host: str = Field(
         default="0.0.0.0",
@@ -57,16 +46,6 @@ class Settings(BaseSettings):
     log_level: str = Field(
         default="INFO",
         description="Logging level",
-    )
-
-    # Data storage paths
-    data_dir: Path = Field(
-        default=Path("/app/data"),
-        description="Base directory for application data",
-    )
-    upload_dir: Path = Field(
-        default=Path("/app/uploads"),
-        description="Directory for uploaded files",
     )
 
 
