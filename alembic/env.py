@@ -9,7 +9,8 @@ from alembic import context
 from potluck.core.config import get_settings
 
 # Import all models to register them with SQLModel metadata
-from potluck.models import base  # noqa: F401
+# This ensures all table definitions are loaded before migrations run
+import potluck.models  # noqa: F401
 
 config = context.config
 
