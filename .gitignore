@@ -79,6 +79,7 @@ dmypy.json
 data/
 uploads/
 *.db
+!Dockerfile.db
 *.sqlite
 
 # Logs

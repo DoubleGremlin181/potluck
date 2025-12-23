@@ -1,0 +1,23 @@
+# Percona PostgreSQL with pg_tde and pgvector
+FROM percona/percona-distribution-postgresql:17
+
+# Switch to root to install packages
+USER root
+
+# Install pg_tde extension from Percona repo (separate package as of PPG 17.7)
+# Package name: percona-pg_tde17 (with underscore)
+RUN microdnf install -y --disablerepo='ubi-*' percona-pg_tde17 && \
+    microdnf clean all
+
+# Configure pg_tde to be loaded at server startup
+# The Percona image sets pg_stat_monitor in postgresql.auto.conf by default
+# We need to include both in shared_preload_libraries
+RUN sed -i "s/shared_preload_libraries = ''/shared_preload_libraries = 'pg_tde'/" /usr/pgsql-17/share/postgresql.conf.sample
+
+# Switch back to postgres user
+USER postgres
+
+# Start PostgreSQL with:
+# - pg_tde and pg_stat_monitor loaded
+# - tde_heap as default access method (all tables encrypted by default)
+CMD ["postgres", "-c", "shared_preload_libraries=pg_tde,pg_stat_monitor", "-c", "default_table_access_method=tde_heap"]
