@@ -23,7 +23,6 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 
 - Code style: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs.
 - Only add functionality as needed. Do not front load work. E.g. Only add exceptions to src/potluck/core/exceptions.py while creating the feature that will raise it.
-- Use Context7
 
 ## References
 
