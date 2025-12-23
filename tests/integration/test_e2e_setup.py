@@ -27,9 +27,7 @@ class TestDatabaseExtensions:
     ) -> None:
         """Verify pgvector extension is installed for vector similarity search."""
         with db_connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT extname FROM pg_extension WHERE extname = 'vector'"
-            )
+            cursor.execute("SELECT extname FROM pg_extension WHERE extname = 'vector'")
             result = cursor.fetchone()
             assert result is not None, "pgvector extension not installed"
             assert result[0] == "vector"
@@ -41,9 +39,7 @@ class TestDatabaseExtensions:
     ) -> None:
         """Verify uuid-ossp extension is installed for UUID generation."""
         with db_connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT extname FROM pg_extension WHERE extname = 'uuid-ossp'"
-            )
+            cursor.execute("SELECT extname FROM pg_extension WHERE extname = 'uuid-ossp'")
             result = cursor.fetchone()
             assert result is not None, "uuid-ossp extension not installed"
             assert result[0] == "uuid-ossp"
@@ -61,9 +57,7 @@ class TestDatabaseExtensions:
         - Key provider configuration in init-db.sql
         """
         with db_connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT extname FROM pg_extension WHERE extname = 'pg_tde'"
-            )
+            cursor.execute("SELECT extname FROM pg_extension WHERE extname = 'pg_tde'")
             result = cursor.fetchone()
             assert result is not None, (
                 "pg_tde extension not installed - ensure using Percona PostgreSQL 17 "
@@ -82,9 +76,7 @@ class TestAlembicMigrations:
     ) -> None:
         """Verify migrations ran and alembic_version table exists."""
         with db_connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT version_num FROM alembic_version"
-            )
+            cursor.execute("SELECT version_num FROM alembic_version")
             result = cursor.fetchone()
             assert result is not None, "No migration version found"
             assert result[0] == "001_initial_schema", (
@@ -197,8 +189,15 @@ class TestTableColumns:
     ) -> None:
         """Verify people table has all expected columns."""
         expected_columns = {
-            "id", "created_at", "updated_at", "display_name", "photo_url",
-            "date_of_birth", "notes", "is_self", "merged_into_id",
+            "id",
+            "created_at",
+            "updated_at",
+            "display_name",
+            "photo_url",
+            "date_of_birth",
+            "notes",
+            "is_self",
+            "merged_into_id",
         }
         self._check_table_columns(db_connection, "people", expected_columns)
 
@@ -209,13 +208,38 @@ class TestTableColumns:
     ) -> None:
         """Verify media table has all expected columns including geolocation."""
         expected_columns = {
-            "id", "created_at", "updated_at", "source_type", "source_id",
-            "content_hash", "occurred_at", "occurred_at_precision", "source_timezone",
-            "latitude", "longitude", "altitude", "location_name", "tags",
-            "file_path", "original_filename", "file_size", "mime_type", "media_type",
-            "file_hash", "perceptual_hash", "width", "height", "duration_seconds",
-            "exif_data", "camera_make", "camera_model", "ocr_text", "caption",
-            "transcript", "source_url", "album_name",
+            "id",
+            "created_at",
+            "updated_at",
+            "source_type",
+            "source_id",
+            "content_hash",
+            "occurred_at",
+            "occurred_at_precision",
+            "source_timezone",
+            "latitude",
+            "longitude",
+            "altitude",
+            "location_name",
+            "tags",
+            "file_path",
+            "original_filename",
+            "file_size",
+            "mime_type",
+            "media_type",
+            "file_hash",
+            "perceptual_hash",
+            "width",
+            "height",
+            "duration_seconds",
+            "exif_data",
+            "camera_make",
+            "camera_model",
+            "ocr_text",
+            "caption",
+            "transcript",
+            "source_url",
+            "album_name",
         }
         self._check_table_columns(db_connection, "media", expected_columns)
 
@@ -235,9 +259,7 @@ class TestTableColumns:
             )
             result = cursor.fetchone()
             assert result is not None, "source_type column not found"
-            assert result[1] == "YES", (
-                "source_type should be nullable for FlexibleEntity"
-            )
+            assert result[1] == "YES", "source_type should be nullable for FlexibleEntity"
 
     def test_accounts_table_columns(
         self,
@@ -246,10 +268,24 @@ class TestTableColumns:
     ) -> None:
         """Verify accounts table has all expected columns."""
         expected_columns = {
-            "id", "created_at", "updated_at", "source_type", "source_id",
-            "content_hash", "tags", "name", "account_type", "institution",
-            "current_balance", "currency", "account_number_last4", "is_closed",
-            "closed_at", "is_on_budget", "is_tracking", "notes",
+            "id",
+            "created_at",
+            "updated_at",
+            "source_type",
+            "source_id",
+            "content_hash",
+            "tags",
+            "name",
+            "account_type",
+            "institution",
+            "current_balance",
+            "currency",
+            "account_number_last4",
+            "is_closed",
+            "closed_at",
+            "is_on_budget",
+            "is_tracking",
+            "notes",
         }
         self._check_table_columns(db_connection, "accounts", expected_columns)
 
@@ -260,13 +296,34 @@ class TestTableColumns:
     ) -> None:
         """Verify transactions table has simplified structure (no subcategory)."""
         expected_columns = {
-            "id", "created_at", "updated_at", "source_type", "source_id",
-            "content_hash", "tags", "occurred_at", "occurred_at_precision",
-            "source_timezone", "account_id", "transaction_type", "amount",
-            "currency", "payee", "payee_id", "description", "original_description",
-            "category", "category_group", "is_cleared", "is_reconciled",
-            "is_pending", "is_transfer", "transfer_account_id",
-            "merchant_location", "latitude", "longitude",
+            "id",
+            "created_at",
+            "updated_at",
+            "source_type",
+            "source_id",
+            "content_hash",
+            "tags",
+            "occurred_at",
+            "occurred_at_precision",
+            "source_timezone",
+            "account_id",
+            "transaction_type",
+            "amount",
+            "currency",
+            "payee",
+            "payee_id",
+            "description",
+            "original_description",
+            "category",
+            "category_group",
+            "is_cleared",
+            "is_reconciled",
+            "is_pending",
+            "is_transfer",
+            "transfer_account_id",
+            "merchant_location",
+            "latitude",
+            "longitude",
         }
         self._check_table_columns(db_connection, "transactions", expected_columns)
 
@@ -452,9 +509,7 @@ class TestHNSWIndexes:
             )
             result = cursor.fetchone()
             assert result is not None, f"Index '{index_name}' not found"
-            assert "hnsw" in result[1].lower(), (
-                f"Expected HNSW index, got: {result[1]}"
-            )
+            assert "hnsw" in result[1].lower(), f"Expected HNSW index, got: {result[1]}"
 
 
 class TestTableEncryption:
@@ -598,12 +653,8 @@ class TestForeignKeys:
                 (source_table, source_column),
             )
             result = cursor.fetchone()
-            assert result is not None, (
-                f"No foreign key from {source_table}.{source_column}"
-            )
-            assert result[1] == target_table, (
-                f"Expected FK to {target_table}, got {result[1]}"
-            )
+            assert result is not None, f"No foreign key from {source_table}.{source_column}"
+            assert result[1] == target_table, f"Expected FK to {target_table}, got {result[1]}"
             assert result[2] == target_column, (
                 f"Expected FK column {target_column}, got {result[2]}"
             )
