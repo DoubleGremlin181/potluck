@@ -847,3 +847,188 @@ class TestTagModels:
             synonym="py",
         )
         assert synonym.synonym == "py"
+
+
+class TestBaseClassHierarchy:
+    """Tests for base class inheritance and validators."""
+
+    def test_timestamped_entity_ensures_utc_from_naive(self) -> None:
+        """TimestampedEntity converts naive datetime to UTC via model_validate."""
+        naive_dt = datetime(2024, 6, 15, 12, 0, 0)
+        message = ChatMessage.model_validate(
+            {
+                "source_type": SourceType.WHATSAPP,
+                "thread_id": str(uuid4()),
+                "content": "Test",
+                "occurred_at": naive_dt,
+            }
+        )
+        # Should be timezone-aware UTC
+        assert message.occurred_at is not None
+        assert message.occurred_at.tzinfo is not None
+        assert message.occurred_at.tzinfo == UTC
+
+    def test_timestamped_entity_converts_to_utc(self) -> None:
+        """TimestampedEntity converts aware datetime to UTC via model_validate."""
+        from zoneinfo import ZoneInfo
+
+        eastern = ZoneInfo("America/New_York")
+        eastern_dt = datetime(2024, 6, 15, 12, 0, 0, tzinfo=eastern)
+
+        message = ChatMessage.model_validate(
+            {
+                "source_type": SourceType.WHATSAPP,
+                "thread_id": str(uuid4()),
+                "content": "Test",
+                "occurred_at": eastern_dt,
+            }
+        )
+        # Should be converted to UTC (4 hours ahead in summer)
+        assert message.occurred_at is not None
+        assert message.occurred_at.tzinfo == UTC
+        assert message.occurred_at.hour == 16  # 12 + 4 = 16
+
+    def test_geolocated_entity_has_location(self) -> None:
+        """GeolocatedEntity has_location property works correctly."""
+        media = Media(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            file_path="/photo.jpg",
+        )
+        assert media.has_location is False
+
+        media.latitude = 40.7128
+        assert media.has_location is False  # Still needs longitude
+
+        media.longitude = -74.0060
+        assert media.has_location is True
+
+    def test_geolocated_entity_altitude(self) -> None:
+        """GeolocatedEntity supports altitude field."""
+        media = Media(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            file_path="/photo.jpg",
+            latitude=27.9881,
+            longitude=86.9250,
+            altitude=8848.86,  # Mt. Everest
+        )
+        assert media.altitude == 8848.86
+
+    def test_geolocated_entity_latitude_validation(self) -> None:
+        """GeolocatedEntity validates latitude range."""
+        with pytest.raises(ValidationError):
+            Media.model_validate(
+                {
+                    "source_type": "manual",
+                    "file_path": "/test.jpg",
+                    "latitude": 91.0,  # Invalid: > 90
+                    "longitude": 0.0,
+                }
+            )
+
+    def test_geolocated_entity_longitude_validation(self) -> None:
+        """GeolocatedEntity validates longitude range."""
+        with pytest.raises(ValidationError):
+            Media.model_validate(
+                {
+                    "source_type": "manual",
+                    "file_path": "/test.jpg",
+                    "latitude": 0.0,
+                    "longitude": 181.0,  # Invalid: > 180
+                }
+            )
+
+    def test_base_entity_has_tags_field(self) -> None:
+        """BaseEntity includes tags field."""
+        bookmark = Bookmark(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            url="https://example.com",
+            title="Test",
+            tags='["tech", "python"]',
+        )
+        assert bookmark.tags == '["tech", "python"]'
+
+    def test_base_entity_has_content_hash(self) -> None:
+        """BaseEntity includes content_hash for deduplication."""
+        bookmark = Bookmark(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            url="https://example.com",
+            title="Test",
+            content_hash="abc123",
+        )
+        assert bookmark.content_hash == "abc123"
+
+
+class TestFlexibleEntity:
+    """Tests for FlexibleEntity (user-created content)."""
+
+    def test_flexible_entity_optional_source(self) -> None:
+        """FlexibleEntity allows None source_type for user-created content."""
+        # User-created note without source
+        note = KnowledgeNote(
+            title="My Personal Note",
+            content="Just thinking...",
+        )
+        assert note.source_type is None
+        assert note.source_id is None
+
+    def test_flexible_entity_with_source(self) -> None:
+        """FlexibleEntity allows source_type when importing."""
+        # Imported note with source
+        note = KnowledgeNote(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            source_id="google-keep-123",
+            title="Imported Note",
+            content="From Google Keep",
+        )
+        assert note.source_type == SourceType.GOOGLE_TAKEOUT
+        assert note.source_id == "google-keep-123"
+
+    def test_flexible_entity_inherits_from_simple_entity(self) -> None:
+        """FlexibleEntity inherits id and created_at from SimpleEntity."""
+        from potluck.models.base import FlexibleEntity, SimpleEntity
+
+        assert issubclass(FlexibleEntity, SimpleEntity)
+
+    def test_flexible_entity_has_tags(self) -> None:
+        """FlexibleEntity includes tags field."""
+        note = KnowledgeNote(
+            title="Tagged Note",
+            content="Content",
+            tags='["personal", "ideas"]',
+        )
+        assert note.tags == '["personal", "ideas"]'
+
+
+class TestSimpleEntity:
+    """Tests for SimpleEntity base class."""
+
+    def test_simple_entity_minimal_fields(self) -> None:
+        """SimpleEntity provides just id and created_at."""
+        participant = EventParticipant(
+            event_id=uuid4(),
+            email="test@example.com",
+            response_status=ResponseStatus.ACCEPTED,
+        )
+        # Has id and created_at from SimpleEntity
+        assert isinstance(participant.id, UUID)
+        assert isinstance(participant.created_at, datetime)
+        # Does NOT have source_type, updated_at, etc.
+        assert not hasattr(participant, "source_type") or participant.source_type is None
+
+
+class TestSourceTrackedEntity:
+    """Tests for SourceTrackedEntity base class."""
+
+    def test_source_tracked_entity_requires_source_type(self) -> None:
+        """SourceTrackedEntity requires source_type."""
+        folder = BookmarkFolder(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            name="Tech Bookmarks",
+        )
+        assert folder.source_type == SourceType.GOOGLE_TAKEOUT
+
+    def test_source_tracked_entity_inherits_from_simple(self) -> None:
+        """SourceTrackedEntity inherits from SimpleEntity."""
+        from potluck.models.base import SimpleEntity, SourceTrackedEntity
+
+        assert issubclass(SourceTrackedEntity, SimpleEntity)
