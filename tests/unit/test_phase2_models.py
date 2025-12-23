@@ -9,14 +9,14 @@ from pydantic import ValidationError
 
 from potluck.models.base import SourceType
 from potluck.models.browsing import Bookmark, BookmarkFolder, BrowsingHistory
-from potluck.models.email import Email, EmailAttachment, EmailFolder, EmailThread
-from potluck.models.events import (
+from potluck.models.calendar import (
     CalendarEvent,
     EventParticipant,
     EventStatus,
     EventVisibility,
     ResponseStatus,
 )
+from potluck.models.email import Email, EmailAttachment, EmailFolder, EmailThread
 from potluck.models.financial import (
     Account,
     AccountType,
@@ -419,6 +419,7 @@ class TestSocialModels:
     def test_subscription_creation(self) -> None:
         """Subscription can be created."""
         sub = Subscription(
+            source_type=SourceType.GOOGLE_TAKEOUT,
             platform=Platform.YOUTUBE,
             subscription_type=SubscriptionType.CHANNEL,
             target_name="Tech Channel",
@@ -444,12 +445,12 @@ class TestBrowsingModels:
             url="https://example.com",
         )
         assert history.url == "https://example.com"
-        assert history.visit_count == 1
+        assert history.visit_duration_seconds is None
 
     def test_bookmark_creation(self) -> None:
         """Bookmark can be created."""
         bookmark = Bookmark(
-            source_type="chrome",
+            source_type=SourceType.GOOGLE_TAKEOUT,
             url="https://example.com",
             title="Example Site",
         )
@@ -460,7 +461,7 @@ class TestBrowsingModels:
     def test_bookmark_folder_creation(self) -> None:
         """BookmarkFolder can be created."""
         folder = BookmarkFolder(
-            source_type="chrome",
+            source_type=SourceType.GOOGLE_TAKEOUT,
             name="Tech",
         )
         assert folder.name == "Tech"
@@ -540,6 +541,7 @@ class TestLocationModels:
     def test_location_type_enum(self) -> None:
         """LocationType enum has expected values."""
         expected = {
+            # User-labeled locations
             "home",
             "work",
             "school",
@@ -550,6 +552,13 @@ class TestLocationModels:
             "airport",
             "hotel",
             "attraction",
+            # Google Timeline inferred locations
+            "inferred_home",
+            "inferred_work",
+            "searched_address",
+            "aliased_location",
+            # Fallback
+            "unknown",
             "other",
         }
         actual = {t.value for t in LocationType}
@@ -647,6 +656,7 @@ class TestFinancialModels:
             "investment",
             "loan",
             "mortgage",
+            "balance",  # P2P apps like Venmo
             "other",
         }
         actual = {t.value for t in AccountType}

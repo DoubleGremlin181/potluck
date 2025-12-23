@@ -12,6 +12,7 @@ from potluck.models.base import _utc_now
 class LocationType(str, Enum):
     """Type of saved location."""
 
+    # User-labeled locations
     HOME = "home"
     WORK = "work"
     SCHOOL = "school"
@@ -22,6 +23,15 @@ class LocationType(str, Enum):
     AIRPORT = "airport"
     HOTEL = "hotel"
     ATTRACTION = "attraction"
+
+    # Google Timeline inferred locations (from semantic segments)
+    INFERRED_HOME = "inferred_home"
+    INFERRED_WORK = "inferred_work"
+    SEARCHED_ADDRESS = "searched_address"
+    ALIASED_LOCATION = "aliased_location"
+
+    # Fallback
+    UNKNOWN = "unknown"
     OTHER = "other"
 
 

@@ -2,7 +2,10 @@
 
 from potluck.models.base import (
     BaseEntity,
+    FlexibleEntity,
     GeolocatedEntity,
+    SimpleEntity,
+    SourceTrackedEntity,
     SourceType,
     TimestampedEntity,
     TimestampPrecision,
@@ -12,18 +15,18 @@ from potluck.models.browsing import (
     BookmarkFolder,
     BrowsingHistory,
 )
-from potluck.models.email import (
-    Email,
-    EmailAttachment,
-    EmailFolder,
-    EmailThread,
-)
-from potluck.models.events import (
+from potluck.models.calendar import (
     CalendarEvent,
     EventParticipant,
     EventStatus,
     EventVisibility,
     ResponseStatus,
+)
+from potluck.models.email import (
+    Email,
+    EmailAttachment,
+    EmailFolder,
+    EmailThread,
 )
 from potluck.models.financial import (
     Account,
@@ -90,6 +93,9 @@ from potluck.models.tags import (
 __all__ = [
     # Base
     "BaseEntity",
+    "FlexibleEntity",
+    "SimpleEntity",
+    "SourceTrackedEntity",
     "TimestampedEntity",
     "GeolocatedEntity",
     "SourceType",
@@ -103,7 +109,7 @@ __all__ = [
     "EmailAttachment",
     "EmailFolder",
     "EmailThread",
-    # Events
+    # Calendar
     "CalendarEvent",
     "EventParticipant",
     "EventStatus",

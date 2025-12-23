@@ -1,12 +1,12 @@
-"""Calendar event models."""
+"""Calendar event models for Google Calendar, Apple Calendar, Outlook, iCal, etc."""
 
 from datetime import datetime
 from enum import Enum
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship
 
-from potluck.models.base import GeolocatedEntity, _utc_now
+from potluck.models.base import GeolocatedEntity, SimpleEntity
 
 
 class EventStatus(str, Enum):
@@ -38,7 +38,11 @@ class ResponseStatus(str, Enum):
 class CalendarEvent(GeolocatedEntity, table=True):
     """Calendar event with timing, location, and participants.
 
-    Stores events from Google Calendar, iCal files, etc.
+    Supports events from various sources:
+    - Google Calendar (via Takeout)
+    - Apple Calendar (via iCal export)
+    - Microsoft Outlook (via iCal/ICS export)
+    - Generic iCal/ICS files
     """
 
     __tablename__ = "calendar_events"
@@ -69,14 +73,14 @@ class CalendarEvent(GeolocatedEntity, table=True):
         description="Event description (stored for FTS)",
     )
 
-    # Timing
+    # Timing - stored in UTC, use timezone field to display in original zone
     start_time: datetime = Field(
         index=True,
-        description="Event start time",
+        description="Event start time in UTC (convert using timezone for display)",
     )
     end_time: datetime | None = Field(
         default=None,
-        description="Event end time",
+        description="Event end time in UTC (convert using timezone for display)",
     )
     is_all_day: bool = Field(
         default=False,
@@ -84,7 +88,7 @@ class CalendarEvent(GeolocatedEntity, table=True):
     )
     timezone: str | None = Field(
         default=None,
-        description="Timezone of the event",
+        description="IANA timezone for display (e.g., 'America/New_York')",
     )
 
     # Recurrence
@@ -111,10 +115,10 @@ class CalendarEvent(GeolocatedEntity, table=True):
         description="Event visibility",
     )
 
-    # Location (beyond lat/long from GeolocatedEntity)
-    location_string: str | None = Field(
+    # Location text (supplements lat/long from GeolocatedEntity)
+    location_text: str | None = Field(
         default=None,
-        description="Location as string (address, room, etc.)",
+        description="Full location text (address, room name, building, etc.)",
     )
 
     # Organizer
@@ -188,16 +192,11 @@ class CalendarEvent(GeolocatedEntity, table=True):
     participants: list["EventParticipant"] = Relationship(back_populates="event")
 
 
-class EventParticipant(SQLModel, table=True):
+class EventParticipant(SimpleEntity, table=True):
     """Participant in a calendar event."""
 
     __tablename__ = "event_participants"
 
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier",
-    )
     event_id: UUID = Field(
         foreign_key="calendar_events.id",
         index=True,
@@ -238,11 +237,6 @@ class EventParticipant(SQLModel, table=True):
     comment: str | None = Field(
         default=None,
         description="Participant's comment on the event",
-    )
-
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the participant was added",
     )
 
     # Relationships

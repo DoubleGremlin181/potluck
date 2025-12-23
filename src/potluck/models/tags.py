@@ -42,6 +42,11 @@ class Tag(SQLModel, table=True):
         default=None,
         description="Display name with original casing",
     )
+    category: str | None = Field(
+        default=None,
+        index=True,
+        description="Category grouping for the tag (e.g., 'location', 'topic', 'project')",
+    )
     description: str | None = Field(
         default=None,
         description="Description of what this tag means",

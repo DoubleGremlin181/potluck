@@ -36,6 +36,71 @@ class TimestampPrecision(str, Enum):
     SECOND = "second"
 
 
+class SimpleEntity(SQLModel):
+    """Minimal base class for auxiliary entities.
+
+    Provides just id and created_at for entities that don't need full
+    source tracking (e.g., link tables, synonyms, embeddings).
+    """
+
+    __abstract__: ClassVar[bool] = True
+
+    id: UUID = Field(
+        default_factory=uuid4,
+        primary_key=True,
+        description="Unique identifier for the entity",
+    )
+    created_at: datetime = Field(
+        default_factory=_utc_now,
+        description="When the entity was created in the database",
+    )
+
+
+class SourceTrackedEntity(SimpleEntity):
+    """Base class for auxiliary entities that need source tracking.
+
+    Extends SimpleEntity with source_type for entities like folders,
+    visits, and history entries that need to know their origin.
+    """
+
+    __abstract__: ClassVar[bool] = True
+
+    source_type: SourceType = Field(
+        description="The source system this entity was imported from",
+    )
+
+
+class FlexibleEntity(SimpleEntity):
+    """Base class for entities that may or may not have a source.
+
+    Used for user-created content like KnowledgeNotes that can exist
+    independently of any import source. Source tracking is optional.
+    Examples: notes, annotations, manual entries.
+
+    Inherits id and created_at from SimpleEntity.
+    """
+
+    __abstract__: ClassVar[bool] = True
+
+    updated_at: datetime = Field(
+        default_factory=_utc_now,
+        sa_column_kwargs={"onupdate": _utc_now},
+        description="When the entity was last updated",
+    )
+    source_type: SourceType | None = Field(
+        default=None,
+        description="The source system (optional - None for user-created content)",
+    )
+    source_id: str | None = Field(
+        default=None,
+        description="Original identifier from the source system",
+    )
+    tags: str | None = Field(
+        default=None,
+        description="JSON-encoded list of tag names for quick tagging",
+    )
+
+
 class BaseEntity(SQLModel):
     """Base class for all Potluck entities.
 
@@ -70,6 +135,10 @@ class BaseEntity(SQLModel):
         default=None,
         index=True,
         description="SHA256 hash of content for deduplication",
+    )
+    tags: str | None = Field(
+        default=None,
+        description="JSON-encoded list of tag names for quick tagging",
     )
 
 
@@ -119,7 +188,7 @@ class TimestampedEntity(BaseEntity):
 class GeolocatedEntity(TimestampedEntity):
     """Base class for entities with geographic location.
 
-    Extends TimestampedEntity with latitude, longitude, and optional
+    Extends TimestampedEntity with latitude, longitude, altitude, and optional
     location name for entities that have a physical location.
     """
 
@@ -136,6 +205,10 @@ class GeolocatedEntity(TimestampedEntity):
         ge=-180,
         le=180,
         description="Longitude coordinate (-180 to 180)",
+    )
+    altitude: float | None = Field(
+        default=None,
+        description="Altitude in meters above sea level",
     )
     location_name: str | None = Field(
         default=None,

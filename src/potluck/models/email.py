@@ -2,15 +2,20 @@
 
 from datetime import datetime
 from enum import Enum
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship
 
-from potluck.models.base import TimestampedEntity, _utc_now
+from potluck.models.base import BaseEntity, SimpleEntity, TimestampedEntity
 
 
 class EmailFolder(str, Enum):
-    """Standard email folder types."""
+    """Standard email folder types.
+
+    ALL_MAIL represents a virtual folder containing all emails regardless of
+    their actual folder - useful for Gmail's "All Mail" label or as a default
+    when folder information is not available.
+    """
 
     INBOX = "inbox"
     SENT = "sent"
@@ -18,42 +23,19 @@ class EmailFolder(str, Enum):
     TRASH = "trash"
     SPAM = "spam"
     ARCHIVE = "archive"
-    ALL_MAIL = "all_mail"
+    ALL_MAIL = "all_mail"  # Virtual folder: all emails regardless of location
     STARRED = "starred"
     IMPORTANT = "important"
     CUSTOM = "custom"
 
 
-class EmailThread(SQLModel, table=True):
+class EmailThread(BaseEntity, table=True):
     """Email conversation thread container.
 
     Groups related emails by conversation ID or subject threading.
     """
 
     __tablename__ = "email_threads"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the thread",
-    )
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the thread was created in the database",
-    )
-    updated_at: datetime = Field(
-        default_factory=_utc_now,
-        sa_column_kwargs={"onupdate": _utc_now},
-        description="When the thread was last updated",
-    )
-    source_type: str = Field(
-        description="Email source (e.g., google_takeout, generic)",
-    )
-    source_id: str | None = Field(
-        default=None,
-        index=True,
-        description="Thread ID from source (Gmail thread ID, etc.)",
-    )
 
     # Thread metadata
     subject: str | None = Field(
@@ -251,7 +233,7 @@ class Email(TimestampedEntity, table=True):
     attachments: list["EmailAttachment"] = Relationship(back_populates="email")
 
 
-class EmailAttachment(SQLModel, table=True):
+class EmailAttachment(SimpleEntity, table=True):
     """Email attachment linking to Media model.
 
     Stores attachment metadata and links to the Media table for the actual file.
@@ -259,11 +241,6 @@ class EmailAttachment(SQLModel, table=True):
 
     __tablename__ = "email_attachments"
 
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the attachment",
-    )
     email_id: UUID = Field(
         foreign_key="emails.id",
         index=True,
@@ -294,11 +271,6 @@ class EmailAttachment(SQLModel, table=True):
     is_inline: bool = Field(
         default=False,
         description="Whether this is an inline attachment",
-    )
-
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the attachment record was created",
     )
 
     # Relationships

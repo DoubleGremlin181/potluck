@@ -1,11 +1,11 @@
 """Browsing history and bookmark models."""
 
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship
 
-from potluck.models.base import TimestampedEntity, _utc_now
+from potluck.models.base import BaseEntity, SourceTrackedEntity, TimestampedEntity
 
 
 class BrowsingHistory(TimestampedEntity, table=True):
@@ -43,10 +43,6 @@ class BrowsingHistory(TimestampedEntity, table=True):
     )
 
     # Visit metadata
-    visit_count: int = Field(
-        default=1,
-        description="Number of times this URL was visited",
-    )
     visit_duration_seconds: int | None = Field(
         default=None,
         description="Time spent on the page in seconds",
@@ -79,28 +75,10 @@ class BrowsingHistory(TimestampedEntity, table=True):
     )
 
 
-class Bookmark(SQLModel, table=True):
+class Bookmark(BaseEntity, table=True):
     """Saved bookmark with URL, title, and folder organization."""
 
     __tablename__ = "bookmarks"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the bookmark",
-    )
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the bookmark was created in the database",
-    )
-    updated_at: datetime = Field(
-        default_factory=_utc_now,
-        sa_column_kwargs={"onupdate": _utc_now},
-        description="When the bookmark was last updated",
-    )
-    source_type: str = Field(
-        description="Source of the bookmark (chrome, firefox, etc.)",
-    )
 
     # URL information
     url: str = Field(
@@ -157,10 +135,6 @@ class Bookmark(SQLModel, table=True):
         default=None,
         description="When the bookmark was originally created",
     )
-    last_visited_at: datetime | None = Field(
-        default=None,
-        description="When the bookmark was last visited",
-    )
 
     # Status
     is_favorite: bool = Field(
@@ -172,33 +146,16 @@ class Bookmark(SQLModel, table=True):
         description="Whether archived/hidden",
     )
 
-    # Tags for additional organization
-    tags: str | None = Field(
-        default=None,
-        description="JSON-encoded list of tags",
-    )
+    # Note: tags field is inherited from BaseEntity
 
     # Relationships
     folder: "BookmarkFolder" = Relationship(back_populates="bookmarks")
 
 
-class BookmarkFolder(SQLModel, table=True):
+class BookmarkFolder(SourceTrackedEntity, table=True):
     """Folder for organizing bookmarks."""
 
     __tablename__ = "bookmark_folders"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the folder",
-    )
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the folder was created",
-    )
-    source_type: str = Field(
-        description="Source of the bookmark folder",
-    )
 
     # Folder metadata
     name: str = Field(

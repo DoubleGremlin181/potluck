@@ -3,11 +3,11 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship
 
-from potluck.models.base import _utc_now
+from potluck.models.base import BaseEntity, SourceTrackedEntity, TimestampedEntity
 
 
 class AccountType(str, Enum):
@@ -20,6 +20,7 @@ class AccountType(str, Enum):
     INVESTMENT = "investment"
     LOAN = "loan"
     MORTGAGE = "mortgage"
+    BALANCE = "balance"  # P2P apps like Venmo, PayPal, etc.
     OTHER = "other"
 
 
@@ -33,36 +34,13 @@ class TransactionType(str, Enum):
     ADJUSTMENT = "adjustment"
 
 
-class Account(SQLModel, table=True):
+class Account(BaseEntity, table=True):
     """Financial account (bank account, credit card, etc.).
 
     Stores account information from YNAB, bank exports, etc.
     """
 
     __tablename__ = "accounts"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the account",
-    )
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the account was created in the database",
-    )
-    updated_at: datetime = Field(
-        default_factory=_utc_now,
-        sa_column_kwargs={"onupdate": _utc_now},
-        description="When the account was last updated",
-    )
-    source_type: str = Field(
-        description="Source of the account data (ynab, mint, etc.)",
-    )
-    source_id: str | None = Field(
-        default=None,
-        index=True,
-        description="Account ID from the source system",
-    )
 
     # Account details
     name: str = Field(
@@ -125,31 +103,13 @@ class Account(SQLModel, table=True):
     )
 
 
-class Transaction(SQLModel, table=True):
+class Transaction(TimestampedEntity, table=True):
     """Financial transaction.
 
     Stores individual transactions from bank exports, YNAB, etc.
     """
 
     __tablename__ = "transactions"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the transaction",
-    )
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the transaction was created in the database",
-    )
-    source_type: str = Field(
-        description="Source of the transaction data",
-    )
-    source_id: str | None = Field(
-        default=None,
-        index=True,
-        description="Transaction ID from the source system",
-    )
 
     # Account relationship
     account_id: UUID = Field(
@@ -162,10 +122,6 @@ class Transaction(SQLModel, table=True):
     transaction_type: TransactionType = Field(
         default=TransactionType.EXPENSE,
         description="Type of transaction",
-    )
-    occurred_at: datetime = Field(
-        index=True,
-        description="When the transaction occurred",
     )
     amount: Decimal = Field(
         decimal_places=2,
@@ -196,19 +152,15 @@ class Transaction(SQLModel, table=True):
         description="Original bank description before cleanup",
     )
 
-    # Categorization
+    # Categorization (YNAB-style: category within a category_group)
     category: str | None = Field(
         default=None,
         index=True,
-        description="Category name",
+        description="Budget category name (e.g., 'Groceries', 'Rent')",
     )
     category_group: str | None = Field(
         default=None,
-        description="Parent category group",
-    )
-    subcategory: str | None = Field(
-        default=None,
-        description="Subcategory if applicable",
+        description="Parent category group (e.g., 'Food', 'Housing')",
     )
 
     # Status
@@ -225,30 +177,15 @@ class Transaction(SQLModel, table=True):
         description="Whether the transaction is pending",
     )
 
-    # Flags and notes
-    is_flagged: bool = Field(
+    # Transfer tracking (use is_transfer flag, payee fields for transfer destination)
+    is_transfer: bool = Field(
         default=False,
-        description="Whether flagged for review",
+        description="Whether this is a transfer between accounts",
     )
-    flag_color: str | None = Field(
-        default=None,
-        description="Flag color if flagged",
-    )
-    notes: str | None = Field(
-        default=None,
-        description="User notes about the transaction",
-    )
-
-    # Transfer tracking
     transfer_account_id: UUID | None = Field(
         default=None,
         foreign_key="accounts.id",
-        description="Other account if this is a transfer",
-    )
-    transfer_transaction_id: UUID | None = Field(
-        default=None,
-        foreign_key="transactions.id",
-        description="Linked transaction for transfers",
+        description="Destination account if this is a transfer",
     )
 
     # Location (if from receipt/GPS)
@@ -272,23 +209,10 @@ class Transaction(SQLModel, table=True):
     )
 
 
-class Budget(SQLModel, table=True):
-    """Budget allocation for a category/month."""
+class Budget(SourceTrackedEntity, table=True):
+    """Budget allocation for a category/month (YNAB-style budgeting)."""
 
     __tablename__ = "budgets"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the budget",
-    )
-    created_at: datetime = Field(
-        default_factory=_utc_now,
-        description="When the budget was created",
-    )
-    source_type: str = Field(
-        description="Source of the budget data",
-    )
 
     # Budget period
     year: int = Field(
@@ -338,9 +262,4 @@ class Budget(SQLModel, table=True):
         default="USD",
         description="Currency code",
     )
-
-    # Notes
-    notes: str | None = Field(
-        default=None,
-        description="Notes for this budget allocation",
-    )
+    # Note: Use tags field for any notes/annotations on the budget

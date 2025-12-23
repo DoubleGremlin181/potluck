@@ -4,6 +4,24 @@ Revision ID: 001_initial_schema
 Revises:
 Create Date: 2025-12-20
 
+This migration is manually written rather than auto-generated for several reasons:
+
+1. **Explicit control**: Auto-generated migrations can miss nuances like HNSW indexes
+   for pgvector, partial indexes, and specific column orderings that matter for
+   performance and clarity.
+
+2. **pgvector support**: Alembic's autogenerate doesn't handle Vector columns and
+   HNSW index creation well. Manual control ensures proper index configuration.
+
+3. **Visibility**: A handwritten migration serves as documentation of the schema,
+   making it easier to review and understand the database structure.
+
+4. **Initial schema**: For the first migration that creates all tables, manual
+   writing gives better control. Future incremental migrations can use autogenerate.
+
+To use autogenerate for future migrations:
+    alembic revision --autogenerate -m "description"
+
 """
 
 from collections.abc import Sequence
@@ -69,6 +87,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("display_name", sa.String(), nullable=False),
+        sa.Column("photo_url", sa.String(), nullable=True),
         sa.Column("date_of_birth", sa.Date(), nullable=True),
         sa.Column("notes", sa.String(), nullable=True),
         sa.Column("is_self", sa.Boolean(), nullable=False, server_default="false"),
@@ -110,7 +129,9 @@ def upgrade() -> None:
         sa.Column("source_timezone", sa.String(), nullable=True),
         sa.Column("latitude", sa.Float(), nullable=True),
         sa.Column("longitude", sa.Float(), nullable=True),
+        sa.Column("altitude", sa.Float(), nullable=True),
         sa.Column("location_name", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.Column("file_path", sa.String(), nullable=False),
         sa.Column("original_filename", sa.String(), nullable=True),
         sa.Column("file_size", sa.Integer(), nullable=True),
@@ -149,6 +170,14 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_media_embeddings_media_id", "media_embeddings", ["media_id"])
+    # HNSW index for vector similarity search
+    op.execute(
+        """
+        CREATE INDEX ix_media_embeddings_embedding_hnsw
+        ON media_embeddings
+        USING hnsw (embedding vector_cosine_ops)
+        """
+    )
 
     op.create_table(
         "face_encodings",
@@ -166,6 +195,14 @@ def upgrade() -> None:
     )
     op.create_index("ix_face_encodings_person_id", "face_encodings", ["person_id"])
     op.create_index("ix_face_encodings_media_id", "face_encodings", ["media_id"])
+    # HNSW index for face vector similarity search
+    op.execute(
+        """
+        CREATE INDEX ix_face_encodings_embedding_hnsw
+        ON face_encodings
+        USING hnsw (embedding vector_cosine_ops)
+        """
+    )
 
     op.create_table(
         "media_person_links",
@@ -231,6 +268,7 @@ def upgrade() -> None:
         sa.Column("is_starred", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("reactions", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.ForeignKeyConstraint(["thread_id"], ["chat_threads.id"]),
         sa.ForeignKeyConstraint(["sender_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
@@ -265,6 +303,8 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
         sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.Column("subject", sa.String(), nullable=True),
         sa.Column("participant_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("participant_emails", sa.String(), nullable=True),
@@ -278,6 +318,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_email_threads_source_id", "email_threads", ["source_id"])
+    op.create_index("ix_email_threads_content_hash", "email_threads", ["content_hash"])
     op.create_index("ix_email_threads_last_email_at", "email_threads", ["last_email_at"])
 
     op.create_table(
@@ -318,6 +359,7 @@ def upgrade() -> None:
         sa.Column("attachment_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("has_attachments", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("size_bytes", sa.Integer(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.ForeignKeyConstraint(["thread_id"], ["email_threads.id"]),
         sa.ForeignKeyConstraint(["sender_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -437,6 +479,7 @@ def upgrade() -> None:
         sa.Column("is_stickied", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_saved", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_liked", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.ForeignKeyConstraint(["post_id"], ["social_posts.id"]),
         sa.ForeignKeyConstraint(["author_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["parent_comment_id"], ["social_comments.id"]),
@@ -452,6 +495,7 @@ def upgrade() -> None:
         "subscriptions",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("source_type", sa.String(), nullable=False),
         sa.Column("platform", sa.String(), nullable=False),
         sa.Column("subscription_type", sa.String(), nullable=False),
         sa.Column("target_id", sa.String(), nullable=True),
@@ -487,13 +531,13 @@ def upgrade() -> None:
         sa.Column("domain", sa.String(), nullable=True),
         sa.Column("title", sa.String(), nullable=True),
         sa.Column("favicon_url", sa.String(), nullable=True),
-        sa.Column("visit_count", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("visit_duration_seconds", sa.Integer(), nullable=True),
         sa.Column("transition_type", sa.String(), nullable=True),
         sa.Column("referrer_url", sa.String(), nullable=True),
         sa.Column("browser", sa.String(), nullable=True),
         sa.Column("device", sa.String(), nullable=True),
         sa.Column("search_query", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_browsing_history_url", "browsing_history", ["url"])
@@ -524,6 +568,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("url", sa.String(), nullable=False),
         sa.Column("url_hash", sa.String(), nullable=True),
         sa.Column("domain", sa.String(), nullable=True),
@@ -535,7 +581,6 @@ def upgrade() -> None:
         sa.Column("folder_path", sa.String(), nullable=True),
         sa.Column("position", sa.Integer(), nullable=True),
         sa.Column("bookmarked_at", sa.DateTime(), nullable=True),
-        sa.Column("last_visited_at", sa.DateTime(), nullable=True),
         sa.Column("is_favorite", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_archived", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("tags", sa.String(), nullable=True),
@@ -554,12 +599,11 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.Column("source_type", sa.String(), nullable=False),
+        # source_type is nullable for FlexibleEntity (user-created content)
+        sa.Column("source_type", sa.String(), nullable=True),
         sa.Column("source_id", sa.String(), nullable=True),
-        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("occurred_at", sa.DateTime(), nullable=True),
-        sa.Column("occurred_at_precision", sa.String(), nullable=False),
-        sa.Column("source_timezone", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("note_type", sa.String(), nullable=False),
         sa.Column("title", sa.String(), nullable=True),
         sa.Column("content", sa.String(), nullable=True),
@@ -582,10 +626,20 @@ def upgrade() -> None:
         sa.Column("has_reminder", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("embedding", Vector(768), nullable=True),
         sa.Column("color", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_knowledge_notes_occurred_at", "knowledge_notes", ["occurred_at"])
     op.create_index("ix_knowledge_notes_content_hash", "knowledge_notes", ["content_hash"])
+    # HNSW index for note vector similarity search
+    op.execute(
+        """
+        CREATE INDEX ix_knowledge_notes_embedding_hnsw
+        ON knowledge_notes
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
 
     op.create_table(
         "note_checklists",
@@ -684,7 +738,9 @@ def upgrade() -> None:
         sa.Column("source_timezone", sa.String(), nullable=True),
         sa.Column("latitude", sa.Float(), nullable=True),
         sa.Column("longitude", sa.Float(), nullable=True),
+        sa.Column("altitude", sa.Float(), nullable=True),
         sa.Column("location_name", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.Column("event_id", sa.String(), nullable=True),
         sa.Column("ical_uid", sa.String(), nullable=True),
         sa.Column("calendar_name", sa.String(), nullable=True),
@@ -699,7 +755,7 @@ def upgrade() -> None:
         sa.Column("recurring_event_id", sa.String(), nullable=True),
         sa.Column("status", sa.String(), nullable=False),
         sa.Column("visibility", sa.String(), nullable=False),
-        sa.Column("location_string", sa.String(), nullable=True),
+        sa.Column("location_text", sa.String(), nullable=True),
         sa.Column("organizer_id", sa.Uuid(), nullable=True),
         sa.Column("organizer_email", sa.String(), nullable=True),
         sa.Column("organizer_name", sa.String(), nullable=True),
@@ -750,6 +806,8 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
         sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("account_type", sa.String(), nullable=False),
         sa.Column("institution", sa.String(), nullable=True),
@@ -764,16 +822,22 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_accounts_source_id", "accounts", ["source_id"])
+    op.create_index("ix_accounts_content_hash", "accounts", ["content_hash"])
 
     op.create_table(
         "transactions",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
         sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
+        sa.Column("tags", sa.String(), nullable=True),
+        sa.Column("occurred_at", sa.DateTime(), nullable=True),
+        sa.Column("occurred_at_precision", sa.String(), nullable=False),
+        sa.Column("source_timezone", sa.String(), nullable=True),
         sa.Column("account_id", sa.Uuid(), nullable=False),
         sa.Column("transaction_type", sa.String(), nullable=False),
-        sa.Column("occurred_at", sa.DateTime(), nullable=False),
         sa.Column("amount", sa.Numeric(precision=12, scale=2), nullable=False),
         sa.Column("currency", sa.String(), nullable=False, server_default="USD"),
         sa.Column("payee", sa.String(), nullable=True),
@@ -782,25 +846,21 @@ def upgrade() -> None:
         sa.Column("original_description", sa.String(), nullable=True),
         sa.Column("category", sa.String(), nullable=True),
         sa.Column("category_group", sa.String(), nullable=True),
-        sa.Column("subcategory", sa.String(), nullable=True),
         sa.Column("is_cleared", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_reconciled", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_pending", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("is_flagged", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("flag_color", sa.String(), nullable=True),
-        sa.Column("notes", sa.String(), nullable=True),
+        sa.Column("is_transfer", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("transfer_account_id", sa.Uuid(), nullable=True),
-        sa.Column("transfer_transaction_id", sa.Uuid(), nullable=True),
         sa.Column("merchant_location", sa.String(), nullable=True),
         sa.Column("latitude", sa.Float(), nullable=True),
         sa.Column("longitude", sa.Float(), nullable=True),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.id"]),
         sa.ForeignKeyConstraint(["payee_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["transfer_account_id"], ["accounts.id"]),
-        sa.ForeignKeyConstraint(["transfer_transaction_id"], ["transactions.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_transactions_source_id", "transactions", ["source_id"])
+    op.create_index("ix_transactions_content_hash", "transactions", ["content_hash"])
     op.create_index("ix_transactions_account_id", "transactions", ["account_id"])
     op.create_index("ix_transactions_occurred_at", "transactions", ["occurred_at"])
     op.create_index("ix_transactions_payee", "transactions", ["payee"])
@@ -822,7 +882,6 @@ def upgrade() -> None:
             "carryover", sa.Numeric(precision=12, scale=2), nullable=False, server_default="0"
         ),
         sa.Column("currency", sa.String(), nullable=False, server_default="USD"),
-        sa.Column("notes", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_budgets_year", "budgets", ["year"])
@@ -851,6 +910,8 @@ def upgrade() -> None:
     )
     op.create_index("ix_entity_links_source_id", "entity_links", ["source_id"])
     op.create_index("ix_entity_links_target_id", "entity_links", ["target_id"])
+    op.create_index("ix_entity_links_source_type_id", "entity_links", ["source_type", "source_id"])
+    op.create_index("ix_entity_links_target_type_id", "entity_links", ["target_type", "target_id"])
 
     op.create_table(
         "tags",
@@ -859,6 +920,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("display_name", sa.String(), nullable=True),
+        sa.Column("category", sa.String(), nullable=True),
         sa.Column("description", sa.String(), nullable=True),
         sa.Column("color", sa.String(), nullable=True),
         sa.Column("icon", sa.String(), nullable=True),
@@ -872,6 +934,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("name"),
     )
     op.create_index("ix_tags_name", "tags", ["name"])
+    op.create_index("ix_tags_category", "tags", ["category"])
     op.create_index("ix_tags_full_path", "tags", ["full_path"])
 
     op.create_table(
@@ -889,6 +952,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_tag_assignments_tag_id", "tag_assignments", ["tag_id"])
     op.create_index("ix_tag_assignments_entity_id", "tag_assignments", ["entity_id"])
+    op.create_index(
+        "ix_tag_assignments_entity_type_id", "tag_assignments", ["entity_type", "entity_id"]
+    )
 
     op.create_table(
         "tag_synonyms",

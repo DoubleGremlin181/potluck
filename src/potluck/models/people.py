@@ -51,6 +51,10 @@ class Person(SQLModel, table=True):
     display_name: str = Field(
         description="Primary display name for this person",
     )
+    photo_url: str | None = Field(
+        default=None,
+        description="URL to the person's profile photo",
+    )
     date_of_birth: date | None = Field(
         default=None,
         description="Date of birth if known",

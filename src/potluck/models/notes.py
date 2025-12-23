@@ -6,9 +6,9 @@ from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import TimestampedEntity, _utc_now
+from potluck.models.base import FlexibleEntity, _utc_now
 
 
 class NoteType(str, Enum):
@@ -25,13 +25,26 @@ class NoteType(str, Enum):
     OTHER = "other"
 
 
-class KnowledgeNote(TimestampedEntity, table=True):
+class KnowledgeNote(FlexibleEntity, table=True):
     """Personal knowledge note with content, keywords, and embeddings.
 
-    Stores notes from Google Keep, Notion exports, markdown files, etc.
+    Can be user-created or imported from sources like Google Keep, Notion, etc.
+    Does not require a source - users can create notes directly in Potluck.
     """
 
     __tablename__ = "knowledge_notes"
+
+    # Timing (when the note was originally created/relevant)
+    occurred_at: datetime | None = Field(
+        default=None,
+        index=True,
+        description="When the note was originally created (optional)",
+    )
+    content_hash: str | None = Field(
+        default=None,
+        index=True,
+        description="SHA256 hash of content for deduplication",
+    )
 
     # Note metadata
     note_type: NoteType = Field(
@@ -140,6 +153,9 @@ class KnowledgeNote(TimestampedEntity, table=True):
         description="Note color (e.g., 'yellow', 'blue')",
     )
 
+    # Relationships
+    checklists: list["NoteChecklist"] = Relationship(back_populates="note")
+
 
 class NoteChecklist(SQLModel, table=True):
     """Checklist item within a note (for Keep checklists)."""
@@ -171,3 +187,6 @@ class NoteChecklist(SQLModel, table=True):
         default_factory=_utc_now,
         description="When the item was created",
     )
+
+    # Relationships
+    note: "KnowledgeNote" = Relationship(back_populates="checklists")
