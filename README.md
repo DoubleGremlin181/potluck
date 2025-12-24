@@ -77,12 +77,17 @@ docker compose exec app alembic upgrade head
 # Install dependencies with uv
 uv sync
 
+# Setup git hooks (runs lint/tests on commit and push)
+./scripts/setup-hooks.sh
+
 # Start database only (requires Docker)
 ./scripts/setup.sh --db-only
 
 # Run migrations against local database
 alembic upgrade head
 ```
+
+> **Note**: The `setup.sh` script automatically configures git hooks. If you only need hooks without Docker, run `./scripts/setup-hooks.sh` directly.
 
 ## Encryption Key Management
 

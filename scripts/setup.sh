@@ -29,6 +29,12 @@ fi
 
 echo "🍲 Setting up Potluck..."
 
+# Setup git hooks
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/setup-hooks.sh" ]; then
+    "$SCRIPT_DIR/setup-hooks.sh"
+fi
+
 # Check for required tools
 command -v docker >/dev/null 2>&1 || { echo "❌ Docker is required but not installed. Aborting."; exit 1; }
 command -v docker compose >/dev/null 2>&1 || { echo "❌ Docker Compose is required but not installed. Aborting."; exit 1; }
