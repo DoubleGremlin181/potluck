@@ -1,6 +1,6 @@
 [project]
 name = "potluck"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal Knowledge Database MCP server - Personalize your AI with Google Takeout and GDPR exports"
 readme = "README.md"
 license = { text = "MIT" }

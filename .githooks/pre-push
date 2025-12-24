@@ -1,6 +1,28 @@
 #!/bin/bash
-# Pre-push hook: Validate version tag format before pushing tags
+# Pre-push hook: Run lint/tests and validate version tags
 
+set -e
+
+echo "Running pre-push checks..."
+
+# Run linting
+echo "→ Running ruff check..."
+uv run ruff check src/ tests/
+
+echo "→ Running ruff format check..."
+uv run ruff format --check src/ tests/
+
+echo "→ Running mypy..."
+uv run mypy src/potluck/
+
+# Run tests
+echo "→ Running tests..."
+uv run pytest tests/ -q
+
+echo "✓ All checks passed!"
+echo ""
+
+# Validate version tags
 while read local_ref local_sha remote_ref remote_sha; do
     # Check if pushing a tag
     if [[ "$local_ref" =~ ^refs/tags/v ]]; then
