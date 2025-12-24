@@ -6,7 +6,8 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import SourceType, TimestampedEntity, _utc_now
+from potluck.models.base import SourceType, TimestampedEntity
+from potluck.models.utils import utc_now
 
 
 class Platform(str, Enum):
@@ -361,7 +362,7 @@ class Subscription(SQLModel, table=True):
         description="Unique identifier for the subscription",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the subscription was recorded",
     )
     source_type: SourceType = Field(

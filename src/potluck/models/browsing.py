@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlmodel import Field, Relationship
 
-from potluck.models.base import BaseEntity, SourceTrackedEntity, TimestampedEntity
+from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity
 
 
 class BrowsingHistory(TimestampedEntity, table=True):
@@ -152,10 +152,14 @@ class Bookmark(BaseEntity, table=True):
     folder: "BookmarkFolder" = Relationship(back_populates="bookmarks")
 
 
-class BookmarkFolder(SourceTrackedEntity, table=True):
+class BookmarkFolder(SimpleEntity, table=True):
     """Folder for organizing bookmarks."""
 
     __tablename__ = "bookmark_folders"
+
+    source_type: SourceType = Field(
+        description="The source system this folder was imported from",
+    )
 
     # Folder metadata
     name: str = Field(

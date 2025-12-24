@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlmodel import Field, Relationship
 
 from potluck.models.base import GeolocatedEntity, SimpleEntity
+from potluck.models.utils import IANATimezone
 
 
 class EventStatus(str, Enum):
@@ -86,7 +87,7 @@ class CalendarEvent(GeolocatedEntity, table=True):
         default=False,
         description="Whether this is an all-day event",
     )
-    timezone: str | None = Field(
+    timezone: IANATimezone = Field(
         default=None,
         description="IANA timezone for display (e.g., 'America/New_York')",
     )

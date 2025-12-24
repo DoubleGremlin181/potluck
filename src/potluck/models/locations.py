@@ -6,13 +6,12 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import _utc_now
+from potluck.models.utils import utc_now
 
 
 class LocationType(str, Enum):
     """Type of saved location."""
 
-    # User-labeled locations
     HOME = "home"
     WORK = "work"
     SCHOOL = "school"
@@ -23,14 +22,6 @@ class LocationType(str, Enum):
     AIRPORT = "airport"
     HOTEL = "hotel"
     ATTRACTION = "attraction"
-
-    # Google Timeline inferred locations (from semantic segments)
-    INFERRED_HOME = "inferred_home"
-    INFERRED_WORK = "inferred_work"
-    SEARCHED_ADDRESS = "searched_address"
-    ALIASED_LOCATION = "aliased_location"
-
-    # Fallback
     UNKNOWN = "unknown"
     OTHER = "other"
 
@@ -49,16 +40,24 @@ class Location(SQLModel, table=True):
         description="Unique identifier for the location",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the location was created in the database",
     )
     updated_at: datetime = Field(
-        default_factory=_utc_now,
-        sa_column_kwargs={"onupdate": _utc_now},
+        default_factory=utc_now,
+        sa_column_kwargs={"onupdate": utc_now},
         description="When the location was last updated",
     )
     source_type: str = Field(
         description="Source of the location data",
+    )
+
+    # Person association (for storing someone else's home/work address)
+    person_id: UUID | None = Field(
+        default=None,
+        foreign_key="people.id",
+        index=True,
+        description="Person this location belongs to (e.g., Jack's home address)",
     )
 
     # Location metadata

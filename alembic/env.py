@@ -5,16 +5,15 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
-# Import models package to register all table definitions with SQLModel metadata.
-# This import has a side effect: it loads all model classes, which register their
-# __tablename__ entries in SQLModel.metadata. Without this, Alembic's autogenerate
-# wouldn't see our tables.
-import potluck.models
 from alembic import context
 from potluck.core.config import get_settings
 
-# Access the module to satisfy linter (the import is used for its side effect)
-_ = potluck.models.__name__
+# Import and register all model classes with SQLModel.metadata.
+# Without this, Alembic's autogenerate wouldn't see our tables.
+from potluck.models import register_models
+
+# Register all models to ensure tables are in SQLModel.metadata
+REGISTERED_MODELS = register_models()
 
 config = context.config
 

@@ -9,7 +9,8 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import GeolocatedEntity, SourceType, _utc_now
+from potluck.models.base import GeolocatedEntity, SourceType
+from potluck.models.utils import utc_now
 
 if TYPE_CHECKING:
     from potluck.models.people import FaceEncoding
@@ -168,7 +169,7 @@ class MediaEmbedding(SQLModel, table=True):
         description="Embedding vector",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the embedding was created",
     )
 
@@ -209,6 +210,6 @@ class MediaPersonLink(SQLModel, table=True):
         description="Whether the link is user-confirmed",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the link was created",
     )

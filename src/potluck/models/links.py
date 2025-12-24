@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
 
-from potluck.models.base import _utc_now
+from potluck.models.utils import utc_now
 
 
 class LinkType(str, Enum):
@@ -71,7 +71,7 @@ class EntityLink(SQLModel, table=True):
         description="Unique identifier for the link",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the link was created",
     )
 

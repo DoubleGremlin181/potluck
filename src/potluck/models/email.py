@@ -12,9 +12,7 @@ from potluck.models.base import BaseEntity, SimpleEntity, TimestampedEntity
 class EmailFolder(str, Enum):
     """Standard email folder types.
 
-    ALL_MAIL represents a virtual folder containing all emails regardless of
-    their actual folder - useful for Gmail's "All Mail" label or as a default
-    when folder information is not available.
+    When folder information is unknown, default to INBOX.
     """
 
     INBOX = "inbox"
@@ -23,7 +21,6 @@ class EmailFolder(str, Enum):
     TRASH = "trash"
     SPAM = "spam"
     ARCHIVE = "archive"
-    ALL_MAIL = "all_mail"  # Virtual folder: all emails regardless of location
     STARRED = "starred"
     IMPORTANT = "important"
     CUSTOM = "custom"
@@ -174,8 +171,8 @@ class Email(TimestampedEntity, table=True):
 
     # Email metadata
     folder: EmailFolder = Field(
-        default=EmailFolder.ALL_MAIL,
-        description="Folder/label for the email",
+        default=EmailFolder.INBOX,
+        description="Folder/label for the email (default: INBOX when unknown)",
     )
     labels: str | None = Field(
         default=None,

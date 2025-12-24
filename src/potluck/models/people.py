@@ -9,7 +9,8 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import SourceType, _utc_now
+from potluck.models.base import SourceType
+from potluck.models.utils import utc_now
 
 if TYPE_CHECKING:
     from potluck.models.media import Media
@@ -40,12 +41,12 @@ class Person(SQLModel, table=True):
         description="Unique identifier for the person",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the person was created in the database",
     )
     updated_at: datetime = Field(
-        default_factory=_utc_now,
-        sa_column_kwargs={"onupdate": _utc_now},
+        default_factory=utc_now,
+        sa_column_kwargs={"onupdate": utc_now},
         description="When the person was last updated",
     )
     display_name: str = Field(
@@ -127,7 +128,7 @@ class PersonAlias(SQLModel, table=True):
         description="Confidence score for this alias association (0.0-1.0)",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the alias was created",
     )
 
@@ -177,7 +178,7 @@ class FaceEncoding(SQLModel, table=True):
         description="Whether the person association is user-confirmed",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the face encoding was created",
     )
 

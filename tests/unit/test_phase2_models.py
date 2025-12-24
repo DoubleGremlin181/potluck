@@ -34,7 +34,7 @@ from potluck.models.messages import (
     MessageType,
     ThreadType,
 )
-from potluck.models.notes import KnowledgeNote, NoteChecklist, NoteType
+from potluck.models.notes import KnowledgeNote
 from potluck.models.people import AliasType, Person, PersonAlias
 from potluck.models.social import (
     Platform,
@@ -45,7 +45,7 @@ from potluck.models.social import (
     SubscriptionType,
 )
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
-from potluck.models.tags import Tag, TagAssignment, TagSynonym
+from potluck.models.tags import Tag, TagAssignment
 
 
 class TestImportSourceModels:
@@ -339,7 +339,7 @@ class TestEmailModels:
             from_address="sender@example.com",
         )
         assert email.from_address == "sender@example.com"
-        assert email.folder == EmailFolder.ALL_MAIL
+        assert email.folder == EmailFolder.INBOX
         assert email.has_attachments is False
 
     def test_email_folder_enum(self) -> None:
@@ -351,7 +351,6 @@ class TestEmailModels:
             "trash",
             "spam",
             "archive",
-            "all_mail",
             "starred",
             "important",
             "custom",
@@ -469,58 +468,38 @@ class TestBrowsingModels:
 
 
 class TestNotesModels:
-    """Tests for KnowledgeNote and NoteChecklist models."""
+    """Tests for KnowledgeNote model (Potluck-native notes)."""
 
     def test_knowledge_note_creation(self) -> None:
-        """KnowledgeNote can be created."""
+        """KnowledgeNote can be created with content."""
+        note = KnowledgeNote(content="I went to school with Jack.")
+        assert isinstance(note.id, UUID)
+        assert note.content == "I went to school with Jack."
+        assert note.created_by is None
+
+    def test_knowledge_note_with_creator(self) -> None:
+        """KnowledgeNote tracks who/what created it."""
         note = KnowledgeNote(
-            source_type=SourceType.GOOGLE_TAKEOUT,
-            title="My Note",
-            content="Note content here",
+            content="Alice's favorite restaurant is Pizzeria Uno.",
+            created_by="claude",
         )
-        assert note.title == "My Note"
-        assert note.content == "Note content here"
-        assert note.note_type == NoteType.NOTE
-        assert note.is_task is False
+        assert note.created_by == "claude"
 
-    def test_note_type_enum(self) -> None:
-        """NoteType enum has expected values."""
-        expected = {
-            "note",
-            "task",
-            "journal",
-            "document",
-            "snippet",
-            "quote",
-            "idea",
-            "reference",
-            "other",
-        }
-        actual = {t.value for t in NoteType}
-        assert actual == expected
-
-    def test_knowledge_note_task_fields(self) -> None:
-        """KnowledgeNote task fields work correctly."""
+    def test_knowledge_note_with_linked_entities(self) -> None:
+        """KnowledgeNote can link to other entities."""
         note = KnowledgeNote(
-            source_type=SourceType.MANUAL,
-            note_type=NoteType.TASK,
-            is_task=True,
-            is_completed=True,
-            completed_at=datetime.now(UTC),
+            content="Meeting notes from today",
+            linked_entities='[{"entity_type": "person", "entity_id": "abc123"}]',
         )
-        assert note.is_task is True
-        assert note.is_completed is True
+        assert note.linked_entities is not None
 
-    def test_note_checklist_creation(self) -> None:
-        """NoteChecklist can be created."""
-        checklist = NoteChecklist(
-            note_id=uuid4(),
-            content="Buy groceries",
-            is_checked=False,
-            position=0,
+    def test_knowledge_note_content_hash(self) -> None:
+        """KnowledgeNote can have content hash for deduplication."""
+        note = KnowledgeNote(
+            content="Unique insight",
+            content_hash="sha256_hash_value",
         )
-        assert checklist.content == "Buy groceries"
-        assert checklist.is_checked is False
+        assert note.content_hash == "sha256_hash_value"
 
 
 class TestLocationModels:
@@ -541,7 +520,6 @@ class TestLocationModels:
     def test_location_type_enum(self) -> None:
         """LocationType enum has expected values."""
         expected = {
-            # User-labeled locations
             "home",
             "work",
             "school",
@@ -552,12 +530,6 @@ class TestLocationModels:
             "airport",
             "hotel",
             "attraction",
-            # Google Timeline inferred locations
-            "inferred_home",
-            "inferred_work",
-            "searched_address",
-            "aliased_location",
-            # Fallback
             "unknown",
             "other",
         }
@@ -807,28 +779,34 @@ class TestEntityLinkModels:
 
 
 class TestTagModels:
-    """Tests for Tag, TagAssignment, and TagSynonym models."""
+    """Tests for Tag and TagAssignment models."""
 
     def test_tag_creation(self) -> None:
-        """Tag can be created."""
+        """Tag can be created with name."""
         tag = Tag(name="python")
+        assert isinstance(tag.id, UUID)
         assert tag.name == "python"
-        assert tag.usage_count == 0
-        assert tag.is_system is False
-        assert tag.is_hidden is False
+        assert tag.category is None
+        assert tag.description is None
 
-    def test_tag_optional_fields(self) -> None:
-        """Tag optional fields can be set."""
+    def test_tag_with_category(self) -> None:
+        """Tag can have a category for grouping."""
         tag = Tag(
-            name="tech",
-            display_name="Tech",
-            description="Technology related",
-            color="#3498db",
-            icon="laptop",
+            name="cafe",
+            category="location",
+            description="Good places to work from",
         )
-        assert tag.display_name == "Tech"
-        assert tag.description == "Technology related"
-        assert tag.color == "#3498db"
+        assert tag.name == "cafe"
+        assert tag.category == "location"
+        assert tag.description == "Good places to work from"
+
+    def test_lambda_tag_creation(self) -> None:
+        """Tag can be created without name (lambda/unnamed tag)."""
+        tag = Tag(
+            description="Quick note about this entity",
+        )
+        assert tag.name is None
+        assert tag.description == "Quick note about this entity"
 
     def test_tag_assignment_creation(self) -> None:
         """TagAssignment can be created."""
@@ -837,16 +815,8 @@ class TestTagModels:
             entity_type=EntityType.MEDIA,
             entity_id=uuid4(),
         )
-        assert assignment.is_automatic is False
-        assert assignment.confidence == 1.0
-
-    def test_tag_synonym_creation(self) -> None:
-        """TagSynonym can be created."""
-        synonym = TagSynonym(
-            tag_id=uuid4(),
-            synonym="py",
-        )
-        assert synonym.synonym == "py"
+        assert isinstance(assignment.id, UUID)
+        assert assignment.entity_type == EntityType.MEDIA
 
 
 class TestBaseClassHierarchy:
@@ -937,16 +907,6 @@ class TestBaseClassHierarchy:
                 }
             )
 
-    def test_base_entity_has_tags_field(self) -> None:
-        """BaseEntity includes tags field."""
-        bookmark = Bookmark(
-            source_type=SourceType.GOOGLE_TAKEOUT,
-            url="https://example.com",
-            title="Test",
-            tags='["tech", "python"]',
-        )
-        assert bookmark.tags == '["tech", "python"]'
-
     def test_base_entity_has_content_hash(self) -> None:
         """BaseEntity includes content_hash for deduplication."""
         bookmark = Bookmark(
@@ -958,77 +918,40 @@ class TestBaseClassHierarchy:
         assert bookmark.content_hash == "abc123"
 
 
-class TestFlexibleEntity:
-    """Tests for FlexibleEntity (user-created content)."""
-
-    def test_flexible_entity_optional_source(self) -> None:
-        """FlexibleEntity allows None source_type for user-created content."""
-        # User-created note without source
-        note = KnowledgeNote(
-            title="My Personal Note",
-            content="Just thinking...",
-        )
-        assert note.source_type is None
-        assert note.source_id is None
-
-    def test_flexible_entity_with_source(self) -> None:
-        """FlexibleEntity allows source_type when importing."""
-        # Imported note with source
-        note = KnowledgeNote(
-            source_type=SourceType.GOOGLE_TAKEOUT,
-            source_id="google-keep-123",
-            title="Imported Note",
-            content="From Google Keep",
-        )
-        assert note.source_type == SourceType.GOOGLE_TAKEOUT
-        assert note.source_id == "google-keep-123"
-
-    def test_flexible_entity_inherits_from_simple_entity(self) -> None:
-        """FlexibleEntity inherits id and created_at from SimpleEntity."""
-        from potluck.models.base import FlexibleEntity, SimpleEntity
-
-        assert issubclass(FlexibleEntity, SimpleEntity)
-
-    def test_flexible_entity_has_tags(self) -> None:
-        """FlexibleEntity includes tags field."""
-        note = KnowledgeNote(
-            title="Tagged Note",
-            content="Content",
-            tags='["personal", "ideas"]',
-        )
-        assert note.tags == '["personal", "ideas"]'
-
-
 class TestSimpleEntity:
     """Tests for SimpleEntity base class."""
 
-    def test_simple_entity_minimal_fields(self) -> None:
-        """SimpleEntity provides just id and created_at."""
+    def test_simple_entity_has_id_and_timestamps(self) -> None:
+        """SimpleEntity provides id, created_at, and updated_at."""
         participant = EventParticipant(
             event_id=uuid4(),
             email="test@example.com",
             response_status=ResponseStatus.ACCEPTED,
         )
-        # Has id and created_at from SimpleEntity
+        # Has id, created_at, and updated_at from SimpleEntity
         assert isinstance(participant.id, UUID)
         assert isinstance(participant.created_at, datetime)
-        # Does NOT have source_type, updated_at, etc.
-        assert not hasattr(participant, "source_type") or participant.source_type is None
+        assert isinstance(participant.updated_at, datetime)
 
 
-class TestSourceTrackedEntity:
-    """Tests for SourceTrackedEntity base class."""
+class TestBaseEntityInheritance:
+    """Tests for BaseEntity inheriting from SimpleEntity."""
 
-    def test_source_tracked_entity_requires_source_type(self) -> None:
-        """SourceTrackedEntity requires source_type."""
-        folder = BookmarkFolder(
+    def test_base_entity_inherits_from_simple_entity(self) -> None:
+        """BaseEntity inherits from SimpleEntity."""
+        from potluck.models.base import BaseEntity, SimpleEntity
+
+        assert issubclass(BaseEntity, SimpleEntity)
+
+    def test_base_entity_adds_source_tracking(self) -> None:
+        """BaseEntity adds source_type and source_id fields."""
+        bookmark = Bookmark(
             source_type=SourceType.GOOGLE_TAKEOUT,
-            name="Tech Bookmarks",
+            url="https://example.com",
+            title="Test",
         )
-        assert folder.source_type == SourceType.GOOGLE_TAKEOUT
-
-    def test_source_tracked_entity_inherits_from_simple(self) -> None:
-        """SourceTrackedEntity inherits from SimpleEntity."""
-        from potluck.models.base import SimpleEntity, SourceTrackedEntity
-
-        assert issubclass(SourceTrackedEntity, SimpleEntity)
+        assert bookmark.source_type == SourceType.GOOGLE_TAKEOUT
+        # Has all SimpleEntity fields plus source tracking
+        assert isinstance(bookmark.id, UUID)
+        assert isinstance(bookmark.created_at, datetime)
+        assert isinstance(bookmark.updated_at, datetime)

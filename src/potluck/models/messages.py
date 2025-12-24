@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import TimestampedEntity, _utc_now
+from potluck.models.base import TimestampedEntity
+from potluck.models.utils import utc_now
 
 if TYPE_CHECKING:
     pass
@@ -53,12 +54,12 @@ class ChatThread(SQLModel, table=True):
         description="Unique identifier for the thread",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the thread was created in the database",
     )
     updated_at: datetime = Field(
-        default_factory=_utc_now,
-        sa_column_kwargs={"onupdate": _utc_now},
+        default_factory=utc_now,
+        sa_column_kwargs={"onupdate": utc_now},
         description="When the thread was last updated",
     )
     source_type: str = Field(

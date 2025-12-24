@@ -7,7 +7,7 @@ from uuid import UUID
 
 from sqlmodel import Field, Relationship
 
-from potluck.models.base import BaseEntity, SourceTrackedEntity, TimestampedEntity
+from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity
 
 
 class AccountType(str, Enum):
@@ -209,10 +209,14 @@ class Transaction(TimestampedEntity, table=True):
     )
 
 
-class Budget(SourceTrackedEntity, table=True):
+class Budget(SimpleEntity, table=True):
     """Budget allocation for a category/month (YNAB-style budgeting)."""
 
     __tablename__ = "budgets"
+
+    source_type: SourceType = Field(
+        description="The source system this budget was imported from",
+    )
 
     # Budget period
     year: int = Field(

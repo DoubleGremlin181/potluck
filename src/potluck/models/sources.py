@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import SourceType, _utc_now
+from potluck.models.base import SourceType
+from potluck.models.utils import utc_now
 
 if TYPE_CHECKING:
     pass
@@ -38,12 +39,12 @@ class ImportSource(SQLModel, table=True):
         description="Unique identifier for the import source",
     )
     created_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the source was registered",
     )
     updated_at: datetime = Field(
-        default_factory=_utc_now,
-        sa_column_kwargs={"onupdate": _utc_now},
+        default_factory=utc_now,
+        sa_column_kwargs={"onupdate": utc_now},
         description="When the source was last updated",
     )
     source_type: SourceType = Field(
@@ -88,7 +89,7 @@ class ImportRun(SQLModel, table=True):
         description="The source this run is importing from",
     )
     started_at: datetime = Field(
-        default_factory=_utc_now,
+        default_factory=utc_now,
         description="When the import run started",
     )
     completed_at: datetime | None = Field(
