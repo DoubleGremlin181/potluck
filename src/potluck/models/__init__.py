@@ -2,11 +2,13 @@
 
 from potluck.models.base import (
     BaseEntity,
+    EntityType,
     GeolocatedEntity,
     SimpleEntity,
     SourceType,
     TimestampedEntity,
     TimestampPrecision,
+    get_entity_type_model_map,
 )
 from potluck.models.browsing import (
     Bookmark,
@@ -35,7 +37,6 @@ from potluck.models.financial import (
 )
 from potluck.models.links import (
     EntityLink,
-    EntityType,
     LinkType,
 )
 from potluck.models.locations import (
@@ -110,6 +111,8 @@ __all__ = [
     "GeolocatedEntity",
     "SourceType",
     "TimestampPrecision",
+    "EntityType",
+    "get_entity_type_model_map",
     # Utils
     "utc_now",
     "ensure_utc",
@@ -140,7 +143,6 @@ __all__ = [
     "TransactionType",
     # Links
     "EntityLink",
-    "EntityType",
     "LinkType",
     # Locations
     "Location",
