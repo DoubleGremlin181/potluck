@@ -104,6 +104,11 @@ class ImportRun(SQLModel, table=True):
         default=None,
         description="Error message if the run failed",
     )
+    file_hash: str | None = Field(
+        default=None,
+        index=True,
+        description="SHA256 hash of the source file for deduplication",
+    )
 
     # Statistics
     entities_found: int = Field(
