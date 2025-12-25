@@ -21,6 +21,27 @@ class SourceType(str, Enum):
     MANUAL = "manual"  # User-created content within Potluck (notes, annotations)
 
 
+class EntityType(str, Enum):
+    """Types of entities that can be ingested, linked, and searched.
+
+    This is the canonical enum for entity types used across ingestion,
+    entity linking, and search functionality.
+    """
+
+    MEDIA = "media"
+    CHAT_MESSAGE = "chat_message"
+    EMAIL = "email"
+    SOCIAL_POST = "social_post"
+    SOCIAL_COMMENT = "social_comment"
+    KNOWLEDGE_NOTE = "knowledge_note"
+    CALENDAR_EVENT = "calendar_event"
+    TRANSACTION = "transaction"
+    LOCATION_VISIT = "location_visit"
+    BROWSING_HISTORY = "browsing_history"
+    BOOKMARK = "bookmark"
+    PERSON = "person"
+
+
 class TimestampPrecision(str, Enum):
     """Precision level for occurred_at timestamps."""
 
@@ -141,3 +162,40 @@ class GeolocatedEntity(TimestampedEntity):
     def has_location(self) -> bool:
         """Check if this entity has valid coordinates."""
         return self.latitude is not None and self.longitude is not None
+
+
+def get_entity_type_model_map() -> dict[EntityType, type[SQLModel]]:
+    """Get mapping from EntityType to model class.
+
+    This function lazily imports models to avoid circular imports.
+    The mapping is cached after first call.
+
+    Returns:
+        Dict mapping EntityType enum values to their corresponding model classes.
+    """
+    # Import here to avoid circular imports
+    from potluck.models.browsing import Bookmark, BrowsingHistory
+    from potluck.models.calendar import CalendarEvent
+    from potluck.models.email import Email
+    from potluck.models.financial import Transaction
+    from potluck.models.locations import LocationVisit
+    from potluck.models.media import Media
+    from potluck.models.messages import ChatMessage
+    from potluck.models.notes import KnowledgeNote
+    from potluck.models.people import Person
+    from potluck.models.social import SocialComment, SocialPost
+
+    return {
+        EntityType.MEDIA: Media,
+        EntityType.CHAT_MESSAGE: ChatMessage,
+        EntityType.EMAIL: Email,
+        EntityType.SOCIAL_POST: SocialPost,
+        EntityType.SOCIAL_COMMENT: SocialComment,
+        EntityType.KNOWLEDGE_NOTE: KnowledgeNote,
+        EntityType.CALENDAR_EVENT: CalendarEvent,
+        EntityType.TRANSACTION: Transaction,
+        EntityType.LOCATION_VISIT: LocationVisit,
+        EntityType.BROWSING_HISTORY: BrowsingHistory,
+        EntityType.BOOKMARK: Bookmark,
+        EntityType.PERSON: Person,
+    }
