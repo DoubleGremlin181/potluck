@@ -32,3 +32,19 @@ class IngestionError(PotluckError):
 
 class ProcessingError(PotluckError):
     """Raised when media/content processing fails."""
+
+
+class ArchiveError(IngestionError):
+    """Base exception for archive-related errors."""
+
+
+class UnsupportedArchiveError(ArchiveError):
+    """Raised when the archive format is not supported."""
+
+
+class ExtractionError(ArchiveError):
+    """Raised when archive extraction fails."""
+
+
+class ParseError(IngestionError):
+    """Raised when parsing fails."""

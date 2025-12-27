@@ -20,7 +20,7 @@ from potluck.ingesters.hooks import (
     get_hook_registry,
 )
 from potluck.ingesters.registry import (
-    EXTENSION_TO_ENTITY_TYPE,
+    DEFAULT_EXTENSION_TO_ENTITY_TYPE,
     IngesterRegistry,
     get_registry,
     register_ingester,
@@ -114,7 +114,7 @@ class TestIngesterRegistry:
 
         class MockIngester(BaseIngester):
             SOURCE_TYPE = SourceType.GENERIC
-            DETECTION_PATTERNS = [r"mock-.*"]
+            FILENAME_PATTERNS = [r"mock-.*"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
             INSTRUCTIONS = "Test instructions"
 
@@ -136,7 +136,7 @@ class TestIngesterRegistry:
 
         class MockIngester(BaseIngester):
             SOURCE_TYPE = SourceType.GENERIC
-            DETECTION_PATTERNS = [r"test-export-.*\.zip"]
+            FILENAME_PATTERNS = [r"test-export-.*\.zip"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
             INSTRUCTIONS = "Test"
 
@@ -158,7 +158,7 @@ class TestIngesterRegistry:
         @register_ingester
         class DecoratedIngester(BaseIngester):
             SOURCE_TYPE = SourceType.GENERIC
-            DETECTION_PATTERNS = [r"decorated-.*"]
+            FILENAME_PATTERNS = [r"decorated-.*"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
             INSTRUCTIONS = "Test"
 
@@ -169,22 +169,22 @@ class TestIngesterRegistry:
 
 
 class TestExtensionToEntityType:
-    """Tests for EXTENSION_TO_ENTITY_TYPE mapping."""
+    """Tests for DEFAULT_EXTENSION_TO_ENTITY_TYPE mapping."""
 
     def test_image_extensions(self) -> None:
         """Image extensions map to MEDIA."""
         for ext in [".jpg", ".jpeg", ".png", ".gif", ".heic"]:
-            assert EXTENSION_TO_ENTITY_TYPE[ext] == EntityType.MEDIA
+            assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[ext] == EntityType.MEDIA
 
     def test_text_extensions(self) -> None:
         """Text extensions map to KNOWLEDGE_NOTE."""
         for ext in [".txt", ".md", ".markdown"]:
-            assert EXTENSION_TO_ENTITY_TYPE[ext] == EntityType.KNOWLEDGE_NOTE
+            assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[ext] == EntityType.KNOWLEDGE_NOTE
 
     def test_email_extensions(self) -> None:
         """Email extensions map to EMAIL."""
-        assert EXTENSION_TO_ENTITY_TYPE[".mbox"] == EntityType.EMAIL
-        assert EXTENSION_TO_ENTITY_TYPE[".eml"] == EntityType.EMAIL
+        assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[".mbox"] == EntityType.EMAIL
+        assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[".eml"] == EntityType.EMAIL
 
 
 class TestArchiveUtils:

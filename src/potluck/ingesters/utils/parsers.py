@@ -12,15 +12,10 @@ from email.message import Message
 from pathlib import Path
 from typing import Any
 
+from potluck.core.exceptions import ParseError
 from potluck.core.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-class ParseError(Exception):
-    """Base exception for parsing errors."""
-
-    pass
 
 
 # Common date formats found in data exports

@@ -2,14 +2,11 @@
 
 from collections.abc import Generator
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 from sqlalchemy import Engine, create_engine
+from sqlmodel import Session
 
 from potluck.core.config import get_settings
-
-if TYPE_CHECKING:
-    from sqlmodel import Session
 
 
 @lru_cache
@@ -18,6 +15,10 @@ def get_engine() -> Engine:
 
     Uses sync database URL for Celery tasks and other sync code.
     The engine is cached and reused across calls.
+
+    Note: @lru_cache is used for lazy initialization - the engine is only
+    created on first use, after settings are configured. A module-level
+    variable would be created at import time before settings are available.
 
     Returns:
         SQLAlchemy Engine instance.
@@ -30,7 +31,7 @@ def get_engine() -> Engine:
     )
 
 
-def get_session() -> Generator["Session", None, None]:
+def get_session() -> Generator[Session, None, None]:
     """Get a new database session.
 
     This is a generator function for use with FastAPI dependency injection.
@@ -38,8 +39,6 @@ def get_session() -> Generator["Session", None, None]:
     Yields:
         SQLModel Session instance.
     """
-    from sqlmodel import Session
-
     engine = get_engine()
     with Session(engine) as session:
         yield session

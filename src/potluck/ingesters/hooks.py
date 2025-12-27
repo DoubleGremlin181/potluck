@@ -1,8 +1,10 @@
 """Ingestion hooks for post-processing entities."""
 
+import threading
 from typing import TYPE_CHECKING, Protocol
 
 from potluck.core.logging import get_logger
+from potluck.ingesters.utils.registry_base import BaseRegistry
 from potluck.models.base import BaseEntity, EntityType
 
 if TYPE_CHECKING:
@@ -51,22 +53,21 @@ class IngestionHook(Protocol):
         ...
 
 
-class HookRegistry:
+class HookRegistry(BaseRegistry[IngestionHook]):
     """Registry for managing ingestion hooks.
 
     Maintains a list of registered hooks and dispatches events to them.
     Hooks are called in registration order.
+
+    This is implemented as a thread-safe singleton.
     """
 
     _instance: "HookRegistry | None" = None
-    _hooks: list[IngestionHook]
+    _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> "HookRegistry":
-        """Create or return the singleton instance."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._hooks = []
-        return cls._instance
+        """Create or return the singleton instance (thread-safe)."""
+        return cls._create_singleton()  # type: ignore[return-value]
 
     def register(self, hook: IngestionHook) -> None:
         """Register an ingestion hook.
@@ -74,30 +75,10 @@ class HookRegistry:
         Args:
             hook: The hook to register.
         """
-        if hook not in self._hooks:
-            self._hooks.append(hook)
-            logger.debug(f"Registered ingestion hook: {hook.__class__.__name__}")
-
-    def unregister(self, hook: IngestionHook) -> None:
-        """Unregister an ingestion hook.
-
-        Args:
-            hook: The hook to unregister.
-        """
-        if hook in self._hooks:
-            self._hooks.remove(hook)
-
-    def get_all(self) -> list[IngestionHook]:
-        """Get all registered hooks.
-
-        Returns:
-            List of registered hooks.
-        """
-        return list(self._hooks)
-
-    def clear(self) -> None:
-        """Clear all registered hooks. Useful for testing."""
-        self._hooks = []
+        with self._lock:
+            if hook not in self._items:
+                self._items.append(hook)
+                logger.debug(f"Registered ingestion hook: {hook.__class__.__name__}")
 
     def notify_entity_created(self, entity_type: EntityType, entity: BaseEntity) -> None:
         """Notify all hooks that an entity was created.
@@ -106,7 +87,9 @@ class HookRegistry:
             entity_type: The type of entity created.
             entity: The created entity.
         """
-        for hook in self._hooks:
+        # Copy hooks list to avoid issues if hook modifies registry
+        hooks = self.get_all()
+        for hook in hooks:
             try:
                 hook.on_entity_created(entity_type, entity)
             except Exception as e:
@@ -118,7 +101,8 @@ class HookRegistry:
         Args:
             entities: Dict mapping entity types to lists of entities.
         """
-        for hook in self._hooks:
+        hooks = self.get_all()
+        for hook in hooks:
             try:
                 hook.on_batch_complete(entities)
             except Exception as e:
@@ -130,7 +114,8 @@ class HookRegistry:
         Args:
             import_run: The completed ImportRun.
         """
-        for hook in self._hooks:
+        hooks = self.get_all()
+        for hook in hooks:
             try:
                 hook.on_import_complete(import_run)
             except Exception as e:
@@ -144,6 +129,14 @@ def get_hook_registry() -> HookRegistry:
         The singleton HookRegistry instance.
     """
     return HookRegistry()
+
+
+def clear_hook_registry() -> None:
+    """Clear the hook registry singleton for testing.
+
+    This clears all registered hooks without destroying the singleton.
+    """
+    get_hook_registry().clear()
 
 
 class LoggingHook:

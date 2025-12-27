@@ -1,10 +1,13 @@
 """Utility modules for data ingestion."""
 
-from potluck.ingesters.utils.archive import (
+from potluck.core.exceptions import (
     ArchiveError,
-    ExtractedArchive,
     ExtractionError,
+    ParseError,
     UnsupportedArchiveError,
+)
+from potluck.ingesters.utils.archive import (
+    ExtractedArchive,
     extract_archive,
     extracted,
     get_archive_type,
@@ -19,7 +22,6 @@ from potluck.ingesters.utils.dedup import (
 from potluck.ingesters.utils.parsers import (
     MboxAttachment,
     MboxMessage,
-    ParseError,
     parse_csv,
     parse_datetime,
     parse_json,

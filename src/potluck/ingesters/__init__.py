@@ -1,9 +1,9 @@
 """Data source ingesters for Potluck."""
 
 from potluck.ingesters.base import (
+    ENTITY_TYPE_METHOD_MAP,
     BaseIngester,
     DetectionResult,
-    EntityCount,
     IngestionFilter,
     IngestMethod,
 )
@@ -21,7 +21,6 @@ from potluck.ingesters.hooks import (
     get_hook_registry,
 )
 from potluck.ingesters.registry import (
-    EXTENSION_TO_ENTITY_TYPE,
     IngesterRegistry,
     get_registry,
     register_ingester,
@@ -31,7 +30,7 @@ __all__ = [
     # Base classes
     "BaseIngester",
     "DetectionResult",
-    "EntityCount",
+    "ENTITY_TYPE_METHOD_MAP",
     "IngestionFilter",
     "IngestMethod",
     # Coordinator
@@ -51,5 +50,4 @@ __all__ = [
     "IngesterRegistry",
     "get_registry",
     "register_ingester",
-    "EXTENSION_TO_ENTITY_TYPE",
 ]

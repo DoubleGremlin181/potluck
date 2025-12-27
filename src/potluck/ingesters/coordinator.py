@@ -1,5 +1,6 @@
 """Ingestion coordinator for orchestrating data import pipelines."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,9 +26,67 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Type alias for discover function signature
+DiscoverFn = Callable[[Path], DiscoveryResult]
+
 
 # Default batch size for entity persistence
 DEFAULT_BATCH_SIZE = 100
+
+
+@dataclass
+class EntityBatch:
+    """Manages batched entity persistence.
+
+    Collects entities and flushes them to the database when the batch
+    reaches the configured size.
+    """
+
+    max_size: int
+    """Maximum number of entities before auto-flush."""
+
+    entities: dict[EntityType, list[BaseEntity]]
+    """Entities grouped by type."""
+
+    count: int = 0
+    """Current number of entities in batch."""
+
+    @classmethod
+    def create(cls, max_size: int = DEFAULT_BATCH_SIZE) -> "EntityBatch":
+        """Create a new empty batch.
+
+        Args:
+            max_size: Maximum batch size before flush.
+
+        Returns:
+            New EntityBatch instance.
+        """
+        return cls(max_size=max_size, entities={}, count=0)
+
+    def add(self, entity_type: EntityType, entity: BaseEntity) -> bool:
+        """Add an entity to the batch.
+
+        Args:
+            entity_type: Type of the entity.
+            entity: Entity to add.
+
+        Returns:
+            True if batch is full and should be flushed.
+        """
+        if entity_type not in self.entities:
+            self.entities[entity_type] = []
+        self.entities[entity_type].append(entity)
+        self.count += 1
+        return self.count >= self.max_size
+
+    def clear(self) -> None:
+        """Clear the batch after flushing."""
+        self.entities = {}
+        self.count = 0
+
+    def is_empty(self) -> bool:
+        """Check if batch has no entities."""
+        return self.count == 0
 
 
 @dataclass
@@ -67,6 +126,8 @@ class IngestionCoordinator:
         session: "Session",
         batch_size: int = DEFAULT_BATCH_SIZE,
         progress_callback: ProgressCallback | None = None,
+        hook_registry: HookRegistry | None = None,
+        discover_fn: DiscoverFn | None = None,
     ):
         """Initialize the coordinator.
 
@@ -74,10 +135,16 @@ class IngestionCoordinator:
             session: SQLModel session for database operations.
             batch_size: Number of entities to batch before committing.
             progress_callback: Optional callback for progress notifications.
+            hook_registry: Optional hook registry for notifications (default: global).
+            discover_fn: Optional discover function for testing (default: discover).
         """
         self.session = session
         self.batch_size = batch_size
         self.progress_callback = progress_callback or NoOpProgressCallback()
+        self._hook_registry = hook_registry or get_hook_registry()
+        self._discover_fn = discover_fn or discover
+        # In-memory cache of seen content hashes to avoid N+1 queries
+        self._seen_hashes: set[str] = set()
 
     def run(
         self,
@@ -106,7 +173,7 @@ class IngestionCoordinator:
             logger.debug(f"Source file hash: {file_hash}")
 
         # Discover source type and contents
-        discovery = discover(path)
+        discovery = self._discover_fn(path)
         if not discovery.has_content:
             logger.warning(f"No ingestable content found in: {path}")
             return self._create_empty_result(path, file_hash)
@@ -161,13 +228,14 @@ class IngestionCoordinator:
             import_run.completed_at = utc_now()
 
             # Notify hooks
-            get_hook_registry().notify_import_complete(import_run)
+            self._hook_registry.notify_import_complete(import_run)
 
         except Exception as e:
             logger.exception(f"Ingestion failed: {e}")
             import_run.status = ImportStatus.FAILED
             import_run.error_message = str(e)
             import_run.completed_at = utc_now()
+            self.session.commit()  # Persist failure status
 
         # Final flush
         tracker.flush()
@@ -279,11 +347,7 @@ class IngestionCoordinator:
             return
 
         ingester_instance = discovery.ingester()
-        hook_registry = get_hook_registry()
-
-        # Batch storage
-        batch: dict[EntityType, list[BaseEntity]] = {}
-        batch_count = 0
+        batch = EntityBatch.create(self.batch_size)
 
         for entity_type in entity_types:
             try:
@@ -301,26 +365,22 @@ class IngestionCoordinator:
                     tracker.increment()
                     continue
 
-                # Add to batch
-                if entity_type not in batch:
-                    batch[entity_type] = []
-                batch[entity_type].append(entity)
-                batch_count += 1
-
-                # Flush batch if full
-                if batch_count >= self.batch_size:
-                    self._flush_batch(batch, tracker, hook_registry)
-                    batch = {}
-                    batch_count = 0
+                # Add to batch and flush if full
+                if batch.add(entity_type, entity):
+                    self._flush_batch(batch, tracker)
+                    batch.clear()
 
                 tracker.increment()
 
         # Flush remaining entities
-        if batch:
-            self._flush_batch(batch, tracker, hook_registry)
+        if not batch.is_empty():
+            self._flush_batch(batch, tracker)
 
     def _is_duplicate(self, entity: BaseEntity) -> bool:
         """Check if an entity is a duplicate by content hash.
+
+        Uses an in-memory cache to avoid N+1 queries - if we've already seen
+        a hash in this ingestion run, we don't need to query the database again.
 
         Args:
             entity: Entity to check.
@@ -331,41 +391,54 @@ class IngestionCoordinator:
         if entity.content_hash is None:
             return False
 
+        # Check in-memory cache first (O(1) lookup)
+        if entity.content_hash in self._seen_hashes:
+            return True
+
         from sqlmodel import select
 
         # Get the model class for this entity
         model_class = type(entity)
 
-        stmt = select(model_class).where(model_class.content_hash == entity.content_hash).limit(1)
+        stmt = (
+            select(model_class.content_hash)
+            .where(model_class.content_hash == entity.content_hash)
+            .limit(1)
+        )
 
         existing = self.session.exec(stmt).first()
-        return existing is not None
+        if existing is not None:
+            # Add to cache so we don't query again for this hash
+            self._seen_hashes.add(entity.content_hash)
+            return True
+
+        # Not a duplicate - add to cache to prevent DB lookup if we see it again
+        self._seen_hashes.add(entity.content_hash)
+        return False
 
     def _flush_batch(
         self,
-        batch: dict[EntityType, list[BaseEntity]],
+        batch: EntityBatch,
         tracker: ProgressTracker,
-        hook_registry: "HookRegistry",
     ) -> None:
         """Flush a batch of entities to the database.
 
         Args:
-            batch: Entities to flush, grouped by type.
+            batch: EntityBatch to flush.
             tracker: Progress tracker.
-            hook_registry: Hook registry for notifications.
         """
         created_count = 0
 
-        for entity_type, entities in batch.items():
+        for entity_type, entities in batch.entities.items():
             for entity in entities:
                 self.session.add(entity)
                 created_count += 1
 
                 # Notify hooks for each entity
-                hook_registry.notify_entity_created(entity_type, entity)
+                self._hook_registry.notify_entity_created(entity_type, entity)
 
         self.session.commit()
         tracker.update_stats(created=created_count)
 
         # Notify hooks of batch completion
-        hook_registry.notify_batch_complete(batch)
+        self._hook_registry.notify_batch_complete(batch.entities)

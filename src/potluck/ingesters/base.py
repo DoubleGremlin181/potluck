@@ -2,70 +2,66 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, Field
 
 from potluck.models.base import EntityType, SourceType
-
-if TYPE_CHECKING:
-    from potluck.models import (
-        Bookmark,
-        BrowsingHistory,
-        CalendarEvent,
-        ChatMessage,
-        Email,
-        KnowledgeNote,
-        LocationVisit,
-        Media,
-        Person,
-        SocialComment,
-        SocialPost,
-        Transaction,
-    )
 
 # Type alias for ingest methods
 IngestMethod = Callable[[Path, "IngestionFilter | None"], Iterator[Any]]
 
 
-@dataclass
-class IngestionFilter:
+# Module-level mapping of entity types to ingest method names
+ENTITY_TYPE_METHOD_MAP: dict[EntityType, str] = {
+    EntityType.MEDIA: "ingest_media",
+    EntityType.CHAT_MESSAGE: "ingest_messages",
+    EntityType.EMAIL: "ingest_emails",
+    EntityType.SOCIAL_POST: "ingest_social_posts",
+    EntityType.SOCIAL_COMMENT: "ingest_social_comments",
+    EntityType.KNOWLEDGE_NOTE: "ingest_notes",
+    EntityType.CALENDAR_EVENT: "ingest_calendar_events",
+    EntityType.TRANSACTION: "ingest_transactions",
+    EntityType.LOCATION_VISIT: "ingest_location_visits",
+    EntityType.BROWSING_HISTORY: "ingest_browsing_history",
+    EntityType.BOOKMARK: "ingest_bookmarks",
+    EntityType.PERSON: "ingest_people",
+}
+
+
+class IngestionFilter(BaseModel):
     """Common filter fields for ingestion operations.
 
     Allows filtering entities by date range during ingestion.
     Ingesters use these filters to skip entities outside the specified range.
     """
 
-    since: datetime | None = None
-    """Only ingest entities occurring on or after this datetime."""
-
-    until: datetime | None = None
-    """Only ingest entities occurring before this datetime."""
-
-
-@dataclass
-class EntityCount:
-    """Count of entities found during content detection."""
-
-    entity_type: EntityType
-    count: int
-    description: str | None = None
+    since: datetime | None = Field(
+        default=None,
+        description="Only ingest entities occurring on or after this datetime",
+    )
+    until: datetime | None = Field(
+        default=None,
+        description="Only ingest entities occurring before this datetime",
+    )
 
 
-@dataclass
-class DetectionResult:
+class DetectionResult(BaseModel):
     """Result of detecting available entity types in a source."""
 
-    entity_counts: dict[EntityType, int] = field(default_factory=dict)
+    entity_counts: dict[EntityType, int] = Field(default_factory=dict)
     """Mapping of entity types to their counts."""
 
-    metadata: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, str] = Field(default_factory=dict)
     """Additional metadata about the detected content."""
 
     def total_entities(self) -> int:
         """Get total count of all entities."""
         return sum(self.entity_counts.values())
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class BaseIngester(ABC):
@@ -78,21 +74,25 @@ class BaseIngester(ABC):
     - Providing user-facing instructions for obtaining exports
 
     Subclasses must define class attributes and implement detect_contents().
-    They should also implement ingest methods for their supported entity types.
+    They should also implement ingest methods for their supported entity types
+    (e.g., ingest_media, ingest_messages, etc.).
     """
 
     # Class attributes - must be defined by subclasses
     SOURCE_TYPE: ClassVar[SourceType]
     """The source type enum value for this ingester."""
 
-    DETECTION_PATTERNS: ClassVar[list[str]]
-    """Regex patterns that match this source (e.g., r'Takeout-.*\\.zip')."""
+    FILENAME_PATTERNS: ClassVar[list[str]]
+    """Regex patterns matching source file/directory names (e.g., r'Takeout-.*\\.zip')."""
 
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]]
     """Entity types this ingester can produce."""
 
-    INSTRUCTIONS: ClassVar[str]
-    """Markdown instructions for how to obtain this export (for docs/web UI)."""
+    SUPPORTED_EXTENSIONS: ClassVar[dict[str, EntityType]] = {}
+    """File extensions this ingester handles (for generic detection)."""
+
+    INSTRUCTIONS: ClassVar[str] = ""
+    """Markdown instructions for how to obtain this export (fallback if no file)."""
 
     @abstractmethod
     def detect_contents(self, path: Path) -> DetectionResult:
@@ -110,210 +110,52 @@ class BaseIngester(ABC):
         """
         ...
 
-    def ingest_media(self, path: Path, filters: IngestionFilter | None = None) -> Iterator["Media"]:
-        """Ingest media entities from the source.
+    @classmethod
+    def get_instructions(cls) -> str:
+        """Load instructions from resource file, fallback to class attribute.
 
-        Override this method if the ingester supports EntityType.MEDIA.
+        Instructions are loaded from:
+        potluck/ingesters/resources/instructions/{source_type.value}.md
 
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            Media entities parsed from the source.
+        Returns:
+            Markdown instructions for obtaining this data export.
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support media ingestion")
+        try:
+            from importlib.resources import files
 
-    def ingest_messages(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["ChatMessage"]:
-        """Ingest chat message entities from the source.
+            resource = files("potluck.ingesters.resources.instructions").joinpath(
+                f"{cls.SOURCE_TYPE.value}.md"
+            )
+            return resource.read_text()
+        except (FileNotFoundError, AttributeError, TypeError):
+            return cls.INSTRUCTIONS
 
-        Override this method if the ingester supports EntityType.CHAT_MESSAGE.
+    @classmethod
+    def get_instructions_media_path(cls) -> Path | None:
+        """Get path to media folder for this ingester's instructions.
 
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
+        Media files (images, etc.) for instructions are stored in:
+        potluck/ingesters/resources/instructions/media/{source_type.value}/
 
-        Yields:
-            ChatMessage entities parsed from the source.
+        Returns:
+            Path to the media folder, or None if it doesn't exist.
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support message ingestion")
+        try:
+            from importlib.resources import files
 
-    def ingest_emails(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["Email"]:
-        """Ingest email entities from the source.
+            media_resource = files("potluck.ingesters.resources.instructions.media").joinpath(
+                cls.SOURCE_TYPE.value
+            )
+            media_path = Path(str(media_resource))
+            return media_path if media_path.is_dir() else None
+        except (FileNotFoundError, AttributeError, TypeError):
+            return None
 
-        Override this method if the ingester supports EntityType.EMAIL.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            Email entities parsed from the source.
-        """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support email ingestion")
-
-    def ingest_social_posts(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["SocialPost"]:
-        """Ingest social post entities from the source.
-
-        Override this method if the ingester supports EntityType.SOCIAL_POST.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            SocialPost entities parsed from the source.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support social post ingestion"
-        )
-
-    def ingest_social_comments(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["SocialComment"]:
-        """Ingest social comment entities from the source.
-
-        Override this method if the ingester supports EntityType.SOCIAL_COMMENT.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            SocialComment entities parsed from the source.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support social comment ingestion"
-        )
-
-    def ingest_notes(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["KnowledgeNote"]:
-        """Ingest knowledge note entities from the source.
-
-        Override this method if the ingester supports EntityType.KNOWLEDGE_NOTE.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            KnowledgeNote entities parsed from the source.
-        """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support note ingestion")
-
-    def ingest_calendar_events(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["CalendarEvent"]:
-        """Ingest calendar event entities from the source.
-
-        Override this method if the ingester supports EntityType.CALENDAR_EVENT.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            CalendarEvent entities parsed from the source.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support calendar event ingestion"
-        )
-
-    def ingest_transactions(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["Transaction"]:
-        """Ingest transaction entities from the source.
-
-        Override this method if the ingester supports EntityType.TRANSACTION.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            Transaction entities parsed from the source.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support transaction ingestion"
-        )
-
-    def ingest_location_visits(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["LocationVisit"]:
-        """Ingest location visit entities from the source.
-
-        Override this method if the ingester supports EntityType.LOCATION_VISIT.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            LocationVisit entities parsed from the source.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support location visit ingestion"
-        )
-
-    def ingest_browsing_history(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["BrowsingHistory"]:
-        """Ingest browsing history entities from the source.
-
-        Override this method if the ingester supports EntityType.BROWSING_HISTORY.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            BrowsingHistory entities parsed from the source.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support browsing history ingestion"
-        )
-
-    def ingest_bookmarks(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["Bookmark"]:
-        """Ingest bookmark entities from the source.
-
-        Override this method if the ingester supports EntityType.BOOKMARK.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            Bookmark entities parsed from the source.
-        """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support bookmark ingestion")
-
-    def ingest_people(
-        self, path: Path, filters: IngestionFilter | None = None
-    ) -> Iterator["Person"]:
-        """Ingest person entities from the source.
-
-        Override this method if the ingester supports EntityType.PERSON.
-
-        Args:
-            path: Path to the source data.
-            filters: Optional date range filters.
-
-        Yields:
-            Person entities parsed from the source.
-        """
-        raise NotImplementedError(f"{self.__class__.__name__} does not support person ingestion")
-
-    def get_ingest_method(self, entity_type: EntityType) -> "IngestMethod":
+    def get_ingest_method(self, entity_type: EntityType) -> IngestMethod:
         """Get the ingest method for a given entity type.
+
+        Subclasses should implement the specific ingest methods they support
+        (e.g., ingest_media, ingest_messages, etc.).
 
         Args:
             entity_type: The entity type to get the method for.
@@ -322,22 +164,16 @@ class BaseIngester(ABC):
             The ingest method callable.
 
         Raises:
-            ValueError: If the entity type is not supported.
+            ValueError: If the entity type is unknown.
+            NotImplementedError: If the ingester doesn't support this entity type.
         """
-        method_map: dict[EntityType, IngestMethod] = {
-            EntityType.MEDIA: self.ingest_media,
-            EntityType.CHAT_MESSAGE: self.ingest_messages,
-            EntityType.EMAIL: self.ingest_emails,
-            EntityType.SOCIAL_POST: self.ingest_social_posts,
-            EntityType.SOCIAL_COMMENT: self.ingest_social_comments,
-            EntityType.KNOWLEDGE_NOTE: self.ingest_notes,
-            EntityType.CALENDAR_EVENT: self.ingest_calendar_events,
-            EntityType.TRANSACTION: self.ingest_transactions,
-            EntityType.LOCATION_VISIT: self.ingest_location_visits,
-            EntityType.BROWSING_HISTORY: self.ingest_browsing_history,
-            EntityType.BOOKMARK: self.ingest_bookmarks,
-            EntityType.PERSON: self.ingest_people,
-        }
-        if entity_type not in method_map:
+        method_name = ENTITY_TYPE_METHOD_MAP.get(entity_type)
+        if method_name is None:
             raise ValueError(f"Unknown entity type: {entity_type}")
-        return method_map[entity_type]
+
+        method: IngestMethod | None = getattr(self, method_name, None)
+        if method is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} does not support {entity_type.value} ingestion"
+            )
+        return method

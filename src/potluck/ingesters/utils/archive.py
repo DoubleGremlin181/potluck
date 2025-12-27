@@ -9,27 +9,16 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from potluck.core.exceptions import ExtractionError, UnsupportedArchiveError
 from potluck.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class ArchiveError(Exception):
-    """Base exception for archive-related errors."""
-
-    pass
-
-
-class UnsupportedArchiveError(ArchiveError):
-    """Raised when the archive format is not supported."""
-
-    pass
-
-
-class ExtractionError(ArchiveError):
-    """Raised when archive extraction fails."""
-
-    pass
+# Safety limits for archive extraction (zip bomb protection)
+MAX_FILES = 100_000  # Maximum number of files to extract
+MAX_TOTAL_SIZE = 10 * 1024 * 1024 * 1024  # 10 GB total extracted size
+MAX_COMPRESSION_RATIO = 100  # Suspicious if compression ratio exceeds this
 
 
 @dataclass
@@ -106,6 +95,28 @@ def get_archive_type(path: Path) -> str | None:
     return None
 
 
+def _is_safe_path(dest_path: Path, member_name: str) -> bool:
+    """Check if an archive member path is safe (doesn't escape destination).
+
+    Uses path resolution to detect path traversal attacks including encoded variants.
+
+    Args:
+        dest_path: The destination directory for extraction.
+        member_name: The member name from the archive.
+
+    Returns:
+        True if the path is safe, False if it could escape the destination.
+    """
+    try:
+        # Resolve the absolute path of what would be extracted
+        full_path = (dest_path / member_name).resolve()
+        dest_resolved = dest_path.resolve()
+        # Check that the resolved path is within the destination
+        return full_path.is_relative_to(dest_resolved)
+    except (ValueError, OSError):
+        return False
+
+
 def extract_archive(
     archive_path: Path,
     dest_path: Path | None = None,
@@ -130,15 +141,15 @@ def extract_archive(
         raise UnsupportedArchiveError(f"Unsupported archive format: {archive_path}")
 
     is_temporary = dest_path is None
-    if dest_path is None:
-        dest_path = Path(tempfile.mkdtemp(prefix="potluck_extract_"))
-
-    # At this point dest_path is guaranteed to be a Path (not None)
-    final_dest: Path = dest_path
-
-    logger.info(f"Extracting {archive_path} to {final_dest}")
+    final_dest: Path | None = dest_path
 
     try:
+        # Create temp directory inside try block to handle mkdtemp failures
+        if final_dest is None:
+            final_dest = Path(tempfile.mkdtemp(prefix="potluck_extract_"))
+
+        logger.info(f"Extracting {archive_path} to {final_dest}")
+
         if archive_type == "zip":
             _extract_zip(archive_path, final_dest)
         else:
@@ -156,33 +167,76 @@ def extract_archive(
 
     except Exception as e:
         # Clean up on failure if we created a temp directory
-        if is_temporary and final_dest.exists():
+        if is_temporary and final_dest is not None and final_dest.exists():
             shutil.rmtree(final_dest)
         raise ExtractionError(f"Failed to extract {archive_path}: {e}") from e
 
 
-def _extract_zip(archive_path: Path, dest_path: Path) -> None:
-    """Extract a ZIP archive.
+def _extract_zip(
+    archive_path: Path,
+    dest_path: Path,
+    max_files: int = MAX_FILES,
+    max_total_size: int = MAX_TOTAL_SIZE,
+) -> None:
+    """Extract a ZIP archive with security checks.
 
     Args:
         archive_path: Path to the ZIP file.
         dest_path: Destination directory.
+        max_files: Maximum number of files to extract.
+        max_total_size: Maximum total uncompressed size.
+
+    Raises:
+        ExtractionError: If security checks fail or extraction fails.
     """
     with zipfile.ZipFile(archive_path, "r") as zf:
-        # Security check: prevent path traversal
+        infos = zf.infolist()
+
+        # Check file count (zip bomb protection)
+        if len(infos) > max_files:
+            raise ExtractionError(f"Archive contains too many files: {len(infos)} > {max_files}")
+
+        # Check total uncompressed size (zip bomb protection)
+        total_size = sum(info.file_size for info in infos)
+        if total_size > max_total_size:
+            raise ExtractionError(
+                f"Archive uncompressed size too large: {total_size} > {max_total_size}"
+            )
+
+        # Check compression ratio (zip bomb detection)
+        archive_size = archive_path.stat().st_size
+        if archive_size > 0 and total_size / archive_size > MAX_COMPRESSION_RATIO:
+            raise ExtractionError(
+                f"Suspicious compression ratio: {total_size / archive_size:.0f}x "
+                f"exceeds limit of {MAX_COMPRESSION_RATIO}x"
+            )
+
+        # Security check: prevent path traversal using proper resolution
         for name in zf.namelist():
-            if name.startswith("/") or ".." in name:
-                raise ExtractionError(f"Unsafe path in archive: {name}")
+            if not _is_safe_path(dest_path, name):
+                raise ExtractionError(f"Path traversal detected in archive: {name}")
+
         zf.extractall(dest_path)
 
 
-def _extract_tar(archive_path: Path, dest_path: Path, archive_type: str) -> None:
-    """Extract a TAR archive (optionally compressed).
+def _extract_tar(
+    archive_path: Path,
+    dest_path: Path,
+    archive_type: str,
+    max_files: int = MAX_FILES,
+    max_total_size: int = MAX_TOTAL_SIZE,
+) -> None:
+    """Extract a TAR archive (optionally compressed) with security checks.
 
     Args:
         archive_path: Path to the TAR file.
         dest_path: Destination directory.
         archive_type: Type of compression ('tar', 'tgz', 'tbz2').
+        max_files: Maximum number of files to extract.
+        max_total_size: Maximum total uncompressed size.
+
+    Raises:
+        ExtractionError: If security checks fail or extraction fails.
     """
     mode = "r:"
     if archive_type == "tgz":
@@ -191,10 +245,32 @@ def _extract_tar(archive_path: Path, dest_path: Path, archive_type: str) -> None
         mode = "r:bz2"
 
     with tarfile.open(str(archive_path), mode) as tf:  # type: ignore[call-overload]
-        # Security check: prevent path traversal
-        for member in tf.getmembers():
-            if member.name.startswith("/") or ".." in member.name:
-                raise ExtractionError(f"Unsafe path in archive: {member.name}")
+        members = tf.getmembers()
+
+        # Check file count (zip bomb protection)
+        if len(members) > max_files:
+            raise ExtractionError(f"Archive contains too many files: {len(members)} > {max_files}")
+
+        # Check total uncompressed size (zip bomb protection)
+        total_size = sum(m.size for m in members if m.isfile())
+        if total_size > max_total_size:
+            raise ExtractionError(
+                f"Archive uncompressed size too large: {total_size} > {max_total_size}"
+            )
+
+        # Check compression ratio (zip bomb detection)
+        archive_size = archive_path.stat().st_size
+        if archive_size > 0 and total_size / archive_size > MAX_COMPRESSION_RATIO:
+            raise ExtractionError(
+                f"Suspicious compression ratio: {total_size / archive_size:.0f}x "
+                f"exceeds limit of {MAX_COMPRESSION_RATIO}x"
+            )
+
+        # Security check: prevent path traversal using proper resolution
+        for member in members:
+            if not _is_safe_path(dest_path, member.name):
+                raise ExtractionError(f"Path traversal detected in archive: {member.name}")
+
         tf.extractall(dest_path, filter="data")
 
 

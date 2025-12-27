@@ -1,14 +1,17 @@
 """Ingester registry for discovering and managing data source ingesters."""
 
 import re
+import threading
 from pathlib import Path
 
+from potluck.ingesters.utils.registry_base import BaseRegistry
 from potluck.models.base import EntityType
 
 from .base import BaseIngester
 
-# File extension to EntityType mapping for generic content detection
-EXTENSION_TO_ENTITY_TYPE: dict[str, EntityType] = {
+# Default file extension to EntityType mapping for generic content detection
+# Ingesters can add to this via their SUPPORTED_EXTENSIONS class attribute
+DEFAULT_EXTENSION_TO_ENTITY_TYPE: dict[str, EntityType] = {
     # Media files
     ".jpg": EntityType.MEDIA,
     ".jpeg": EntityType.MEDIA,
@@ -42,56 +45,39 @@ EXTENSION_TO_ENTITY_TYPE: dict[str, EntityType] = {
 }
 
 
-class IngesterRegistry:
+class IngesterRegistry(BaseRegistry[type[BaseIngester]]):
     """Registry for managing and discovering ingesters.
 
     The registry maintains a collection of registered ingester classes and
     provides methods for detecting which ingester should handle a given path.
 
-    This is implemented as a singleton to ensure consistent registration
-    across the application.
+    This is implemented as a thread-safe singleton to ensure consistent
+    registration across the application.
     """
 
     _instance: "IngesterRegistry | None" = None
-    _ingesters: list[type[BaseIngester]]
+    _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> "IngesterRegistry":
-        """Create or return the singleton instance."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._ingesters = []
-        return cls._instance
+        """Create or return the singleton instance (thread-safe)."""
+        return cls._create_singleton()  # type: ignore[return-value]
 
-    def register(self, ingester: type[BaseIngester]) -> None:
-        """Register an ingester class.
-
-        Args:
-            ingester: The ingester class to register.
-        """
-        if ingester not in self._ingesters:
-            self._ingesters.append(ingester)
-
-    def unregister(self, ingester: type[BaseIngester]) -> None:
-        """Unregister an ingester class.
-
-        Args:
-            ingester: The ingester class to unregister.
-        """
-        if ingester in self._ingesters:
-            self._ingesters.remove(ingester)
-
-    def get_all(self) -> list[type[BaseIngester]]:
-        """Get all registered ingesters.
+    def get_extension_map(self) -> dict[str, EntityType]:
+        """Build extension map from defaults plus registered ingesters.
 
         Returns:
-            List of all registered ingester classes.
+            Dict mapping file extensions to EntityType.
         """
-        return list(self._ingesters)
+        extensions = dict(DEFAULT_EXTENSION_TO_ENTITY_TYPE)
+        with self._lock:
+            for ingester in self._items:
+                extensions.update(ingester.SUPPORTED_EXTENSIONS)
+        return extensions
 
     def detect(self, path: Path) -> type[BaseIngester] | None:
         """Detect which ingester should handle the given path.
 
-        Matches the path name against all registered ingester DETECTION_PATTERNS.
+        Matches the path name against all registered ingester FILENAME_PATTERNS.
         Returns the first matching ingester.
 
         Args:
@@ -102,10 +88,11 @@ class IngesterRegistry:
         """
         path_name = path.name
 
-        for ingester in self._ingesters:
-            for pattern in ingester.DETECTION_PATTERNS:
-                if re.match(pattern, path_name, re.IGNORECASE):
-                    return ingester
+        with self._lock:
+            for ingester in self._items:
+                for pattern in ingester.FILENAME_PATTERNS:
+                    if re.match(pattern, path_name, re.IGNORECASE):
+                        return ingester
 
         return None
 
@@ -121,26 +108,23 @@ class IngesterRegistry:
         Returns:
             Dict mapping EntityType to count of files found.
         """
+        extension_map = self.get_extension_map()
         counts: dict[EntityType, int] = {}
 
         if path.is_file():
             ext = path.suffix.lower()
-            if ext in EXTENSION_TO_ENTITY_TYPE:
-                entity_type = EXTENSION_TO_ENTITY_TYPE[ext]
+            if ext in extension_map:
+                entity_type = extension_map[ext]
                 counts[entity_type] = 1
         elif path.is_dir():
             for file_path in path.rglob("*"):
                 if file_path.is_file():
                     ext = file_path.suffix.lower()
-                    if ext in EXTENSION_TO_ENTITY_TYPE:
-                        entity_type = EXTENSION_TO_ENTITY_TYPE[ext]
+                    if ext in extension_map:
+                        entity_type = extension_map[ext]
                         counts[entity_type] = counts.get(entity_type, 0) + 1
 
         return counts
-
-    def clear(self) -> None:
-        """Clear all registered ingesters. Useful for testing."""
-        self._ingesters = []
 
 
 def get_registry() -> IngesterRegistry:
@@ -150,6 +134,14 @@ def get_registry() -> IngesterRegistry:
         The singleton IngesterRegistry instance.
     """
     return IngesterRegistry()
+
+
+def clear_registry() -> None:
+    """Clear the registry singleton for testing.
+
+    This clears all registered ingesters without destroying the singleton.
+    """
+    get_registry().clear()
 
 
 def register_ingester(ingester: type[BaseIngester]) -> type[BaseIngester]:

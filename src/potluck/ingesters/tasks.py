@@ -59,8 +59,8 @@ class CeleryProgressCallback(ProgressCallback):
                 if isinstance(meta, dict):
                     meta["current_file"] = filename
                     self.task.update_state(state="PROGRESS", meta=meta)
-            except Exception:
-                pass  # Ignore errors in progress updates
+            except Exception as e:
+                logger.debug(f"Progress update failed (non-critical): {e}")
 
     def on_stats_update(self, stats: IngestionStats) -> None:
         """Update task state with statistics."""
@@ -76,8 +76,8 @@ class CeleryProgressCallback(ProgressCallback):
                         "failed": stats.failed,
                     }
                     self.task.update_state(state="PROGRESS", meta=meta)
-            except Exception:
-                pass  # Ignore errors in progress updates
+            except Exception as e:
+                logger.debug(f"Stats update failed (non-critical): {e}")
 
 
 def is_transient_error(exc: Exception) -> bool:
