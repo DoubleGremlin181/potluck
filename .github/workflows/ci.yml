@@ -59,6 +59,21 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: potluck
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: potluck
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -72,6 +87,21 @@ jobs:
 
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          POSTGRES_USER=potluck
+          POSTGRES_PASSWORD=testpassword
+          POSTGRES_DB=potluck
+          POSTGRES_HOST=localhost
+          POSTGRES_PORT=5432
+          EOF
+
+      - name: Run migrations
+        run: |
+          export DATABASE_URL="postgresql://potluck:testpassword@localhost:5432/potluck"
+          alembic upgrade head
 
       - name: Run E2E tests
         run: pytest tests/integration/ -v --run-e2e
