@@ -2,28 +2,23 @@
 
 import tempfile
 import zipfile
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from potluck.ingesters.base import (
+from potluck.ingesters import (
     BaseIngester,
     DetectionResult,
+    DiscoveryResult,
     IngestionFilter,
-)
-from potluck.ingesters.discover import discover
-from potluck.ingesters.hooks import (
-    HookRegistry,
-    LoggingHook,
-    get_hook_registry,
-)
-from potluck.ingesters.registry import (
-    DEFAULT_EXTENSION_TO_ENTITY_TYPE,
-    IngesterRegistry,
-    get_registry,
-    register_ingester,
+    IngestionStats,
+    clear_registry,
+    detect_ingester,
+    discover,
+    list_ingesters,
+    register,
 )
 from potluck.ingesters.utils.archive import (
     extract_archive,
@@ -37,11 +32,7 @@ from potluck.ingesters.utils.parsers import (
     parse_datetime,
     parse_json,
 )
-from potluck.ingesters.utils.progress import (
-    IngestionStats,
-    LoggingProgressCallback,
-)
-from potluck.models.base import EntityType, SourceType
+from potluck.models.base import BaseEntity, EntityType, SourceType
 
 
 class TestEntityType:
@@ -91,100 +82,64 @@ class TestIngestionFilter:
 
 
 class TestIngesterRegistry:
-    """Tests for IngesterRegistry."""
+    """Tests for ingester registration."""
 
     def setup_method(self) -> None:
         """Clear registry before each test."""
-        get_registry().clear()
-
-    def test_singleton_pattern(self) -> None:
-        """Registry is a singleton."""
-        r1 = IngesterRegistry()
-        r2 = IngesterRegistry()
-        assert r1 is r2
-
-    def test_get_registry_returns_singleton(self) -> None:
-        """get_registry returns the singleton."""
-        r1 = get_registry()
-        r2 = get_registry()
-        assert r1 is r2
+        clear_registry()
 
     def test_register_ingester(self) -> None:
         """Can register an ingester class."""
 
+        @register
         class MockIngester(BaseIngester):
             SOURCE_TYPE = SourceType.GENERIC
             FILENAME_PATTERNS = [r"mock-.*"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
-            INSTRUCTIONS = "Test instructions"
 
             def detect_contents(self, path: Path) -> DetectionResult:
                 return DetectionResult()
 
-        registry = get_registry()
-        registry.register(MockIngester)
-        assert MockIngester in registry.get_all()
+            def ingest(
+                self,
+                path: Path,
+                entity_types: set[EntityType],
+                filters: IngestionFilter | None = None,
+            ) -> Iterator[BaseEntity]:
+                yield from []
+
+        assert MockIngester in list_ingesters()
 
     def test_detect_no_match(self) -> None:
-        """detect() returns None when no pattern matches."""
-        registry = get_registry()
-        result = registry.detect(Path("unknown-file.xyz"))
+        """detect_ingester() returns None when no pattern matches."""
+        result = detect_ingester(Path("unknown-file.xyz"))
         assert result is None
 
     def test_detect_with_pattern_match(self) -> None:
-        """detect() returns ingester when pattern matches."""
+        """detect_ingester() returns ingester when pattern matches."""
 
+        @register
         class MockIngester(BaseIngester):
             SOURCE_TYPE = SourceType.GENERIC
             FILENAME_PATTERNS = [r"test-export-.*\.zip"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
-            INSTRUCTIONS = "Test"
 
             def detect_contents(self, path: Path) -> DetectionResult:
                 return DetectionResult()
 
-        registry = get_registry()
-        registry.register(MockIngester)
+            def ingest(
+                self,
+                path: Path,
+                entity_types: set[EntityType],
+                filters: IngestionFilter | None = None,
+            ) -> Iterator[BaseEntity]:
+                yield from []
 
-        result = registry.detect(Path("test-export-2024.zip"))
+        result = detect_ingester(Path("test-export-2024.zip"))
         assert result is MockIngester
 
-        result = registry.detect(Path("other-file.zip"))
+        result = detect_ingester(Path("other-file.zip"))
         assert result is None
-
-    def test_register_decorator(self) -> None:
-        """@register_ingester decorator works."""
-
-        @register_ingester
-        class DecoratedIngester(BaseIngester):
-            SOURCE_TYPE = SourceType.GENERIC
-            FILENAME_PATTERNS = [r"decorated-.*"]
-            SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
-            INSTRUCTIONS = "Test"
-
-            def detect_contents(self, path: Path) -> DetectionResult:
-                return DetectionResult()
-
-        assert DecoratedIngester in get_registry().get_all()
-
-
-class TestExtensionToEntityType:
-    """Tests for DEFAULT_EXTENSION_TO_ENTITY_TYPE mapping."""
-
-    def test_image_extensions(self) -> None:
-        """Image extensions map to MEDIA."""
-        for ext in [".jpg", ".jpeg", ".png", ".gif", ".heic"]:
-            assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[ext] == EntityType.MEDIA
-
-    def test_text_extensions(self) -> None:
-        """Text extensions map to KNOWLEDGE_NOTE."""
-        for ext in [".txt", ".md", ".markdown"]:
-            assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[ext] == EntityType.KNOWLEDGE_NOTE
-
-    def test_email_extensions(self) -> None:
-        """Email extensions map to EMAIL."""
-        assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[".mbox"] == EntityType.EMAIL
-        assert DEFAULT_EXTENSION_TO_ENTITY_TYPE[".eml"] == EntityType.EMAIL
 
 
 class TestArchiveUtils:
@@ -375,8 +330,8 @@ class TestDedupUtils:
         assert len(h) == 64
 
 
-class TestProgressTracking:
-    """Tests for progress tracking utilities."""
+class TestIngestionStats:
+    """Tests for IngestionStats."""
 
     def test_ingestion_stats_default(self) -> None:
         """IngestionStats has zero defaults."""
@@ -392,70 +347,13 @@ class TestProgressTracking:
         stats = IngestionStats(created=10, updated=5, skipped=3, failed=2)
         assert stats.total_processed == 20
 
-    def test_logging_progress_callback(self) -> None:
-        """LoggingProgressCallback doesn't raise."""
-        callback = LoggingProgressCallback(log_interval=1)
-        callback.on_progress(50, 100, 50.0)
-        callback.on_file_change("test.txt")
-        callback.on_stats_update(IngestionStats(created=5))
-
-
-class TestHookRegistry:
-    """Tests for ingestion hooks."""
-
-    def setup_method(self) -> None:
-        """Clear hooks before each test."""
-        get_hook_registry().clear()
-
-    def test_singleton_pattern(self) -> None:
-        """HookRegistry is a singleton."""
-        r1 = HookRegistry()
-        r2 = HookRegistry()
-        assert r1 is r2
-
-    def test_register_hook(self) -> None:
-        """Can register a hook."""
-        registry = get_hook_registry()
-        hook = LoggingHook()
-        registry.register(hook)
-        assert hook in registry.get_all()
-
-    def test_unregister_hook(self) -> None:
-        """Can unregister a hook."""
-        registry = get_hook_registry()
-        hook = LoggingHook()
-        registry.register(hook)
-        registry.unregister(hook)
-        assert hook not in registry.get_all()
-
-    def test_notify_does_not_raise(self) -> None:
-        """Hook notifications don't raise on hook errors."""
-        registry = get_hook_registry()
-
-        class FailingHook:
-            def on_entity_created(self, entity_type: Any, entity: Any) -> None:
-                raise RuntimeError("Hook failed")
-
-            def on_batch_complete(self, entities: Any) -> None:
-                raise RuntimeError("Hook failed")
-
-            def on_import_complete(self, import_run: Any) -> None:
-                raise RuntimeError("Hook failed")
-
-        registry.register(FailingHook())
-
-        # These should not raise - passing None to test error handling
-        registry.notify_entity_created(EntityType.MEDIA, None)  # type: ignore[arg-type]
-        registry.notify_batch_complete({})
-        registry.notify_import_complete(None)  # type: ignore[arg-type]
-
 
 class TestDiscovery:
     """Tests for source discovery."""
 
     def setup_method(self) -> None:
         """Clear registry before each test."""
-        get_registry().clear()
+        clear_registry()
 
     def test_discover_nonexistent_path(self) -> None:
         """discover() raises for nonexistent paths."""
@@ -463,34 +361,66 @@ class TestDiscovery:
             discover(Path("/nonexistent/path"))
 
     def test_discover_empty_directory(self) -> None:
-        """discover() handles empty directories."""
+        """discover() handles empty directories with no matching ingester."""
         with tempfile.TemporaryDirectory() as tmpdir:
             result = discover(Path(tmpdir))
+            # No ingester matches, so is_generic=True and no content
             assert result.is_generic
             assert not result.has_content
 
-    def test_discover_directory_with_images(self) -> None:
-        """discover() finds image files in directories."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            # Create some dummy image files
-            (tmppath / "photo1.jpg").write_bytes(b"fake jpeg")
-            (tmppath / "photo2.png").write_bytes(b"fake png")
+    def test_discover_with_registered_ingester(self) -> None:
+        """discover() uses registered ingester when pattern matches."""
 
-            result = discover(tmppath)
-            assert result.is_generic
+        @register
+        class MockIngester(BaseIngester):
+            SOURCE_TYPE = SourceType.GENERIC
+            FILENAME_PATTERNS = [r"test-data"]
+            SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
+
+            def detect_contents(self, path: Path) -> DetectionResult:
+                # Count files in the directory
+                count = sum(1 for f in path.rglob("*") if f.is_file())
+                return DetectionResult(entity_counts={EntityType.MEDIA: count})
+
+            def ingest(
+                self,
+                path: Path,
+                entity_types: set[EntityType],
+                filters: IngestionFilter | None = None,
+            ) -> Iterator[BaseEntity]:
+                yield from []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a directory matching the pattern
+            test_dir = Path(tmpdir) / "test-data"
+            test_dir.mkdir()
+            (test_dir / "photo1.jpg").write_bytes(b"fake jpeg")
+            (test_dir / "photo2.png").write_bytes(b"fake png")
+
+            result = discover(test_dir)
+            assert not result.is_generic  # Ingester matched
             assert result.has_content
             assert EntityType.MEDIA in result.available_entities
             assert result.available_entities[EntityType.MEDIA] == 2
 
-    def test_discover_with_mixed_content(self) -> None:
-        """discover() finds mixed content types."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            (tmppath / "image.jpg").write_bytes(b"fake")
-            (tmppath / "notes.md").write_text("# Notes")
 
-            result = discover(tmppath)
-            assert result.is_generic
-            assert EntityType.MEDIA in result.available_entities
-            assert EntityType.KNOWLEDGE_NOTE in result.available_entities
+class TestDiscoveryResult:
+    """Tests for DiscoveryResult dataclass."""
+
+    def test_discovery_result_is_generic(self) -> None:
+        """is_generic returns True when no ingester."""
+        result = DiscoveryResult(source_path=Path("/test"))
+        assert result.is_generic
+
+    def test_discovery_result_has_content(self) -> None:
+        """has_content returns True when entities found."""
+        result = DiscoveryResult(
+            source_path=Path("/test"),
+            available_entities={EntityType.MEDIA: 5},
+        )
+        assert result.has_content
+
+    def test_discovery_result_source_type(self) -> None:
+        """source_type returns GENERIC when no ingester."""
+        result = DiscoveryResult(source_path=Path("/test"))
+        assert result.source_type == SourceType.GENERIC

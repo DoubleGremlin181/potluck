@@ -1,34 +1,15 @@
 """Base ingester protocol and common types for data ingestion."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from datetime import datetime
+from importlib.resources import files
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
-from potluck.models.base import EntityType, SourceType
-
-# Type alias for ingest methods
-IngestMethod = Callable[[Path, "IngestionFilter | None"], Iterator[Any]]
-
-
-# Module-level mapping of entity types to ingest method names
-ENTITY_TYPE_METHOD_MAP: dict[EntityType, str] = {
-    EntityType.MEDIA: "ingest_media",
-    EntityType.CHAT_MESSAGE: "ingest_messages",
-    EntityType.EMAIL: "ingest_emails",
-    EntityType.SOCIAL_POST: "ingest_social_posts",
-    EntityType.SOCIAL_COMMENT: "ingest_social_comments",
-    EntityType.KNOWLEDGE_NOTE: "ingest_notes",
-    EntityType.CALENDAR_EVENT: "ingest_calendar_events",
-    EntityType.TRANSACTION: "ingest_transactions",
-    EntityType.LOCATION_VISIT: "ingest_location_visits",
-    EntityType.BROWSING_HISTORY: "ingest_browsing_history",
-    EntityType.BOOKMARK: "ingest_bookmarks",
-    EntityType.PERSON: "ingest_people",
-}
+from potluck.models.base import BaseEntity, EntityType, SourceType
 
 
 class IngestionFilter(BaseModel):
@@ -73,9 +54,42 @@ class BaseIngester(ABC):
     - Parsing and yielding entities from the source data
     - Providing user-facing instructions for obtaining exports
 
-    Subclasses must define class attributes and implement detect_contents().
-    They should also implement ingest methods for their supported entity types
-    (e.g., ingest_media, ingest_messages, etc.).
+    Class Attributes:
+        SOURCE_TYPE: The SourceType enum value for this ingester.
+        FILENAME_PATTERNS: Regex patterns for auto-detecting this source by filename.
+        SUPPORTED_ENTITY_TYPES: Entity types this ingester can produce.
+
+    Implementation Pattern:
+        For sources with multiple entity types (e.g., Google Takeout with photos
+        AND emails), organize your ingester with private methods per entity type:
+
+        class GoogleTakeoutIngester(BaseIngester):
+            def ingest(self, path, entity_types, filters):
+                if EntityType.MEDIA in entity_types:
+                    yield from self._ingest_media(path, filters)
+                if EntityType.EMAIL in entity_types:
+                    yield from self._ingest_emails(path, filters)
+
+            def _ingest_media(self, path, filters):
+                # Media-specific parsing logic
+                ...
+
+            def _ingest_emails(self, path, filters):
+                # Email-specific parsing logic
+                ...
+
+    Usage:
+        @register
+        class GoogleTakeoutIngester(BaseIngester):
+            SOURCE_TYPE = SourceType.GOOGLE_TAKEOUT
+            FILENAME_PATTERNS = [r"takeout-.*\\.zip"]
+            SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA, EntityType.EMAIL}
+
+            def detect_contents(self, path: Path) -> DetectionResult:
+                ...
+
+            def ingest(self, path, entity_types, filters) -> Iterator[BaseEntity]:
+                ...
     """
 
     # Class attributes - must be defined by subclasses
@@ -87,12 +101,6 @@ class BaseIngester(ABC):
 
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]]
     """Entity types this ingester can produce."""
-
-    SUPPORTED_EXTENSIONS: ClassVar[dict[str, EntityType]] = {}
-    """File extensions this ingester handles (for generic detection)."""
-
-    INSTRUCTIONS: ClassVar[str] = ""
-    """Markdown instructions for how to obtain this export (fallback if no file)."""
 
     @abstractmethod
     def detect_contents(self, path: Path) -> DetectionResult:
@@ -110,70 +118,69 @@ class BaseIngester(ABC):
         """
         ...
 
-    @classmethod
-    def get_instructions(cls) -> str:
-        """Load instructions from resource file, fallback to class attribute.
+    @abstractmethod
+    def ingest(
+        self,
+        path: Path,
+        entity_types: set[EntityType],
+        filters: IngestionFilter | None = None,
+    ) -> Iterator[BaseEntity]:
+        """Yield entities from the source.
 
-        Instructions are loaded from:
-        potluck/ingesters/resources/instructions/{source_type.value}.md
+        This is the main ingestion method. It should iterate through the source
+        data and yield entities of the requested types, applying any filters.
 
-        Returns:
-            Markdown instructions for obtaining this data export.
-        """
-        try:
-            from importlib.resources import files
+        For complex sources with multiple entity types, delegate to private
+        methods per entity type for cleaner code organization:
 
-            resource = files("potluck.ingesters.resources.instructions").joinpath(
-                f"{cls.SOURCE_TYPE.value}.md"
-            )
-            return resource.read_text()
-        except (FileNotFoundError, AttributeError, TypeError):
-            return cls.INSTRUCTIONS
-
-    @classmethod
-    def get_instructions_media_path(cls) -> Path | None:
-        """Get path to media folder for this ingester's instructions.
-
-        Media files (images, etc.) for instructions are stored in:
-        potluck/ingesters/resources/instructions/media/{source_type.value}/
-
-        Returns:
-            Path to the media folder, or None if it doesn't exist.
-        """
-        try:
-            from importlib.resources import files
-
-            media_resource = files("potluck.ingesters.resources.instructions.media").joinpath(
-                cls.SOURCE_TYPE.value
-            )
-            media_path = Path(str(media_resource))
-            return media_path if media_path.is_dir() else None
-        except (FileNotFoundError, AttributeError, TypeError):
-            return None
-
-    def get_ingest_method(self, entity_type: EntityType) -> IngestMethod:
-        """Get the ingest method for a given entity type.
-
-        Subclasses should implement the specific ingest methods they support
-        (e.g., ingest_media, ingest_messages, etc.).
+            def ingest(self, path, entity_types, filters):
+                if EntityType.MEDIA in entity_types:
+                    yield from self._ingest_media(path, filters)
+                if EntityType.EMAIL in entity_types:
+                    yield from self._ingest_emails(path, filters)
 
         Args:
-            entity_type: The entity type to get the method for.
+            path: Path to the extracted source data.
+            entity_types: Set of entity types to ingest.
+            filters: Optional date range filters.
+
+        Yields:
+            BaseEntity instances (Media, ChatMessage, Email, etc.)
+        """
+        ...
+
+    @classmethod
+    def get_instructions(cls) -> str:
+        """Load instructions from the ingester's package.
+
+        Instructions are loaded from:
+        potluck/ingesters/{source_type}/instructions.md
 
         Returns:
-            The ingest method callable.
-
-        Raises:
-            ValueError: If the entity type is unknown.
-            NotImplementedError: If the ingester doesn't support this entity type.
+            Markdown instructions for obtaining this data export,
+            or empty string if no instructions file exists.
         """
-        method_name = ENTITY_TYPE_METHOD_MAP.get(entity_type)
-        if method_name is None:
-            raise ValueError(f"Unknown entity type: {entity_type}")
+        try:
+            package_name = f"potluck.ingesters.{cls.SOURCE_TYPE.value}"
+            resource = files(package_name).joinpath("instructions.md")
+            return resource.read_text()
+        except (FileNotFoundError, AttributeError, TypeError, ModuleNotFoundError):
+            return ""
 
-        method: IngestMethod | None = getattr(self, method_name, None)
-        if method is None:
-            raise NotImplementedError(
-                f"{self.__class__.__name__} does not support {entity_type.value} ingestion"
-            )
-        return method
+    @classmethod
+    def get_assets_path(cls) -> Path | None:
+        """Get path to assets folder for this ingester's instructions.
+
+        Assets (images, etc.) for instructions are stored alongside the ingester:
+        potluck/ingesters/{source_type}/assets/
+
+        Returns:
+            Path to the assets folder, or None if it doesn't exist.
+        """
+        try:
+            package_name = f"potluck.ingesters.{cls.SOURCE_TYPE.value}"
+            assets_resource = files(package_name).joinpath("assets")
+            assets_path = Path(str(assets_resource))
+            return assets_path if assets_path.is_dir() else None
+        except (FileNotFoundError, AttributeError, TypeError, ModuleNotFoundError):
+            return None
