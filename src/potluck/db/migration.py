@@ -15,7 +15,7 @@ def get_alembic_config() -> Config:
     """Get Alembic configuration."""
     config = Config("alembic.ini")
     settings = get_settings()
-    config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+    config.set_main_option("sqlalchemy.url", settings.sync_db_url)
     return config
 
 
@@ -26,7 +26,7 @@ def get_current_revision() -> str | None:
         Current revision hash, or None if no migrations applied.
     """
     settings = get_settings()
-    engine = create_engine(settings.sync_database_url)
+    engine = create_engine(settings.sync_db_url)
 
     with engine.connect() as conn:
         context = MigrationContext.configure(conn)
@@ -83,7 +83,7 @@ def check_database_connection() -> None:
     settings = get_settings()
 
     try:
-        engine = create_engine(settings.sync_database_url)
+        engine = create_engine(settings.sync_db_url)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info("Database connection verified")

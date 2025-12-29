@@ -25,7 +25,7 @@ def get_engine() -> Engine:
     """
     settings = get_settings()
     return create_engine(
-        settings.sync_database_url,
+        settings.sync_db_url,
         echo=False,
         pool_pre_ping=True,
     )

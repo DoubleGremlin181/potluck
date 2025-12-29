@@ -21,10 +21,23 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://potluck:potluck@localhost:5432/potluck",
         description="Async database connection URL",
     )
-    sync_database_url: str = Field(
-        default="postgresql://potluck:potluck@localhost:5432/potluck",
-        description="Sync database connection URL (for Alembic)",
+    sync_database_url: str | None = Field(
+        default=None,
+        description="Sync database connection URL (for Alembic). Falls back to DATABASE_URL if not set.",
     )
+
+    @property
+    def sync_db_url(self) -> str:
+        """Get sync database URL, falling back to DATABASE_URL if needed."""
+        import os
+
+        # Priority: SYNC_DATABASE_URL > DATABASE_URL env var > convert from async URL
+        if self.sync_database_url:
+            return self.sync_database_url
+        if db_url := os.environ.get("DATABASE_URL"):
+            return db_url
+        # Convert async URL to sync by removing +asyncpg
+        return self.database_url.replace("+asyncpg", "")
 
     # Redis
     redis_url: str = Field(
