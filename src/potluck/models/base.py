@@ -167,35 +167,12 @@ class GeolocatedEntity(TimestampedEntity):
 def get_entity_type_model_map() -> dict[EntityType, type[SQLModel]]:
     """Get mapping from EntityType to model class.
 
-    This function lazily imports models to avoid circular imports.
-    The mapping is cached after first call.
+    This is a convenience re-export from potluck.models.registry.
+    See that module for implementation details.
 
     Returns:
         Dict mapping EntityType enum values to their corresponding model classes.
     """
-    # Import here to avoid circular imports
-    from potluck.models.browsing import Bookmark, BrowsingHistory
-    from potluck.models.calendar import CalendarEvent
-    from potluck.models.email import Email
-    from potluck.models.financial import Transaction
-    from potluck.models.locations import LocationVisit
-    from potluck.models.media import Media
-    from potluck.models.messages import ChatMessage
-    from potluck.models.notes import KnowledgeNote
-    from potluck.models.people import Person
-    from potluck.models.social import SocialComment, SocialPost
+    from potluck.models.registry import get_entity_type_model_map as _get_map
 
-    return {
-        EntityType.MEDIA: Media,
-        EntityType.CHAT_MESSAGE: ChatMessage,
-        EntityType.EMAIL: Email,
-        EntityType.SOCIAL_POST: SocialPost,
-        EntityType.SOCIAL_COMMENT: SocialComment,
-        EntityType.KNOWLEDGE_NOTE: KnowledgeNote,
-        EntityType.CALENDAR_EVENT: CalendarEvent,
-        EntityType.TRANSACTION: Transaction,
-        EntityType.LOCATION_VISIT: LocationVisit,
-        EntityType.BROWSING_HISTORY: BrowsingHistory,
-        EntityType.BOOKMARK: Bookmark,
-        EntityType.PERSON: Person,
-    }
+    return _get_map()

@@ -1,6 +1,5 @@
 """Parsing utilities for common file formats used in data ingestion."""
 
-import csv
 import email
 import json
 import mailbox
@@ -11,6 +10,8 @@ from datetime import datetime
 from email.message import Message
 from pathlib import Path
 from typing import Any
+
+import polars as pl
 
 from potluck.core.exceptions import ParseError
 from potluck.core.logging import get_logger
@@ -157,7 +158,11 @@ def parse_csv(
 ) -> Iterator[dict[str, Any]]:
     """Parse a CSV file and yield rows as dictionaries.
 
-    Uses an iterator for memory efficiency with large files.
+    Uses polars for efficient parsing with automatic type inference.
+    Polars handles:
+    - Automatic type detection (int, float, bool, string)
+    - Null value detection (null, NA, N/A, etc.)
+    - Memory-efficient streaming for large files
 
     Args:
         path: Path to the CSV file.
@@ -174,58 +179,34 @@ def parse_csv(
     date_columns = date_columns or []
 
     try:
-        with open(path, encoding=encoding, newline="") as f:
-            reader = csv.DictReader(f, delimiter=delimiter)
-            for row in reader:
-                # Convert date columns
-                for col in date_columns:
-                    if col in row:
-                        row[col] = parse_datetime(row[col])
+        # Use polars for efficient CSV parsing with type inference
+        df = pl.read_csv(
+            path,
+            separator=delimiter,
+            encoding=encoding if encoding != "utf-8" else "utf8",
+            infer_schema_length=1000,  # Infer types from first 1000 rows
+            null_values=["", "null", "NULL", "None", "none", "NA", "N/A", "n/a"],
+            try_parse_dates=True,  # Auto-detect date columns
+        )
 
-                # Type inference for common patterns
-                for key, value in row.items():
-                    if value is None or key in date_columns:
-                        continue
-                    row[key] = _infer_type(value)
+        # Convert to Python dicts and yield rows
+        for row in df.iter_rows(named=True):
+            row_dict: dict[str, Any] = dict(row)
 
-                yield row
-    except csv.Error as e:
+            # Parse specified date columns that polars didn't auto-detect
+            for col in date_columns:
+                if col in row_dict and row_dict[col] is not None:
+                    value = row_dict[col]
+                    # Only parse if it's still a string (not already a datetime)
+                    if isinstance(value, str):
+                        row_dict[col] = parse_datetime(value)
+
+            yield row_dict
+
+    except pl.exceptions.ComputeError as e:
         raise ParseError(f"CSV parsing error in {path}: {e}") from e
     except OSError as e:
         raise ParseError(f"Could not read {path}: {e}") from e
-
-
-def _infer_type(value: str) -> str | int | float | bool | None:
-    """Infer the type of a string value.
-
-    Args:
-        value: String value to convert.
-
-    Returns:
-        Converted value or original string.
-    """
-    if not value or value.lower() in ("", "null", "none", "na", "n/a"):
-        return None
-
-    # Boolean
-    if value.lower() in ("true", "yes", "1"):
-        return True
-    if value.lower() in ("false", "no", "0"):
-        return False
-
-    # Integer
-    try:
-        return int(value)
-    except ValueError:
-        pass
-
-    # Float
-    try:
-        return float(value)
-    except ValueError:
-        pass
-
-    return value
 
 
 @dataclass

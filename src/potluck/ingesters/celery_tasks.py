@@ -1,14 +1,27 @@
-"""Celery tasks for background ingestion jobs."""
+"""Celery tasks for background ingestion jobs.
+
+This module provides Celery tasks for running ingestion in the background,
+enabling progress tracking from both CLI and web UI.
+
+Note on imports: Some imports are done inside functions to avoid circular
+imports. The potluck.ingesters.pipeline module imports from this package's
+__init__, which would create a cycle if we imported it at module level.
+"""
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from celery.exceptions import Reject, Retry
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlmodel import Session, select
 
 from potluck.core.celery import celery_app
 from potluck.core.logging import get_logger
-from potluck.models.base import EntityType
+from potluck.db.session import get_engine
+from potluck.models.base import EntityType, SourceType
+from potluck.models.sources import ImportRun, ImportSource, ImportStatus
+from potluck.models.utils import utc_now
 
 if TYPE_CHECKING:
     from celery import Task
@@ -24,8 +37,6 @@ RETRY_BACKOFF_MAX = 600  # 10 minutes
 
 def _is_transient_error(exc: Exception) -> bool:
     """Check if exception is transient and should be retried."""
-    from sqlalchemy.exc import InterfaceError, OperationalError
-
     if isinstance(exc, (OperationalError, InterfaceError)):
         return True
     # Disk I/O errors (EIO, ENOSPC, EROFS)
@@ -39,12 +50,6 @@ def _is_fatal_error(exc: Exception) -> bool:
 
 def _mark_import_failed(import_run_id: str, error_message: str) -> None:
     """Mark an ImportRun as failed."""
-    from sqlmodel import Session, select
-
-    from potluck.db.session import get_engine
-    from potluck.models.sources import ImportRun, ImportStatus
-    from potluck.models.utils import utc_now
-
     try:
         engine = get_engine()
         with Session(engine) as session:
@@ -60,7 +65,10 @@ def _mark_import_failed(import_run_id: str, error_message: str) -> None:
         logger.error(f"Failed to mark import as failed: {e}")
 
 
-@celery_app.task(  # type: ignore
+# Note: type: ignore required because Celery's @app.task decorator is untyped.
+# mypy error: "Untyped decorator makes function untyped" [untyped-decorator]
+# Celery doesn't provide typed decorators, so we suppress this warning.
+@celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
     autoretry_for=(Retry,),
     retry_backoff=RETRY_BACKOFF,
@@ -90,11 +98,8 @@ def ingest_file(
         Reject: For fatal errors.
         Retry: For transient errors.
     """
-    from sqlmodel import Session, select
-
-    from potluck.db.session import get_engine
+    # Import here to avoid circular import with pipeline -> __init__ -> celery_tasks
     from potluck.ingesters.pipeline import IngestionPipeline
-    from potluck.models.sources import ImportRun
 
     logger.info(f"Starting ingestion task for run {import_run_id}")
 
@@ -157,7 +162,7 @@ def ingest_file(
             raise Reject(str(exc), requeue=False) from exc
 
 
-@celery_app.task  # type: ignore
+@celery_app.task  # type: ignore[untyped-decorator]
 def cancel_import(import_run_id: str) -> dict[str, Any]:
     """Cancel a running import.
 
@@ -167,12 +172,6 @@ def cancel_import(import_run_id: str) -> dict[str, Any]:
     Returns:
         Dict with cancellation result.
     """
-    from sqlmodel import Session, select
-
-    from potluck.db.session import get_engine
-    from potluck.models.sources import ImportRun, ImportStatus
-    from potluck.models.utils import utc_now
-
     try:
         engine = get_engine()
         with Session(engine) as session:
@@ -211,12 +210,7 @@ def start_ingestion(
     Returns:
         Tuple of (task_id, import_run_id).
     """
-    from sqlmodel import Session
-
-    from potluck.db.session import get_engine
     from potluck.ingesters.utils.dedup import compute_file_hash
-    from potluck.models.base import SourceType
-    from potluck.models.sources import ImportRun, ImportSource
 
     engine = get_engine()
     with Session(engine) as session:

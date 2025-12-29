@@ -1,4 +1,28 @@
-"""File-level deduplication utilities for data ingestion."""
+"""Deduplication utilities for data ingestion.
+
+This module provides hash functions for two levels of deduplication:
+
+1. File-level (ImportRun.file_hash):
+   - compute_file_hash() generates SHA256 of an import file/archive
+   - Stored in ImportRun.file_hash (indexed for fast lookup)
+   - Prevents re-processing the exact same export file
+   - Lookup: SELECT * FROM import_runs WHERE file_hash = ? AND status = 'completed'
+
+2. Entity-level (BaseEntity.content_hash):
+   - compute_content_hash() generates SHA256 of entity content
+   - Stored in BaseEntity.content_hash (indexed for fast lookup)
+   - Prevents duplicate entities even across different imports
+   - Lookup: SELECT * FROM {entity_table} WHERE content_hash = ?
+
+Usage:
+    # File-level: Check if export was already imported
+    file_hash = compute_file_hash(Path("takeout.zip"))
+    # -> stored in ImportRun.file_hash
+
+    # Entity-level: Check if entity content already exists
+    content_hash = compute_content_hash(photo_bytes)
+    # -> stored in Media.content_hash
+"""
 
 import hashlib
 from dataclasses import dataclass
