@@ -66,7 +66,7 @@ def mock_media_ingester() -> type[BaseIngester]:
     """Create and register a mock ingester that yields Media entities."""
 
     @register
-    class MockMediaIngester(BaseIngester):
+    class MockMediaIngester(BaseIngester):  # type: ignore[misc]
         SOURCE_TYPE = SourceType.GENERIC
         FILENAME_PATTERNS = [r"test-media-.*\.zip"]
         SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
@@ -250,8 +250,9 @@ class TestIngestionPipeline:
         with tempfile.TemporaryDirectory() as tmpdir:
             zip_path = Path(tmpdir) / "test-media-callback.zip"
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.writestr("photo1.jpg", b"content 1")
-                zf.writestr("photo2.jpg", b"content 2")
+                # Use unique content to avoid dedup with other tests
+                zf.writestr("photo1.jpg", b"callback test content 1")
+                zf.writestr("photo2.jpg", b"callback test content 2")
 
             pipeline = IngestionPipeline(session=db_session, on_entity=on_entity)
             result = pipeline.run(zip_path)

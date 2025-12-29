@@ -59,20 +59,6 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: potluck
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: potluck
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +84,19 @@ jobs:
           POSTGRES_PORT=5432
           EOF
 
+      - name: Start database with docker-compose
+        run: |
+          docker compose up -d db
+          # Wait for database to be healthy
+          for i in {1..30}; do
+            if docker compose exec -T db pg_isready -U potluck -d potluck; then
+              echo "Database is ready"
+              break
+            fi
+            echo "Waiting for database... ($i/30)"
+            sleep 2
+          done
+
       - name: Run migrations
         run: |
           export DATABASE_URL="postgresql://potluck:testpassword@localhost:5432/potluck"
@@ -105,3 +104,7 @@ jobs:
 
       - name: Run E2E tests
         run: pytest tests/integration/ -v --run-e2e
+
+      - name: Stop database
+        if: always()
+        run: docker compose down -v
