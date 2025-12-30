@@ -2,10 +2,6 @@
 
 This module provides Celery tasks for running ingestion in the background,
 enabling progress tracking from both CLI and web UI.
-
-Note on imports: Some imports are done inside functions to avoid circular
-imports. The potluck.ingesters.pipeline module imports from this package's
-__init__, which would create a cycle if we imported it at module level.
 """
 
 from pathlib import Path
@@ -20,6 +16,7 @@ from sqlmodel import Session, select
 from potluck.core.celery import celery_app
 from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
+from potluck.ingesters.pipeline import IngestionPipeline
 from potluck.models.base import EntityType, SourceType
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
@@ -98,9 +95,6 @@ def ingest_file(
         Reject: For fatal errors.
         Retry: For transient errors.
     """
-    # Import here to avoid circular import with pipeline -> __init__ -> celery_tasks
-    from potluck.ingesters.pipeline import IngestionPipeline
-
     logger.info(f"Starting ingestion task for run {import_run_id}")
 
     # Parse entity types with validation

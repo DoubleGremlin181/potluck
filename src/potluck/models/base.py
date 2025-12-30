@@ -162,17 +162,3 @@ class GeolocatedEntity(TimestampedEntity):
     def has_location(self) -> bool:
         """Check if this entity has valid coordinates."""
         return self.latitude is not None and self.longitude is not None
-
-
-def get_entity_type_model_map() -> dict[EntityType, type[SQLModel]]:
-    """Get mapping from EntityType to model class.
-
-    This is a convenience re-export from potluck.models.registry.
-    See that module for implementation details.
-
-    Returns:
-        Dict mapping EntityType enum values to their corresponding model classes.
-    """
-    from potluck.models.registry import get_entity_type_model_map as _get_map
-
-    return _get_map()

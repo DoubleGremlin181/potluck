@@ -1,5 +1,7 @@
 """SQLModel entities for Potluck."""
 
+from sqlmodel import SQLModel
+
 from potluck.models.base import (
     BaseEntity,
     EntityType,
@@ -8,7 +10,6 @@ from potluck.models.base import (
     SourceType,
     TimestampedEntity,
     TimestampPrecision,
-    get_entity_type_model_map,
 )
 from potluck.models.browsing import (
     Bookmark,
@@ -101,6 +102,32 @@ def register_models() -> list[str]:
         List of registered model class names.
     """
     return __all__
+
+
+# EntityType to Model class mapping - all models are already imported above
+_ENTITY_TYPE_MODEL_MAP: dict[EntityType, type[SQLModel]] = {
+    EntityType.MEDIA: Media,
+    EntityType.CHAT_MESSAGE: ChatMessage,
+    EntityType.EMAIL: Email,
+    EntityType.SOCIAL_POST: SocialPost,
+    EntityType.SOCIAL_COMMENT: SocialComment,
+    EntityType.KNOWLEDGE_NOTE: KnowledgeNote,
+    EntityType.CALENDAR_EVENT: CalendarEvent,
+    EntityType.TRANSACTION: Transaction,
+    EntityType.LOCATION_VISIT: LocationVisit,
+    EntityType.BROWSING_HISTORY: BrowsingHistory,
+    EntityType.BOOKMARK: Bookmark,
+    EntityType.PERSON: Person,
+}
+
+
+def get_entity_type_model_map() -> dict[EntityType, type[SQLModel]]:
+    """Get mapping from EntityType to model class.
+
+    Returns:
+        Dict mapping EntityType enum values to their corresponding model classes.
+    """
+    return _ENTITY_TYPE_MODEL_MAP
 
 
 __all__ = [

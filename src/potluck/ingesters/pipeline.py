@@ -11,7 +11,8 @@ from potluck.core.logging import get_logger
 from potluck.ingesters.base import BaseIngester, IngestionFilter
 from potluck.ingesters.utils.archive import extracted
 from potluck.ingesters.utils.dedup import compute_file_hash
-from potluck.models.base import BaseEntity, EntityType, SourceType, get_entity_type_model_map
+from potluck.models import get_entity_type_model_map
+from potluck.models.base import BaseEntity, EntityType, SourceType
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
 

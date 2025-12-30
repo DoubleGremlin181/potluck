@@ -31,10 +31,11 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
+from potluck.models.sources import ImportRun, ImportStatus
 
 logger = get_logger(__name__)
 
@@ -128,10 +129,6 @@ async def check_file_duplicate(
     Returns:
         DuplicateInfo with details about whether this is a duplicate.
     """
-    from sqlmodel import select
-
-    from potluck.models.sources import ImportRun, ImportStatus
-
     file_hash = compute_file_hash(path)
 
     # Query for existing imports with the same file hash
@@ -180,10 +177,6 @@ def check_file_duplicate_sync(
     Returns:
         DuplicateInfo with details about whether this is a duplicate.
     """
-    from sqlmodel import select
-
-    from potluck.models.sources import ImportRun, ImportStatus
-
     file_hash = compute_file_hash(path)
 
     # Query for existing imports with the same file hash
