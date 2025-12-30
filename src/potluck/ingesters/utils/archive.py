@@ -6,8 +6,9 @@ import tempfile
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
+
+from pydantic import BaseModel
 
 from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
@@ -15,8 +16,7 @@ from potluck.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-@dataclass
-class ExtractedArchive:
+class ExtractedArchive(BaseModel):
     """Context for an extracted archive.
 
     Manages the temporary directory containing extracted files.
@@ -30,6 +30,8 @@ class ExtractedArchive:
 
     is_temporary: bool
     """Whether extract_path is a temporary directory that should be cleaned up."""
+
+    model_config = {"arbitrary_types_allowed": True}
 
     def cleanup(self) -> None:
         """Remove the temporary extraction directory if applicable."""

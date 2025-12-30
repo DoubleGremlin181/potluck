@@ -25,11 +25,11 @@ Usage:
 """
 
 import hashlib
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session, select
 
@@ -44,8 +44,7 @@ logger = get_logger(__name__)
 HASH_BUFFER_SIZE = 1024 * 1024
 
 
-@dataclass
-class DuplicateInfo:
+class DuplicateInfo(BaseModel):
     """Information about a duplicate file detection.
 
     Used to inform the user about a potential re-upload.
