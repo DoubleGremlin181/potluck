@@ -9,9 +9,10 @@ __init__, which would create a cycle if we imported it at module level.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
+from celery import Task
 from celery.exceptions import Reject, Retry
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlmodel import Session, select
@@ -22,9 +23,6 @@ from potluck.db.session import get_engine
 from potluck.models.base import EntityType, SourceType
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
-
-if TYPE_CHECKING:
-    from celery import Task
 
 logger = get_logger(__name__)
 

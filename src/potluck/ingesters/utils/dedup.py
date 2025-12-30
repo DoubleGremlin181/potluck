@@ -28,15 +28,13 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 from uuid import UUID
 
-from potluck.core.exceptions import InvalidPathError, SourceNotFoundError
-from potluck.core.logging import get_logger
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from sqlmodel import Session
+from potluck.core.exceptions import IngestionError
+from potluck.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -80,15 +78,14 @@ def compute_file_hash(path: Path) -> str:
         Hex-encoded SHA256 hash string.
 
     Raises:
-        SourceNotFoundError: If the file does not exist.
-        InvalidPathError: If the path is not a file.
+        IngestionError: If the file does not exist or is not a file.
         OSError: If the file cannot be read.
     """
     if not path.exists():
-        raise SourceNotFoundError(f"File not found: {path}")
+        raise IngestionError(f"File not found: {path}")
 
     if not path.is_file():
-        raise InvalidPathError(f"Path is not a file: {path}")
+        raise IngestionError(f"Path is not a file: {path}")
 
     hasher = hashlib.sha256()
 

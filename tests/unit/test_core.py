@@ -11,10 +11,8 @@ from potluck.core.config import Settings, get_settings
 from potluck.core.exceptions import (
     ConfigurationError,
     DatabaseError,
-    EntityNotFoundError,
     IngestionError,
     PotluckError,
-    ProcessingError,
 )
 from potluck.core.logging import get_logger, setup_logging
 
@@ -97,22 +95,9 @@ class TestExceptions:
         error = DatabaseError("db failed")
         assert isinstance(error, PotluckError)
 
-    def test_entity_not_found_error(self) -> None:
-        """EntityNotFoundError includes entity info."""
-        error = EntityNotFoundError("User", 123)
-        assert error.entity_type == "User"
-        assert error.entity_id == 123
-        assert "User" in str(error)
-        assert "123" in str(error)
-
     def test_ingestion_error(self) -> None:
         """IngestionError inherits from PotluckError."""
         error = IngestionError("import failed")
-        assert isinstance(error, PotluckError)
-
-    def test_processing_error(self) -> None:
-        """ProcessingError inherits from PotluckError."""
-        error = ProcessingError("processing failed")
         assert isinstance(error, PotluckError)
 
     def test_exceptions_catchable_as_potluck_error(self) -> None:
@@ -120,9 +105,7 @@ class TestExceptions:
         exceptions = [
             ConfigurationError("msg"),
             DatabaseError("msg"),
-            EntityNotFoundError("Type", 1),
             IngestionError("msg"),
-            ProcessingError("msg"),
         ]
         for exc in exceptions:
             with pytest.raises(PotluckError):

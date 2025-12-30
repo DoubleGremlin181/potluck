@@ -13,7 +13,7 @@ from typing import Any
 
 import polars as pl
 
-from potluck.core.exceptions import ParseError
+from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -116,15 +116,15 @@ def parse_json(
         Parsed JSON data (dict or list).
 
     Raises:
-        ParseError: If the file cannot be parsed.
+        IngestionError: If the file cannot be parsed.
     """
     try:
         with open(path, encoding="utf-8") as f:
             data: dict[str, Any] | list[Any] = json.load(f)
     except json.JSONDecodeError as e:
-        raise ParseError(f"Invalid JSON in {path}: {e}") from e
+        raise IngestionError(f"Invalid JSON in {path}: {e}") from e
     except OSError as e:
-        raise ParseError(f"Could not read {path}: {e}") from e
+        raise IngestionError(f"Could not read {path}: {e}") from e
 
     if date_fields:
         _convert_date_fields(data, date_fields)
@@ -174,7 +174,7 @@ def parse_csv(
         Dict for each row with column names as keys.
 
     Raises:
-        ParseError: If the file cannot be parsed.
+        IngestionError: If the file cannot be parsed.
     """
     date_columns = date_columns or []
 
@@ -204,9 +204,9 @@ def parse_csv(
             yield row_dict
 
     except pl.exceptions.ComputeError as e:
-        raise ParseError(f"CSV parsing error in {path}: {e}") from e
+        raise IngestionError(f"CSV parsing error in {path}: {e}") from e
     except OSError as e:
-        raise ParseError(f"Could not read {path}: {e}") from e
+        raise IngestionError(f"Could not read {path}: {e}") from e
 
 
 @dataclass
@@ -290,12 +290,12 @@ def parse_mbox(path: Path) -> Iterator[MboxMessage]:
         MboxMessage for each successfully parsed email in the file.
 
     Raises:
-        ParseError: If the file cannot be opened.
+        IngestionError: If the file cannot be opened.
     """
     try:
         mbox = mailbox.mbox(str(path))
     except Exception as e:
-        raise ParseError(f"Could not open MBOX file {path}: {e}") from e
+        raise IngestionError(f"Could not open MBOX file {path}: {e}") from e
 
     skipped = 0
     total = 0

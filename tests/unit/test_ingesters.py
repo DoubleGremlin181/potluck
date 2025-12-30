@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from potluck.core.exceptions import ConfigurationError, SourceNotFoundError
+from potluck.core.exceptions import ConfigurationError, IngestionError
 from potluck.ingesters import (
     BaseIngester,
     DetectionResult,
@@ -362,7 +362,7 @@ class TestDiscovery:
 
     def test_discover_nonexistent_path(self) -> None:
         """discover() raises for nonexistent paths."""
-        with pytest.raises(SourceNotFoundError):
+        with pytest.raises(IngestionError):
             discover(Path("/nonexistent/path"))
 
     def test_discover_empty_directory(self) -> None:

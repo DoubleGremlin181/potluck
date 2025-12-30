@@ -2,16 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.models.base import SourceType
 from potluck.models.utils import utc_now
-
-if TYPE_CHECKING:
-    pass
 
 
 class ImportStatus(str, Enum):

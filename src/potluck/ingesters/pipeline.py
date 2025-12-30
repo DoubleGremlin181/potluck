@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from potluck.core.exceptions import SourceNotFoundError
+from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
 from potluck.ingesters.base import BaseIngester, IngestionFilter
 from potluck.ingesters.utils.archive import extracted
@@ -476,12 +476,12 @@ def discover(path: Path) -> DiscoveryResult:
         DiscoveryResult with source type and entity counts.
 
     Raises:
-        SourceNotFoundError: If path does not exist.
+        IngestionError: If path does not exist.
     """
     from potluck.ingesters import detect_ingester
 
     if not path.exists():
-        raise SourceNotFoundError(f"Path not found: {path}")
+        raise IngestionError(f"Path not found: {path}")
 
     with extracted(path) as content_path:
         # Detect source type and contents
