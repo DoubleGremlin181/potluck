@@ -66,7 +66,7 @@ def mock_media_ingester() -> type[BaseIngester]:
     """Create and register a mock ingester that yields Media entities."""
 
     @register
-    class MockMediaIngester(BaseIngester):  # type: ignore[misc]
+    class MockMediaIngester(BaseIngester):
         SOURCE_TYPE = SourceType.GENERIC
         FILENAME_PATTERNS = [r"test-media-.*\.zip"]
         SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
