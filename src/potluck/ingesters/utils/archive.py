@@ -9,7 +9,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from potluck.core.exceptions import ExtractionError, UnsupportedArchiveError
+from potluck.core.exceptions import (
+    ExtractionError,
+    SourceNotFoundError,
+    UnsupportedArchiveError,
+)
 from potluck.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -215,8 +219,8 @@ def _extract_nested_archives(base_path: Path, max_depth: int = 2) -> None:
                 # Recurse into the extracted directory
                 _extract_nested_archives(nested_dest, max_depth - 1)
 
-            except Exception as e:
-                logger.warning(f"Failed to extract nested archive {file_path}: {e}")
+            except Exception:
+                logger.warning(f"Failed to extract nested archive {file_path}", exc_info=True)
 
 
 @contextmanager
@@ -242,7 +246,7 @@ def extracted(path: Path, extract_nested: bool = True) -> Iterator[Path]:
         Path to the extracted contents (or the original path if not an archive).
     """
     if not path.exists():
-        raise FileNotFoundError(f"Path does not exist: {path}")
+        raise SourceNotFoundError(f"Path does not exist: {path}")
 
     if path.is_dir():
         # Not an archive, yield as-is

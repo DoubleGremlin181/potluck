@@ -24,6 +24,7 @@ from pathlib import Path
 
 from sqlmodel import Session
 
+from potluck.core.exceptions import ConfigurationError
 from potluck.ingesters.base import (
     BaseIngester,
     DetectionResult,
@@ -58,7 +59,12 @@ def register(cls: type[BaseIngester]) -> type[BaseIngester]:
 
     Returns:
         The same class (for decorator chaining).
+
+    Raises:
+        ConfigurationError: If the class does not define SOURCE_TYPE.
     """
+    if not hasattr(cls, "SOURCE_TYPE"):
+        raise ConfigurationError(f"{cls.__name__} must define SOURCE_TYPE class attribute")
     _INGESTERS[cls.SOURCE_TYPE] = cls
     return cls
 

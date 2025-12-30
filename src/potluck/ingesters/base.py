@@ -5,11 +5,15 @@ from collections.abc import Iterator
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from potluck.core.exceptions import ConfigurationError
+from potluck.core.logging import get_logger
 from potluck.models.base import BaseEntity, EntityType, SourceType
+
+logger = get_logger(__name__)
 
 
 class IngestionFilter(BaseModel):
@@ -27,6 +31,13 @@ class IngestionFilter(BaseModel):
         default=None,
         description="Only ingest entities occurring before this datetime",
     )
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> Self:
+        """Validate that since is before until when both are specified."""
+        if self.since and self.until and self.since > self.until:
+            raise ValueError("'since' must be before 'until'")
+        return self
 
 
 class DetectionResult(BaseModel):
@@ -102,6 +113,15 @@ class BaseIngester(ABC):
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]]
     """Entity types this ingester can produce."""
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Validate that required class attributes are defined by subclasses."""
+        super().__init_subclass__(**kwargs)
+        # Check required class attributes
+        required_attrs = ("SOURCE_TYPE", "FILENAME_PATTERNS", "SUPPORTED_ENTITY_TYPES")
+        for attr in required_attrs:
+            if not hasattr(cls, attr):
+                raise ConfigurationError(f"{cls.__name__} must define class attribute '{attr}'")
+
     @abstractmethod
     def detect_contents(self, path: Path) -> DetectionResult:
         """Scan the source and return available entity types with counts.
@@ -164,7 +184,11 @@ class BaseIngester(ABC):
             package_name = f"potluck.ingesters.{cls.SOURCE_TYPE.value}"
             resource = files(package_name).joinpath("instructions.md")
             return resource.read_text()
-        except (FileNotFoundError, AttributeError, TypeError, ModuleNotFoundError):
+        except FileNotFoundError:
+            logger.debug(f"No instructions.md found for {cls.__name__}")
+            return ""
+        except (AttributeError, TypeError, ModuleNotFoundError) as e:
+            logger.debug(f"Could not load instructions for {cls.__name__}: {e}")
             return ""
 
     @classmethod
@@ -181,6 +205,13 @@ class BaseIngester(ABC):
             package_name = f"potluck.ingesters.{cls.SOURCE_TYPE.value}"
             assets_resource = files(package_name).joinpath("assets")
             assets_path = Path(str(assets_resource))
-            return assets_path if assets_path.is_dir() else None
-        except (FileNotFoundError, AttributeError, TypeError, ModuleNotFoundError):
+            if not assets_path.is_dir():
+                logger.debug(f"No assets folder found for {cls.__name__}")
+                return None
+            return assets_path
+        except FileNotFoundError:
+            logger.debug(f"No assets folder found for {cls.__name__}")
+            return None
+        except (AttributeError, TypeError, ModuleNotFoundError) as e:
+            logger.debug(f"Could not load assets path for {cls.__name__}: {e}")
             return None

@@ -280,29 +280,46 @@ class MboxAttachment:
 def parse_mbox(path: Path) -> Iterator[MboxMessage]:
     """Parse an MBOX file and yield parsed messages.
 
+    Messages that fail to parse are logged and skipped. To track the number
+    of skipped messages, check the log output or count yielded vs total.
+
     Args:
         path: Path to the MBOX file.
 
     Yields:
-        MboxMessage for each email in the file.
+        MboxMessage for each successfully parsed email in the file.
 
     Raises:
-        ParseError: If the file cannot be parsed.
+        ParseError: If the file cannot be opened.
     """
     try:
         mbox = mailbox.mbox(str(path))
     except Exception as e:
         raise ParseError(f"Could not open MBOX file {path}: {e}") from e
 
+    skipped = 0
+    total = 0
     try:
-        for msg in mbox:
+        for idx, msg in enumerate(mbox):
+            total += 1
             try:
                 yield _parse_email_message(msg)
             except Exception as e:
-                logger.warning(f"Failed to parse email message: {e}")
+                skipped += 1
+                # Include message index and any available identifiers for debugging
+                msg_id = msg.get("Message-ID", "<unknown>") if msg else "<unknown>"
+                subject = msg.get("Subject", "<no subject>")[:50] if msg else "<unknown>"
+                logger.warning(
+                    f"Failed to parse email message {idx} "
+                    f"(Message-ID={msg_id}, Subject={subject!r}): {e}"
+                )
                 continue
     finally:
         mbox.close()
+        if skipped > 0:
+            logger.info(
+                f"Finished parsing {path.name}: {total - skipped}/{total} messages parsed, {skipped} skipped"
+            )
 
 
 def _parse_email_message(msg: Message) -> MboxMessage:

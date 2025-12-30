@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from potluck.core.exceptions import InvalidPathError, SourceNotFoundError
 from potluck.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -79,14 +80,15 @@ def compute_file_hash(path: Path) -> str:
         Hex-encoded SHA256 hash string.
 
     Raises:
-        FileNotFoundError: If the file does not exist.
+        SourceNotFoundError: If the file does not exist.
+        InvalidPathError: If the path is not a file.
         OSError: If the file cannot be read.
     """
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise SourceNotFoundError(f"File not found: {path}")
 
     if not path.is_file():
-        raise ValueError(f"Path is not a file: {path}")
+        raise InvalidPathError(f"Path is not a file: {path}")
 
     hasher = hashlib.sha256()
 

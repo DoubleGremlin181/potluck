@@ -20,6 +20,10 @@ def get_engine() -> Engine:
     created on first use, after settings are configured. A module-level
     variable would be created at import time before settings are available.
 
+    Important: The engine is cached permanently. If you need to change the
+    database configuration (e.g., in tests), call get_engine.cache_clear()
+    before calling get_engine() again.
+
     Returns:
         SQLAlchemy Engine instance.
     """

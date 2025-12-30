@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from potluck.core.exceptions import SourceNotFoundError
 from potluck.core.logging import get_logger
 from potluck.ingesters.base import BaseIngester, IngestionFilter
 from potluck.ingesters.utils.archive import extracted
@@ -50,7 +51,11 @@ class DiscoveryResult(BaseModel):
     """Original path that was discovered."""
 
     ingester: type[BaseIngester] | None = None
-    """Matched ingester class, or None if no ingester matched."""
+    """Matched ingester class, or None if no ingester matched.
+
+    Note: When accessing ingester attributes like SOURCE_TYPE, always check
+    is_generic first or use the source_type property which handles None safely.
+    """
 
     available_entities: dict[EntityType, int] = Field(default_factory=dict)
     """Entity types available and their counts."""
@@ -163,6 +168,9 @@ class IngestionPipeline:
         from potluck.ingesters import detect_ingester
 
         logger.info(f"Starting ingestion for: {path}")
+
+        # Clear seen hashes cache for each new run to prevent cross-run deduplication
+        self._seen_hashes.clear()
 
         # Compute file hash for source-level deduplication
         file_hash = None
@@ -378,7 +386,10 @@ class IngestionPipeline:
                     if entity_type:
                         self.on_entity(entity_type, entity)
                 except Exception as e:
-                    logger.warning(f"Entity callback failed: {e}")
+                    logger.warning(
+                        f"Entity callback failed for {type(entity).__name__} "
+                        f"(hash={entity.content_hash}): {e}"
+                    )
 
             # Flush batch if full
             if len(batch) >= self.batch_size:
@@ -403,7 +414,13 @@ class IngestionPipeline:
             return True
 
         # Query database for existing entity with same hash
+        # BaseEntity inherits from SQLModel, so type(entity) is safe for queries
         model_class = type(entity)
+        if not hasattr(model_class, "__tablename__"):
+            # Not a persisted model, can't check database
+            self._seen_hashes.add(entity.content_hash)
+            return False
+
         stmt = (
             select(model_class.content_hash)
             .where(model_class.content_hash == entity.content_hash)
@@ -443,7 +460,7 @@ class IngestionPipeline:
             try:
                 self.on_progress(current, total, message)
             except Exception as e:
-                logger.warning(f"Progress callback failed: {e}")
+                logger.warning(f"Progress callback failed at {current}/{total}: {e}")
 
 
 def discover(path: Path) -> DiscoveryResult:
@@ -459,12 +476,12 @@ def discover(path: Path) -> DiscoveryResult:
         DiscoveryResult with source type and entity counts.
 
     Raises:
-        FileNotFoundError: If path does not exist.
+        SourceNotFoundError: If path does not exist.
     """
     from potluck.ingesters import detect_ingester
 
     if not path.exists():
-        raise FileNotFoundError(f"Path not found: {path}")
+        raise SourceNotFoundError(f"Path not found: {path}")
 
     with extracted(path) as content_path:
         # Detect source type and contents

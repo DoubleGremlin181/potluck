@@ -48,3 +48,11 @@ class ExtractionError(ArchiveError):
 
 class ParseError(IngestionError):
     """Raised when parsing fails."""
+
+
+class SourceNotFoundError(IngestionError):
+    """Raised when a source file or directory is not found."""
+
+
+class InvalidPathError(IngestionError):
+    """Raised when a path is invalid (e.g., directory when file expected)."""

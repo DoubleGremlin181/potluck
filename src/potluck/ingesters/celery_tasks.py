@@ -61,8 +61,10 @@ def _mark_import_failed(import_run_id: str, error_message: str) -> None:
                 import_run.completed_at = utc_now()
                 session.add(import_run)
                 session.commit()
-    except Exception as e:
-        logger.error(f"Failed to mark import as failed: {e}")
+    except Exception:
+        logger.exception(
+            f"Failed to mark import {import_run_id} as failed with error: {error_message}"
+        )
 
 
 # Note: type: ignore required because Celery's @app.task decorator is untyped.
@@ -103,10 +105,15 @@ def ingest_file(
 
     logger.info(f"Starting ingestion task for run {import_run_id}")
 
-    # Parse entity types
+    # Parse entity types with validation
     types_to_ingest: set[EntityType] | None = None
     if entity_types:
-        types_to_ingest = {EntityType(et) for et in entity_types}
+        try:
+            types_to_ingest = {EntityType(et) for et in entity_types}
+        except ValueError as e:
+            error_msg = f"Invalid entity type in {entity_types}: {e}"
+            _mark_import_failed(import_run_id, error_msg)
+            raise Reject(error_msg, requeue=False) from e
 
     # Create progress callback that updates Celery task state
     def on_progress(current: int, total: int, message: str | None) -> None:
@@ -191,7 +198,7 @@ def cancel_import(import_run_id: str) -> dict[str, Any]:
             return {"success": True, "import_run_id": import_run_id}
 
     except Exception as e:
-        logger.error(f"Failed to cancel import: {e}")
+        logger.exception(f"Failed to cancel import {import_run_id}")
         return {"success": False, "error": str(e)}
 
 

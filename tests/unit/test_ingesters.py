@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from potluck.core.exceptions import ConfigurationError, SourceNotFoundError
 from potluck.ingesters import (
     BaseIngester,
     DetectionResult,
@@ -19,6 +20,10 @@ from potluck.ingesters import (
     discover,
     list_ingesters,
     register,
+)
+from potluck.ingesters.celery_tasks import (
+    _is_fatal_error,
+    _is_transient_error,
 )
 from potluck.ingesters.utils.archive import (
     extract_archive,
@@ -357,7 +362,7 @@ class TestDiscovery:
 
     def test_discover_nonexistent_path(self) -> None:
         """discover() raises for nonexistent paths."""
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(SourceNotFoundError):
             discover(Path("/nonexistent/path"))
 
     def test_discover_empty_directory(self) -> None:
@@ -424,3 +429,180 @@ class TestDiscoveryResult:
         """source_type returns GENERIC when no ingester."""
         result = DiscoveryResult(source_path=Path("/test"))
         assert result.source_type == SourceType.GENERIC
+
+
+class TestIngestionFilterValidation:
+    """Tests for IngestionFilter validation."""
+
+    def test_valid_date_range(self) -> None:
+        """Valid date range (since < until) passes validation."""
+        since = datetime(2024, 1, 1, tzinfo=UTC)
+        until = datetime(2024, 12, 31, tzinfo=UTC)
+        f = IngestionFilter(since=since, until=until)
+        assert f.since == since
+        assert f.until == until
+
+    def test_invalid_date_range_raises(self) -> None:
+        """Invalid date range (since > until) raises ValueError."""
+        since = datetime(2024, 12, 31, tzinfo=UTC)
+        until = datetime(2024, 1, 1, tzinfo=UTC)
+        with pytest.raises(ValueError, match="'since' must be before 'until'"):
+            IngestionFilter(since=since, until=until)
+
+    def test_equal_dates_valid(self) -> None:
+        """Equal since and until dates are valid (single moment in time)."""
+        date = datetime(2024, 6, 15, tzinfo=UTC)
+        f = IngestionFilter(since=date, until=date)
+        assert f.since == f.until
+
+
+class TestBaseIngesterValidation:
+    """Tests for BaseIngester subclass validation."""
+
+    def setup_method(self) -> None:
+        """Clear registry before each test."""
+        clear_registry()
+
+    def test_missing_source_type_raises(self) -> None:
+        """Subclass without SOURCE_TYPE raises ConfigurationError."""
+        with pytest.raises(ConfigurationError, match="must define class attribute 'SOURCE_TYPE'"):
+
+            class BadIngester(BaseIngester):
+                FILENAME_PATTERNS = [r"test-.*"]
+                SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
+
+                def detect_contents(self, path: Path) -> DetectionResult:
+                    return DetectionResult()
+
+                def ingest(
+                    self,
+                    path: Path,
+                    entity_types: set[EntityType],
+                    filters: IngestionFilter | None = None,
+                ) -> Iterator[BaseEntity]:
+                    yield from []
+
+    def test_missing_filename_patterns_raises(self) -> None:
+        """Subclass without FILENAME_PATTERNS raises ConfigurationError."""
+        with pytest.raises(
+            ConfigurationError, match="must define class attribute 'FILENAME_PATTERNS'"
+        ):
+
+            class BadIngester(BaseIngester):
+                SOURCE_TYPE = SourceType.GENERIC
+                SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
+
+                def detect_contents(self, path: Path) -> DetectionResult:
+                    return DetectionResult()
+
+                def ingest(
+                    self,
+                    path: Path,
+                    entity_types: set[EntityType],
+                    filters: IngestionFilter | None = None,
+                ) -> Iterator[BaseEntity]:
+                    yield from []
+
+    def test_valid_ingester_passes_validation(self) -> None:
+        """Properly defined ingester passes validation."""
+
+        class ValidIngester(BaseIngester):
+            SOURCE_TYPE = SourceType.GENERIC
+            FILENAME_PATTERNS = [r"test-.*"]
+            SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
+
+            def detect_contents(self, path: Path) -> DetectionResult:
+                return DetectionResult()
+
+            def ingest(
+                self,
+                path: Path,
+                entity_types: set[EntityType],
+                filters: IngestionFilter | None = None,
+            ) -> Iterator[BaseEntity]:
+                yield from []
+
+        # Should not raise
+        assert ValidIngester.SOURCE_TYPE == SourceType.GENERIC
+
+
+class TestRegisterDecorator:
+    """Tests for register() decorator validation."""
+
+    def setup_method(self) -> None:
+        """Clear registry before each test."""
+        clear_registry()
+
+    def test_register_requires_source_type(self) -> None:
+        """register() raises ConfigurationError if SOURCE_TYPE is missing."""
+        # The register function checks hasattr for SOURCE_TYPE
+        with pytest.raises(ConfigurationError, match="must define SOURCE_TYPE"):
+            from potluck.ingesters import register as register_fn
+
+            # Create a minimal class without SOURCE_TYPE
+            class NoSourceType:
+                pass
+
+            register_fn(NoSourceType)  # type: ignore[arg-type]
+
+
+class TestCeleryTaskHelpers:
+    """Tests for Celery task helper functions."""
+
+    def test_is_transient_error_operational_error(self) -> None:
+        """OperationalError is classified as transient."""
+        from sqlalchemy.exc import OperationalError
+
+        exc = OperationalError("db connection lost", None, Exception("db error"))
+        assert _is_transient_error(exc) is True
+
+    def test_is_transient_error_interface_error(self) -> None:
+        """InterfaceError is classified as transient."""
+        from sqlalchemy.exc import InterfaceError
+
+        exc = InterfaceError("interface error", None, Exception("interface error"))
+        assert _is_transient_error(exc) is True
+
+    def test_is_transient_error_disk_io(self) -> None:
+        """Disk I/O errors (EIO) are classified as transient."""
+        exc = OSError(5, "Input/output error")
+        assert _is_transient_error(exc) is True
+
+    def test_is_transient_error_disk_full(self) -> None:
+        """Disk full errors (ENOSPC) are classified as transient."""
+        exc = OSError(28, "No space left on device")
+        assert _is_transient_error(exc) is True
+
+    def test_is_transient_error_regular_exception(self) -> None:
+        """Regular exceptions are not classified as transient."""
+        exc = ValueError("not transient")
+        assert _is_transient_error(exc) is False
+
+    def test_is_fatal_error_file_not_found(self) -> None:
+        """FileNotFoundError is classified as fatal."""
+        exc = FileNotFoundError("file missing")
+        assert _is_fatal_error(exc) is True
+
+    def test_is_fatal_error_permission_error(self) -> None:
+        """PermissionError is classified as fatal."""
+        exc = PermissionError("access denied")
+        assert _is_fatal_error(exc) is True
+
+    def test_is_fatal_error_regular_exception(self) -> None:
+        """Regular exceptions are not classified as fatal."""
+        exc = ValueError("not fatal")
+        assert _is_fatal_error(exc) is False
+
+
+class TestCeleryTaskEntityTypeValidation:
+    """Tests for entity type validation in Celery tasks."""
+
+    def test_invalid_entity_type_value(self) -> None:
+        """Invalid entity type string raises ValueError."""
+        with pytest.raises(ValueError):
+            EntityType("not_a_valid_type")
+
+    def test_valid_entity_type_value(self) -> None:
+        """Valid entity type strings parse correctly."""
+        assert EntityType("media") == EntityType.MEDIA
+        assert EntityType("email") == EntityType.EMAIL
