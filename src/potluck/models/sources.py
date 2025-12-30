@@ -2,16 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.models.base import SourceType
 from potluck.models.utils import utc_now
-
-if TYPE_CHECKING:
-    pass
 
 
 class ImportStatus(str, Enum):
@@ -25,10 +21,19 @@ class ImportStatus(str, Enum):
 
 
 class ImportSource(SQLModel, table=True):
-    """Registered data source for imports.
+    """Logical grouping for import operations.
 
-    Represents a configured data source that can be imported from,
-    such as a Google Takeout archive path or Reddit account.
+    ImportSource represents a named collection of imports, typically corresponding
+    to a data source type (e.g., "Google Takeout", "Reddit exports"). It serves as
+    a logical grouping mechanism for organizing multiple ImportRun records.
+
+    This is NOT tied to a specific file or account - it's a user-facing label.
+    The same ImportSource can have multiple ImportRuns from different export files.
+
+    Example:
+        - ImportSource(name="Google Takeout", source_type=GOOGLE_TAKEOUT)
+          - ImportRun(file_hash="abc123...")  # Takeout from Jan 2024
+          - ImportRun(file_hash="def456...")  # Takeout from Jun 2024
     """
 
     __tablename__ = "import_sources"
@@ -71,9 +76,21 @@ class ImportSource(SQLModel, table=True):
 
 
 class ImportRun(SQLModel, table=True):
-    """Individual import operation.
+    """Single import execution from a specific file or directory.
 
-    Tracks a single import run with statistics about what was processed.
+    ImportRun tracks one import operation, including:
+    - The source file's hash (file_hash) for detecting re-imports of the same file
+    - Progress tracking for UI updates
+    - Statistics about entities created/updated/skipped
+
+    Deduplication:
+    - file_hash: SHA256 of the import file. If a file with the same hash was
+      already imported successfully, the pipeline skips re-processing.
+    - Individual entities are deduplicated via BaseEntity.content_hash.
+
+    Relationship to ImportSource:
+    - Many ImportRuns can belong to one ImportSource
+    - ImportSource is the logical grouping, ImportRun is the actual execution
     """
 
     __tablename__ = "import_runs"
@@ -103,6 +120,11 @@ class ImportRun(SQLModel, table=True):
     error_message: str | None = Field(
         default=None,
         description="Error message if the run failed",
+    )
+    file_hash: str | None = Field(
+        default=None,
+        index=True,
+        description="SHA256 hash of the source file for deduplication",
     )
 
     # Statistics

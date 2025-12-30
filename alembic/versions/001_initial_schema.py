@@ -74,10 +74,12 @@ def upgrade() -> None:
         sa.Column("progress_current", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("progress_total", sa.Integer(), nullable=True),
         sa.Column("current_file", sa.String(), nullable=True),
+        sa.Column("file_hash", sa.String(), nullable=True),
         sa.ForeignKeyConstraint(["source_id"], ["import_sources.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_import_runs_source_id", "import_runs", ["source_id"])
+    op.create_index("ix_import_runs_file_hash", "import_runs", ["file_hash"])
 
     # === People tables ===
 

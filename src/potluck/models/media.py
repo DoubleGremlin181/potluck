@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
@@ -11,9 +10,6 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.models.base import GeolocatedEntity, SourceType
 from potluck.models.utils import utc_now
-
-if TYPE_CHECKING:
-    from potluck.models.people import FaceEncoding
 
 
 class MediaType(str, Enum):
@@ -132,7 +128,6 @@ class Media(GeolocatedEntity, table=True):
 
     # Relationships
     embeddings: list["MediaEmbedding"] = Relationship(back_populates="media")
-    face_encodings: list["FaceEncoding"] = Relationship(back_populates="media")
 
     @property
     def has_text_content(self) -> bool:

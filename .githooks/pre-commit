@@ -25,7 +25,9 @@ if ! uv run ruff check $STAGED_FILES; then
 fi
 
 echo "→ Running mypy..."
-if ! uv run mypy $STAGED_FILES; then
+# Run mypy on all source files to ensure proper type resolution
+# (running on single files can miss type information from other modules)
+if ! uv run mypy src/ tests/ alembic/; then
     echo "ERROR: Type checking failed. Fix type errors before committing."
     exit 1
 fi

@@ -1,4 +1,11 @@
-"""Fixtures for integration tests using Docker."""
+"""Fixtures for integration tests using Docker.
+
+This module provides fixtures that work in two environments:
+1. Local development: Uses docker-compose via scripts/setup.sh
+2. CI (GitHub Actions): Uses pre-configured PostgreSQL service
+
+The CI environment is detected via the CI environment variable.
+"""
 
 import os
 import subprocess
@@ -7,6 +14,11 @@ from collections.abc import Generator
 
 import psycopg2
 import pytest
+
+
+def is_ci() -> bool:
+    """Check if running in CI environment."""
+    return os.environ.get("CI", "").lower() == "true"
 
 
 def wait_for_db(
@@ -71,7 +83,7 @@ def project_root() -> str:
 
 @pytest.fixture(scope="session")
 def db_credentials(project_root: str) -> dict[str, str | int]:
-    """Database credentials from .env file."""
+    """Database credentials from .env file or environment."""
     env_file = os.path.join(project_root, ".env")
     env_example = os.path.join(project_root, ".env.example")
 
@@ -80,7 +92,7 @@ def db_credentials(project_root: str) -> dict[str, str | int]:
     env_vars = load_env_file(env_path)
 
     return {
-        "host": "localhost",
+        "host": env_vars.get("POSTGRES_HOST", "localhost"),
         "port": int(env_vars.get("POSTGRES_PORT", "5432")),
         "user": env_vars.get("POSTGRES_USER", "potluck"),
         "password": env_vars.get("POSTGRES_PASSWORD", "changeme_in_production"),
@@ -89,69 +101,90 @@ def db_credentials(project_root: str) -> dict[str, str | int]:
 
 
 @pytest.fixture(scope="session")
-def docker_compose_up(
+def ensure_db_available(
     project_root: str,
     db_credentials: dict[str, str | int],
 ) -> Generator[None, None, None]:
-    """Start docker-compose services for testing using setup.sh script.
+    """Ensure database is available for testing.
 
-    This fixture:
-    1. Runs scripts/setup.sh which handles .env creation and service startup
-    2. Waits for the database to be ready
-    3. Yields control to tests
-    4. Tears down containers after tests complete
+    In CI: Database is already running via GitHub Actions services.
+    Locally: Starts docker-compose via scripts/setup.sh.
     """
-    setup_script = os.path.join(project_root, "scripts", "setup.sh")
+    if is_ci():
+        # In CI, database is already available via GitHub Actions services
+        # Just verify it's ready
+        db_ready = wait_for_db(
+            host=str(db_credentials["host"]),
+            port=int(db_credentials["port"]),
+            user=str(db_credentials["user"]),
+            password=str(db_credentials["password"]),
+            dbname=str(db_credentials["dbname"]),
+            max_retries=30,
+            retry_interval=1.0,
+        )
+        if not db_ready:
+            pytest.fail("Database not available in CI environment")
+        yield
+    else:
+        # Local development: use docker-compose via setup.sh
+        setup_script = os.path.join(project_root, "scripts", "setup.sh")
 
-    # Run the setup script with --db-only and --non-interactive flags for testing
-    result = subprocess.run(
-        ["bash", setup_script, "--db-only", "--non-interactive"],
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-    )
-
-    if result.returncode != 0:
-        pytest.fail(f"Setup script failed:\nstdout: {result.stdout}\nstderr: {result.stderr}")
-
-    # Verify database is ready (setup.sh should have already done this, but double-check)
-    db_ready = wait_for_db(
-        host=str(db_credentials["host"]),
-        port=int(db_credentials["port"]),
-        user=str(db_credentials["user"]),
-        password=str(db_credentials["password"]),
-        dbname=str(db_credentials["dbname"]),
-    )
-
-    if not db_ready:
-        # Get logs for debugging
-        logs = subprocess.run(
-            ["docker", "compose", "logs", "db"],
+        result = subprocess.run(
+            ["bash", setup_script, "--db-only", "--non-interactive"],
             cwd=project_root,
             capture_output=True,
             text=True,
         )
-        # Clean up and fail
+
+        if result.returncode != 0:
+            pytest.fail(f"Setup script failed:\nstdout: {result.stdout}\nstderr: {result.stderr}")
+
+        db_ready = wait_for_db(
+            host=str(db_credentials["host"]),
+            port=int(db_credentials["port"]),
+            user=str(db_credentials["user"]),
+            password=str(db_credentials["password"]),
+            dbname=str(db_credentials["dbname"]),
+        )
+
+        if not db_ready:
+            logs = subprocess.run(
+                ["docker", "compose", "logs", "db"],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["docker", "compose", "down", "-v"],
+                cwd=project_root,
+                check=False,
+            )
+            pytest.fail(
+                f"Database did not become ready in time.\nLogs:\n{logs.stdout}\n{logs.stderr}"
+            )
+
+        yield
+
+        # Teardown: stop containers only in local development
         subprocess.run(
             ["docker", "compose", "down", "-v"],
             cwd=project_root,
             check=False,
         )
-        pytest.fail(f"Database did not become ready in time.\nLogs:\n{logs.stdout}\n{logs.stderr}")
 
+
+# Keep docker_compose_up as an alias for backward compatibility
+@pytest.fixture(scope="session")
+def docker_compose_up(
+    ensure_db_available: None,  # noqa: ARG001
+) -> Generator[None, None, None]:
+    """Alias for ensure_db_available (backward compatibility)."""
     yield
-
-    # Teardown: stop and remove containers and volumes
-    subprocess.run(
-        ["docker", "compose", "down", "-v"],
-        cwd=project_root,
-        check=False,
-    )
 
 
 @pytest.fixture(scope="session")
 def db_connection(
-    docker_compose_up: None,  # noqa: ARG001 - ensures Docker is running
+    ensure_db_available: None,  # noqa: ARG001 - ensures database is running
     db_credentials: dict[str, str | int],
 ) -> Generator[psycopg2.extensions.connection, None, None]:
     """Create a database connection for tests."""
@@ -168,8 +201,15 @@ def db_connection(
 
 @pytest.fixture(scope="session")
 def run_migrations(
-    docker_compose_up: None,  # noqa: ARG001 - ensures Docker is running
+    ensure_db_available: None,  # noqa: ARG001 - ensures database is running
+    project_root: str,
+    db_credentials: dict[str, str | int],
 ) -> None:
-    """Migrations are run by setup.sh, this fixture just ensures Docker is up."""
-    # setup.sh already runs migrations via: docker compose exec app alembic upgrade head
+    """Run database migrations.
+
+    In CI: Migrations are run by the workflow before tests.
+    Locally: Migrations are run by setup.sh.
+    """
+    # In both cases, migrations should already be applied
+    # This fixture just ensures the database is up and ready
     pass

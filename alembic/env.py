@@ -26,7 +26,7 @@ target_metadata = SQLModel.metadata
 def get_url() -> str:
     """Get database URL from settings."""
     settings = get_settings()
-    url: str = settings.sync_database_url
+    url: str = settings.sync_db_url
     return url
 
 

@@ -19,10 +19,13 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 4. When milestone complete, update `pyproject.toml` version, merge to `main` and tag: `git tag v0.1.0`  (use semantic versioning, e.g. Phase 1 = `0.1.x`)
 5. Push tag to trigger GitHub release
 
-**Tips and Tricks**:
+**Reminders**:
 
-- Code style: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs.
+- Code style: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs. Do not make imports optional conditioned by TYPE_CHECKING.
 - Only add functionality as needed. Do not front load work. E.g. Only add exceptions to src/potluck/core/exceptions.py while creating the feature that will raise it.
+- Raise Potluck specific exceptions that are defined in `core/exceptions.py`
+- Keep all imports at the top of the file. If you have an issue with circular imports, clarify the requirements since it is likely an architecture issue
+- Tests should reuse as much code from the implementation as possible
 
 ## References
 

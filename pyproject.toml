@@ -1,6 +1,6 @@
 [project]
 name = "potluck"
-version = "0.2.0"
+version = "0.3.0"
 description = "Personal Knowledge Database MCP server - Personalize your AI with Google Takeout and GDPR exports"
 readme = "README.md"
 license = { text = "MIT" }
@@ -40,6 +40,9 @@ dependencies = [
     "pillow>=10.0.0",
     "imagehash>=4.3.0",
     "exifread>=3.0.0",
+
+    # Data processing
+    "polars>=1.0.0",
 
     # Utilities
     "pydantic-settings>=2.0.0",

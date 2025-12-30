@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
 
+from potluck.models.base import EntityType
 from potluck.models.utils import utc_now
 
 
@@ -39,21 +40,8 @@ class LinkType(str, Enum):
     CUSTOM = "custom"  # User-defined relationship
 
 
-class EntityType(str, Enum):
-    """Types of entities that can be linked."""
-
-    MEDIA = "media"
-    CHAT_MESSAGE = "chat_message"
-    EMAIL = "email"
-    SOCIAL_POST = "social_post"
-    SOCIAL_COMMENT = "social_comment"
-    KNOWLEDGE_NOTE = "knowledge_note"
-    CALENDAR_EVENT = "calendar_event"
-    TRANSACTION = "transaction"
-    LOCATION_VISIT = "location_visit"
-    BROWSING_HISTORY = "browsing_history"
-    BOOKMARK = "bookmark"
-    PERSON = "person"
+# Re-export EntityType for backward compatibility
+__all__ = ["EntityType", "LinkType", "EntityLink"]
 
 
 class EntityLink(SQLModel, table=True):

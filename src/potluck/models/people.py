@@ -2,7 +2,6 @@
 
 from datetime import date, datetime
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
@@ -11,9 +10,6 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.models.base import SourceType
 from potluck.models.utils import utc_now
-
-if TYPE_CHECKING:
-    from potluck.models.media import Media
 
 
 class AliasType(str, Enum):
@@ -137,9 +133,13 @@ class PersonAlias(SQLModel, table=True):
 
 
 class FaceEncoding(SQLModel, table=True):
-    """Face embedding vector linked to a Person.
+    """Reference face embedding vector for a Person.
 
-    Stores face recognition embeddings for identifying people in photos.
+    Stores face recognition embeddings used to identify a person in photos.
+    These are reference vectors - when processing media, detected faces are
+    compared against these embeddings to identify who appears in the image.
+
+    The person-media association is stored in MediaPersonLink, not here.
     """
 
     __tablename__ = "face_encodings"
@@ -154,28 +154,24 @@ class FaceEncoding(SQLModel, table=True):
         index=True,
         description="The person this face belongs to",
     )
-    media_id: UUID = Field(
-        foreign_key="media.id",
-        index=True,
-        description="The media item containing this face",
-    )
     embedding: list[float] = Field(
         sa_column=Column(Vector(128)),  # dlib face_recognition uses 128-d vectors
         description="128-dimensional face embedding vector",
     )
-    bounding_box: str | None = Field(
+    source_media_id: UUID | None = Field(
         default=None,
-        description="JSON-encoded bounding box [top, right, bottom, left]",
+        index=True,
+        description="Optional: media item this encoding was extracted from (for provenance)",
+    )
+    is_primary: bool = Field(
+        default=False,
+        description="Whether this is the primary reference encoding for the person",
     )
     confidence: float = Field(
         default=1.0,
         ge=0.0,
         le=1.0,
-        description="Confidence score for face detection",
-    )
-    is_confirmed: bool = Field(
-        default=False,
-        description="Whether the person association is user-confirmed",
+        description="Quality/confidence score for this encoding",
     )
     created_at: datetime = Field(
         default_factory=utc_now,
@@ -184,4 +180,3 @@ class FaceEncoding(SQLModel, table=True):
 
     # Relationships
     person: Person = Relationship(back_populates="face_encodings")
-    media: "Media" = Relationship(back_populates="face_encodings")
