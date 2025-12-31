@@ -16,6 +16,7 @@ from potluck.processing.base import (
 )
 from potluck.processing.hashing import HashingProcessor, compute_phash_distance
 from potluck.processing.metadata import MetadataProcessor
+from potluck.processing.ocr import OCRProcessor
 
 __all__ = [
     # Base classes
@@ -26,6 +27,7 @@ __all__ = [
     # Processors
     "HashingProcessor",
     "MetadataProcessor",
+    "OCRProcessor",
     # Utilities
     "compute_phash_distance",
 ]
