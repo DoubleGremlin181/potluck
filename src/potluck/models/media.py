@@ -204,6 +204,11 @@ class MediaPersonLink(SQLModel, table=True):
         default=False,
         description="Whether the link is user-confirmed",
     )
+    detected_face_id: UUID | None = Field(
+        default=None,
+        foreign_key="detected_faces.id",
+        description="The specific face detection that created this link",
+    )
     created_at: datetime = Field(
         default_factory=utc_now,
         description="When the link was created",

@@ -63,6 +63,9 @@ from potluck.models.messages import (
 from potluck.models.notes import KnowledgeNote
 from potluck.models.people import (
     AliasType,
+    ClusterStatus,
+    DetectedFace,
+    FaceCluster,
     FaceEncoding,
     Person,
     PersonAlias,
@@ -192,6 +195,9 @@ __all__ = [
     "KnowledgeNote",
     # People
     "AliasType",
+    "ClusterStatus",
+    "DetectedFace",
+    "FaceCluster",
     "FaceEncoding",
     "Person",
     "PersonAlias",

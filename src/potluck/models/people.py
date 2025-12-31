@@ -155,7 +155,7 @@ class FaceEncoding(SQLModel, table=True):
         description="The person this face belongs to",
     )
     embedding: list[float] = Field(
-        sa_column=Column(Vector(128)),  # dlib face_recognition uses 128-d vectors
+        sa_column=Column(Vector(128)),  # FaceNet uses 128-d vectors
         description="128-dimensional face embedding vector",
     )
     source_media_id: UUID | None = Field(
@@ -180,3 +180,114 @@ class FaceEncoding(SQLModel, table=True):
 
     # Relationships
     person: Person = Relationship(back_populates="face_encodings")
+
+
+class ClusterStatus(str, Enum):
+    """Status of a face cluster."""
+
+    PENDING = "pending"  # Awaiting user review
+    CONFIRMED = "confirmed"  # Assigned to a Person
+    REJECTED = "rejected"  # User marked as not a real face/garbage
+
+
+class FaceCluster(SQLModel, table=True):
+    """Cluster of similar faces before Person assignment.
+
+    Groups detected faces by visual similarity using DBSCAN clustering.
+    Users can:
+    - Assign a cluster to an existing Person
+    - Create a new Person from a cluster
+    - Mark a cluster for review (low confidence)
+    - Reject garbage clusters (false positives)
+    """
+
+    __tablename__ = "face_clusters"
+
+    id: UUID = Field(
+        default_factory=uuid4,
+        primary_key=True,
+        description="Unique identifier for the cluster",
+    )
+    representative_encoding: list[float] = Field(
+        sa_column=Column(Vector(128)),
+        description="Centroid/representative face embedding for the cluster",
+    )
+    status: ClusterStatus = Field(
+        default=ClusterStatus.PENDING,
+        description="Current status of the cluster",
+    )
+    person_id: UUID | None = Field(
+        default=None,
+        foreign_key="people.id",
+        index=True,
+        description="Person this cluster was assigned to (when confirmed)",
+    )
+    needs_review: bool = Field(
+        default=False,
+        description="Flag for low-confidence matches needing user review",
+    )
+    face_count: int = Field(
+        default=0,
+        description="Number of faces in this cluster",
+    )
+    created_at: datetime = Field(
+        default_factory=utc_now,
+        description="When the cluster was created",
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now,
+        sa_column_kwargs={"onupdate": utc_now},
+        description="When the cluster was last updated",
+    )
+
+    # Relationships
+    detected_faces: list["DetectedFace"] = Relationship(back_populates="cluster")
+
+
+class DetectedFace(SQLModel, table=True):
+    """Individual face detected in a media item.
+
+    Links a face detection to its source media and cluster.
+    Stores the bounding box location and embedding vector.
+    """
+
+    __tablename__ = "detected_faces"
+
+    id: UUID = Field(
+        default_factory=uuid4,
+        primary_key=True,
+        description="Unique identifier for the detected face",
+    )
+    media_id: UUID = Field(
+        foreign_key="media.id",
+        index=True,
+        description="The media item this face was detected in",
+    )
+    cluster_id: UUID | None = Field(
+        default=None,
+        foreign_key="face_clusters.id",
+        index=True,
+        description="The cluster this face belongs to",
+    )
+    embedding: list[float] = Field(
+        sa_column=Column(Vector(128)),
+        description="128-dimensional face embedding vector",
+    )
+    # Bounding box for face location in image
+    bbox_x: int = Field(description="Bounding box top-left X coordinate")
+    bbox_y: int = Field(description="Bounding box top-left Y coordinate")
+    bbox_width: int = Field(description="Bounding box width in pixels")
+    bbox_height: int = Field(description="Bounding box height in pixels")
+    confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Detection confidence score",
+    )
+    created_at: datetime = Field(
+        default_factory=utc_now,
+        description="When the face was detected",
+    )
+
+    # Relationships
+    cluster: FaceCluster | None = Relationship(back_populates="detected_faces")

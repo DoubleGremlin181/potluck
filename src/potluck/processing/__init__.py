@@ -14,6 +14,7 @@ from potluck.processing.base import (
     ProcessingResult,
     ProcessingStatus,
 )
+from potluck.processing.faces import FaceProcessor
 from potluck.processing.hashing import HashingProcessor, compute_phash_distance
 from potluck.processing.metadata import MetadataProcessor
 from potluck.processing.ocr import OCRProcessor
@@ -25,6 +26,7 @@ __all__ = [
     "ProcessingResult",
     "ProcessingStatus",
     # Processors
+    "FaceProcessor",
     "HashingProcessor",
     "MetadataProcessor",
     "OCRProcessor",
