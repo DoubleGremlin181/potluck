@@ -15,6 +15,7 @@ from potluck.processing.base import (
     ProcessingStatus,
 )
 from potluck.processing.hashing import HashingProcessor, compute_phash_distance
+from potluck.processing.metadata import MetadataProcessor
 
 __all__ = [
     # Base classes
@@ -24,6 +25,7 @@ __all__ = [
     "ProcessingStatus",
     # Processors
     "HashingProcessor",
+    "MetadataProcessor",
     # Utilities
     "compute_phash_distance",
 ]
