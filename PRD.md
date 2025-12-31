@@ -81,8 +81,10 @@ All entities are generic and not tied to a specific source. A `source_type` fiel
 
 - **Hashing**: SHA256 for content dedup + perceptual hashing (pHash) for visual similarity
 - **OCR**: Text extraction from images using EasyOCR
-- **Face Detection**: Face encoding using `face_recognition` library for person linking
+- **Face Detection**: Face encoding using DeepFace library (FaceNet backend, 128-d vectors) with auto-clustering via DBSCAN
+- **Face Clustering**: Google Photos-style auto-clustering of detected faces into groups, with user review UI for person assignment
 - **EXIF Extraction**: Location, timestamp, camera info from photo metadata
+- **Image Captioning**: AI-generated image descriptions (alt-text) using BLIP-2 model
 - **Embeddings**: CLIP multimodal embeddings for image+text similarity
 
 ### Search
@@ -161,7 +163,8 @@ FastAPI + HTMX server-side rendered interface.
 | Text Embeddings | sentence-transformers (configurable) |
 | Multimodal Embeddings | CLIP |
 | OCR | EasyOCR |
-| Face Recognition | face_recognition library |
+| Face Recognition | DeepFace (FaceNet backend) |
+| Image Captioning | BLIP-2 (transformers) |
 | MCP Protocol | mcp library |
 | Data Processing | Polars |
 | Package Manager | uv |

@@ -26,3 +26,15 @@ class IngestionError(PotluckError):
     - Archive extraction failures
     - File parsing errors (JSON, CSV, MBOX, etc.)
     """
+
+
+class ProcessingError(PotluckError):
+    """Raised when media processing fails.
+
+    Covers all processing-related errors including:
+    - Image/video file corruption or unsupported formats
+    - OCR extraction failures
+    - Face detection failures
+    - EXIF parsing errors
+    - Model loading errors
+    """
