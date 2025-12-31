@@ -14,6 +14,7 @@ from potluck.processing.base import (
     ProcessingResult,
     ProcessingStatus,
 )
+from potluck.processing.captioning import CaptioningProcessor
 from potluck.processing.faces import FaceProcessor
 from potluck.processing.hashing import HashingProcessor, compute_phash_distance
 from potluck.processing.metadata import MetadataProcessor
@@ -580,3 +581,86 @@ class TestFaceProcessorClustering:
         closest_id, distance = processor.find_closest_cluster(embedding, cluster_centroids)
 
         assert closest_id is None
+
+
+class TestCaptioningProcessor:
+    """Tests for CaptioningProcessor."""
+
+    def test_processor_has_name(self) -> None:
+        """CaptioningProcessor should have a NAME attribute."""
+        processor = CaptioningProcessor()
+        assert processor.NAME == "captioning"
+
+    def test_should_process_only_images(self) -> None:
+        """CaptioningProcessor should only process images."""
+        processor = CaptioningProcessor()
+
+        image_media = Media(
+            id=uuid4(),
+            file_path="/test.jpg",
+            media_type=MediaType.IMAGE,
+            source_type="generic",
+        )
+        video_media = Media(
+            id=uuid4(),
+            file_path="/test.mp4",
+            media_type=MediaType.VIDEO,
+            source_type="generic",
+        )
+        audio_media = Media(
+            id=uuid4(),
+            file_path="/test.mp3",
+            media_type=MediaType.AUDIO,
+            source_type="generic",
+        )
+
+        assert processor.should_process(image_media) is True
+        assert processor.should_process(video_media) is False
+        assert processor.should_process(audio_media) is False
+
+    def test_skip_non_image(self) -> None:
+        """CaptioningProcessor should skip non-image media."""
+        processor = CaptioningProcessor()
+        media = Media(
+            id=uuid4(),
+            file_path="/test.mp4",
+            media_type=MediaType.VIDEO,
+            source_type="generic",
+        )
+
+        result = processor.process(media)
+
+        assert result.status == ProcessingStatus.SKIPPED
+
+    def test_missing_file_fails(self) -> None:
+        """CaptioningProcessor should fail for missing files."""
+        processor = CaptioningProcessor()
+        media = Media(
+            id=uuid4(),
+            file_path="/nonexistent/file.jpg",
+            media_type=MediaType.IMAGE,
+            source_type="generic",
+        )
+
+        result = processor.process(media)
+
+        assert result.status == ProcessingStatus.FAILED
+        assert result.error_message is not None
+        assert "not found" in result.error_message.lower()
+
+    def test_default_model_settings(self) -> None:
+        """CaptioningProcessor should use BLIP-2 model by default."""
+        processor = CaptioningProcessor()
+        assert processor._model_name == "Salesforce/blip2-opt-2.7b"
+        assert processor._max_length == 50
+
+    def test_custom_model_settings(self) -> None:
+        """CaptioningProcessor should accept custom model settings."""
+        processor = CaptioningProcessor(
+            model_name="custom/model",
+            max_length=100,
+            device="cpu",
+        )
+        assert processor._model_name == "custom/model"
+        assert processor._max_length == 100
+        assert processor._device == "cpu"
