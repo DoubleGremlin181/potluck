@@ -8,7 +8,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import SourceType
+from potluck.models.base import SimpleEntity, SourceType
 from potluck.models.utils import utc_now
 
 
@@ -190,7 +190,7 @@ class ClusterStatus(str, Enum):
     REJECTED = "rejected"  # User marked as not a real face/garbage
 
 
-class FaceCluster(SQLModel, table=True):
+class FaceCluster(SimpleEntity, table=True):
     """Cluster of similar faces before Person assignment.
 
     Groups detected faces by visual similarity using DBSCAN clustering.
@@ -203,11 +203,6 @@ class FaceCluster(SQLModel, table=True):
 
     __tablename__ = "face_clusters"
 
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the cluster",
-    )
     representative_encoding: list[float] = Field(
         sa_column=Column(Vector(128)),
         description="Centroid/representative face embedding for the cluster",
@@ -230,64 +225,10 @@ class FaceCluster(SQLModel, table=True):
         default=0,
         description="Number of faces in this cluster",
     )
-    created_at: datetime = Field(
-        default_factory=utc_now,
-        description="When the cluster was created",
-    )
-    updated_at: datetime = Field(
-        default_factory=utc_now,
-        sa_column_kwargs={"onupdate": utc_now},
-        description="When the cluster was last updated",
-    )
 
     # Relationships
-    detected_faces: list["DetectedFace"] = Relationship(back_populates="cluster")
+    face_links: list["MediaPersonLink"] = Relationship(back_populates="cluster")
 
 
-class DetectedFace(SQLModel, table=True):
-    """Individual face detected in a media item.
-
-    Links a face detection to its source media and cluster.
-    Stores the bounding box location and embedding vector.
-    """
-
-    __tablename__ = "detected_faces"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the detected face",
-    )
-    media_id: UUID = Field(
-        foreign_key="media.id",
-        index=True,
-        description="The media item this face was detected in",
-    )
-    cluster_id: UUID | None = Field(
-        default=None,
-        foreign_key="face_clusters.id",
-        index=True,
-        description="The cluster this face belongs to",
-    )
-    embedding: list[float] = Field(
-        sa_column=Column(Vector(128)),
-        description="128-dimensional face embedding vector",
-    )
-    # Bounding box for face location in image
-    bbox_x: int = Field(description="Bounding box top-left X coordinate")
-    bbox_y: int = Field(description="Bounding box top-left Y coordinate")
-    bbox_width: int = Field(description="Bounding box width in pixels")
-    bbox_height: int = Field(description="Bounding box height in pixels")
-    confidence: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Detection confidence score",
-    )
-    created_at: datetime = Field(
-        default_factory=utc_now,
-        description="When the face was detected",
-    )
-
-    # Relationships
-    cluster: FaceCluster | None = Relationship(back_populates="detected_faces")
+# Forward reference for type hints
+from potluck.models.media import MediaPersonLink as MediaPersonLink  # noqa: E402, F401

@@ -1,13 +1,12 @@
-"""Add face clustering tables.
+"""Add face clustering support.
 
 Revision ID: 002_face_clustering
 Revises: 001_initial_schema
 Create Date: 2025-12-30
 
-This migration adds tables for Phase 4 face detection and clustering:
+This migration adds tables for face detection and clustering:
 - face_clusters: Groups similar detected faces before Person assignment
-- detected_faces: Individual faces detected in media items
-- Updates media_person_links with detected_face_id reference
+- Updates media_person_links to store face detection data (embeddings, bounding boxes)
 - Updates face_encodings to match new schema (reference embeddings for known people)
 """
 
@@ -30,6 +29,8 @@ def upgrade() -> None:
     op.create_table(
         "face_clusters",
         sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("representative_encoding", Vector(128), nullable=False),
         sa.Column(
             "status", sa.String(), nullable=False, server_default="pending"
@@ -37,8 +38,6 @@ def upgrade() -> None:
         sa.Column("person_id", sa.Uuid(), nullable=True),
         sa.Column("needs_review", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("face_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -53,45 +52,47 @@ def upgrade() -> None:
         """
     )
 
-    # === Create detected_faces table ===
+    # === Update media_person_links ===
+    # Change from composite PK (media_id, person_id) to UUID PK
+    # Add face detection fields: embedding, bbox, cluster_id
+    # Make person_id nullable (for unidentified faces)
+
+    # Drop old table and recreate with new schema
+    op.drop_table("media_person_links")
+
     op.create_table(
-        "detected_faces",
+        "media_person_links",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("media_id", sa.Uuid(), nullable=False),
-        sa.Column("cluster_id", sa.Uuid(), nullable=True),
-        sa.Column("embedding", Vector(128), nullable=False),
-        sa.Column("bbox_x", sa.Integer(), nullable=False),
-        sa.Column("bbox_y", sa.Integer(), nullable=False),
-        sa.Column("bbox_width", sa.Integer(), nullable=False),
-        sa.Column("bbox_height", sa.Integer(), nullable=False),
-        sa.Column("confidence", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("media_id", sa.Uuid(), nullable=False),
+        sa.Column("person_id", sa.Uuid(), nullable=True),  # Nullable for unidentified faces
+        sa.Column("cluster_id", sa.Uuid(), nullable=True),  # FK to face_clusters
+        sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("confidence", sa.Float(), nullable=False, server_default="1.0"),
+        sa.Column("is_confirmed", sa.Boolean(), nullable=False, server_default="false"),
+        # Face detection fields
+        sa.Column("embedding", Vector(128), nullable=True),  # None for manual tags
+        sa.Column("bbox_x", sa.Integer(), nullable=True),
+        sa.Column("bbox_y", sa.Integer(), nullable=True),
+        sa.Column("bbox_width", sa.Integer(), nullable=True),
+        sa.Column("bbox_height", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
+        sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["cluster_id"], ["face_clusters.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_detected_faces_media_id", "detected_faces", ["media_id"])
-    op.create_index("ix_detected_faces_cluster_id", "detected_faces", ["cluster_id"])
+    op.create_index("ix_media_person_links_media_id", "media_person_links", ["media_id"])
+    op.create_index("ix_media_person_links_person_id", "media_person_links", ["person_id"])
+    op.create_index("ix_media_person_links_cluster_id", "media_person_links", ["cluster_id"])
     # HNSW index for detected face similarity search
     op.execute(
         """
-        CREATE INDEX ix_detected_faces_embedding_hnsw
-        ON detected_faces
+        CREATE INDEX ix_media_person_links_embedding_hnsw
+        ON media_person_links
         USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
         """
-    )
-
-    # === Update media_person_links with detected_face_id ===
-    op.add_column(
-        "media_person_links",
-        sa.Column("detected_face_id", sa.Uuid(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_media_person_links_detected_face_id",
-        "media_person_links",
-        "detected_faces",
-        ["detected_face_id"],
-        ["id"],
     )
 
     # === Update face_encodings table schema ===
@@ -117,10 +118,19 @@ def upgrade() -> None:
         sa.Column("is_primary", sa.Boolean(), nullable=False, server_default="false"),
     )
     op.create_index("ix_face_encodings_source_media_id", "face_encodings", ["source_media_id"])
+    # Add missing FK constraint for source_media_id
+    op.create_foreign_key(
+        "fk_face_encodings_source_media_id",
+        "face_encodings",
+        "media",
+        ["source_media_id"],
+        ["id"],
+    )
 
 
 def downgrade() -> None:
     # === Revert face_encodings changes ===
+    op.drop_constraint("fk_face_encodings_source_media_id", "face_encodings", type_="foreignkey")
     op.drop_index("ix_face_encodings_source_media_id", table_name="face_encodings")
     op.drop_column("face_encodings", "is_primary")
     op.drop_column("face_encodings", "source_media_id")
@@ -147,17 +157,23 @@ def downgrade() -> None:
         ["id"],
     )
 
-    # === Remove detected_face_id from media_person_links ===
-    op.drop_constraint(
-        "fk_media_person_links_detected_face_id", "media_person_links", type_="foreignkey"
-    )
-    op.drop_column("media_person_links", "detected_face_id")
+    # === Revert media_person_links changes ===
+    op.execute("DROP INDEX IF EXISTS ix_media_person_links_embedding_hnsw")
+    op.drop_table("media_person_links")
 
-    # === Drop detected_faces table ===
-    op.drop_index("ix_detected_faces_cluster_id", table_name="detected_faces")
-    op.drop_index("ix_detected_faces_media_id", table_name="detected_faces")
-    op.execute("DROP INDEX IF EXISTS ix_detected_faces_embedding_hnsw")
-    op.drop_table("detected_faces")
+    # Recreate original table
+    op.create_table(
+        "media_person_links",
+        sa.Column("media_id", sa.Uuid(), nullable=False),
+        sa.Column("person_id", sa.Uuid(), nullable=False),
+        sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("confidence", sa.Float(), nullable=False, server_default="1.0"),
+        sa.Column("is_confirmed", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
+        sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
+        sa.PrimaryKeyConstraint("media_id", "person_id"),
+    )
 
     # === Drop face_clusters table ===
     op.drop_index("ix_face_clusters_status", table_name="face_clusters")
