@@ -70,6 +70,7 @@ ml = [
     "easyocr>=1.7.0",
     # Face detection and recognition
     "deepface>=0.0.90",
+    "tf-keras>=2.16.0",  # Required for deepface with TensorFlow 2.16+
     # Clustering
     "scikit-learn>=1.3.0",
     # Image captioning
