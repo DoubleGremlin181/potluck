@@ -37,8 +37,8 @@ def create_celery_app() -> Celery:
         worker_concurrency=4,
         # Task discovery
         task_routes={
-            "potluck.ingesters.*": {"queue": "ingest"},
-            "potluck.processing.*": {"queue": "process"},
+            "potluck.pipeline.tasks.ingestion.*": {"queue": "ingest"},
+            "potluck.pipeline.tasks.processing.*": {"queue": "process"},
             "potluck.embeddings.*": {"queue": "embed"},
         },
     )
@@ -46,8 +46,7 @@ def create_celery_app() -> Celery:
     # Auto-discover tasks from potluck packages
     app.autodiscover_tasks(
         [
-            "potluck.ingesters",
-            "potluck.processing",
+            "potluck.pipeline.tasks",
             "potluck.embeddings",
         ]
     )

@@ -1,4 +1,4 @@
-"""Deduplication utilities for data ingestion.
+"""Hashing utilities for deduplication and file identification.
 
 This module provides hash functions for two levels of deduplication:
 
@@ -6,22 +6,11 @@ This module provides hash functions for two levels of deduplication:
    - compute_file_hash() generates SHA256 of an import file/archive
    - Stored in ImportRun.file_hash (indexed for fast lookup)
    - Prevents re-processing the exact same export file
-   - Lookup: SELECT * FROM import_runs WHERE file_hash = ? AND status = 'completed'
 
 2. Entity-level (BaseEntity.content_hash):
    - compute_content_hash() generates SHA256 of entity content
    - Stored in BaseEntity.content_hash (indexed for fast lookup)
    - Prevents duplicate entities even across different imports
-   - Lookup: SELECT * FROM {entity_table} WHERE content_hash = ?
-
-Usage:
-    # File-level: Check if export was already imported
-    file_hash = compute_file_hash(Path("takeout.zip"))
-    # -> stored in ImportRun.file_hash
-
-    # Entity-level: Check if entity content already exists
-    content_hash = compute_content_hash(photo_bytes)
-    # -> stored in Media.content_hash
 """
 
 import hashlib
@@ -33,7 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session, select
 
-from potluck.core.exceptions import IngestionError
+from potluck.core.exceptions import PipelineError
 from potluck.core.logging import get_logger
 from potluck.models.sources import ImportRun, ImportStatus
 
@@ -45,10 +34,7 @@ HASH_BUFFER_SIZE = 1024 * 1024
 
 
 class DuplicateInfo(BaseModel):
-    """Information about a duplicate file detection.
-
-    Used to inform the user about a potential re-upload.
-    """
+    """Information about a duplicate file detection."""
 
     is_duplicate: bool
     """Whether the file is a duplicate."""
@@ -78,14 +64,13 @@ def compute_file_hash(path: Path) -> str:
         Hex-encoded SHA256 hash string.
 
     Raises:
-        IngestionError: If the file does not exist or is not a file.
-        OSError: If the file cannot be read.
+        PipelineError: If the file does not exist or is not a file.
     """
     if not path.exists():
-        raise IngestionError(f"File not found: {path}")
+        raise PipelineError(f"File not found: {path}")
 
     if not path.is_file():
-        raise IngestionError(f"Path is not a file: {path}")
+        raise PipelineError(f"Path is not a file: {path}")
 
     hasher = hashlib.sha256()
 
@@ -130,7 +115,6 @@ async def check_file_duplicate(
     """
     file_hash = compute_file_hash(path)
 
-    # Query for existing imports with the same file hash
     stmt = (
         select(ImportRun)
         .where(ImportRun.file_hash == file_hash)
@@ -178,7 +162,6 @@ def check_file_duplicate_sync(
     """
     file_hash = compute_file_hash(path)
 
-    # Query for existing imports with the same file hash
     stmt = (
         select(ImportRun)
         .where(ImportRun.file_hash == file_hash)

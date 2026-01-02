@@ -1,8 +1,6 @@
-"""Celery tasks for background media processing.
+"""Celery tasks for background media processing."""
 
-This module provides Celery tasks for running media processing in the background,
-enabling non-blocking ingestion and progress tracking.
-"""
+from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
@@ -22,7 +20,7 @@ from potluck.core.celery_utils import (
 from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
 from potluck.models.media import Media
-from potluck.processing.base import ProcessingStatus
+from potluck.pipeline.dtos import StageStatus
 
 logger = get_logger(__name__)
 
@@ -54,17 +52,9 @@ def _update_media_fields(session: Session, media_id: str, **fields: Any) -> None
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def process_media_hashing(self: Task, media_id: str) -> dict[str, Any]:
-    """Compute SHA256 and perceptual hash for a media item.
-
-    Args:
-        self: Celery task instance (bound).
-        media_id: UUID string of the Media to process.
-
-    Returns:
-        Dict with processing result.
-    """
-    from potluck.processing.hashing import HashingProcessor
+def run_hashing_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, Any]:
+    """Compute SHA256 and perceptual hash for a media item."""
+    from potluck.pipeline.processing.hashing import HashingStage
 
     logger.info(f"Starting hashing for media {media_id}")
 
@@ -75,10 +65,10 @@ def process_media_hashing(self: Task, media_id: str) -> dict[str, Any]:
             if media is None:
                 raise Reject(f"Media not found: {media_id}", requeue=False)
 
-            processor = HashingProcessor()
-            result = processor.process(media)
+            stage = HashingStage()
+            result = stage.execute(media)
 
-            if result.status == ProcessingStatus.COMPLETED:
+            if result.status == StageStatus.COMPLETED:
                 _update_media_fields(
                     session,
                     media_id,
@@ -115,17 +105,9 @@ def process_media_hashing(self: Task, media_id: str) -> dict[str, Any]:
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def process_media_metadata(self: Task, media_id: str) -> dict[str, Any]:
-    """Extract EXIF metadata from a media item.
-
-    Args:
-        self: Celery task instance (bound).
-        media_id: UUID string of the Media to process.
-
-    Returns:
-        Dict with processing result.
-    """
-    from potluck.processing.metadata import MetadataProcessor
+def run_metadata_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, Any]:
+    """Extract EXIF metadata from a media item."""
+    from potluck.pipeline.processing.metadata import MetadataStage
 
     logger.info(f"Starting metadata extraction for media {media_id}")
 
@@ -136,10 +118,10 @@ def process_media_metadata(self: Task, media_id: str) -> dict[str, Any]:
             if media is None:
                 raise Reject(f"Media not found: {media_id}", requeue=False)
 
-            processor = MetadataProcessor()
-            result = processor.process(media)
+            stage = MetadataStage()
+            result = stage.execute(media)
 
-            if result.status == ProcessingStatus.COMPLETED and result.data.get("has_exif"):
+            if result.status == StageStatus.COMPLETED and result.data.get("has_exif"):
                 _update_media_fields(
                     session,
                     media_id,
@@ -180,17 +162,9 @@ def process_media_metadata(self: Task, media_id: str) -> dict[str, Any]:
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def process_media_ocr(self: Task, media_id: str) -> dict[str, Any]:
-    """Run OCR on a media item.
-
-    Args:
-        self: Celery task instance (bound).
-        media_id: UUID string of the Media to process.
-
-    Returns:
-        Dict with processing result.
-    """
-    from potluck.processing.ocr import OCRProcessor
+def run_ocr_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, Any]:
+    """Run OCR on a media item."""
+    from potluck.pipeline.processing.ocr import OCRStage
 
     logger.info(f"Starting OCR for media {media_id}")
 
@@ -201,10 +175,10 @@ def process_media_ocr(self: Task, media_id: str) -> dict[str, Any]:
             if media is None:
                 raise Reject(f"Media not found: {media_id}", requeue=False)
 
-            processor = OCRProcessor()
-            result = processor.process(media)
+            stage = OCRStage()
+            result = stage.execute(media)
 
-            if result.status == ProcessingStatus.COMPLETED:
+            if result.status == StageStatus.COMPLETED:
                 ocr_text = result.data.get("ocr_text")
                 if ocr_text:
                     _update_media_fields(session, media_id, ocr_text=ocr_text)
@@ -237,19 +211,11 @@ def process_media_ocr(self: Task, media_id: str) -> dict[str, Any]:
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def process_media_faces(self: Task, media_id: str) -> dict[str, Any]:
-    """Detect faces in a media item.
-
-    Args:
-        self: Celery task instance (bound).
-        media_id: UUID string of the Media to process.
-
-    Returns:
-        Dict with processing result.
-    """
+def run_faces_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, Any]:
+    """Detect faces in a media item."""
     from potluck.models.base import SourceType
     from potluck.models.media import MediaPersonLink
-    from potluck.processing.faces import FaceProcessor
+    from potluck.pipeline.processing.faces import FaceStage
 
     logger.info(f"Starting face detection for media {media_id}")
 
@@ -260,16 +226,16 @@ def process_media_faces(self: Task, media_id: str) -> dict[str, Any]:
             if media is None:
                 raise Reject(f"Media not found: {media_id}", requeue=False)
 
-            processor = FaceProcessor()
-            result = processor.process(media)
+            stage = FaceStage()
+            result = stage.execute(media)
 
             # Persist detected faces to MediaPersonLink table
             faces = result.data.get("faces", [])
             for face_data in faces:
                 face_link = MediaPersonLink(
                     media_id=media.id,
-                    person_id=None,  # Unidentified until clustered/assigned
-                    cluster_id=None,  # Will be assigned by clustering task
+                    person_id=None,
+                    cluster_id=None,
                     source_type=SourceType.FACE_DETECTION,
                     confidence=face_data.get("confidence", 1.0),
                     is_confirmed=False,
@@ -313,17 +279,9 @@ def process_media_faces(self: Task, media_id: str) -> dict[str, Any]:
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def process_media_caption(self: Task, media_id: str) -> dict[str, Any]:
-    """Generate AI caption for a media item.
-
-    Args:
-        self: Celery task instance (bound).
-        media_id: UUID string of the Media to process.
-
-    Returns:
-        Dict with processing result.
-    """
-    from potluck.processing.captioning import CaptioningProcessor
+def run_captioning_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, Any]:
+    """Generate AI caption for a media item."""
+    from potluck.pipeline.processing.captioning import CaptioningStage
 
     logger.info(f"Starting captioning for media {media_id}")
 
@@ -334,10 +292,10 @@ def process_media_caption(self: Task, media_id: str) -> dict[str, Any]:
             if media is None:
                 raise Reject(f"Media not found: {media_id}", requeue=False)
 
-            processor = CaptioningProcessor()
-            result = processor.process(media)
+            stage = CaptioningStage()
+            result = stage.execute(media)
 
-            if result.status == ProcessingStatus.COMPLETED:
+            if result.status == StageStatus.COMPLETED:
                 caption = result.data.get("caption")
                 if caption:
                     _update_media_fields(session, media_id, caption=caption)
@@ -361,36 +319,28 @@ def process_media_caption(self: Task, media_id: str) -> dict[str, Any]:
             raise Reject(str(err), requeue=False) from err
 
 
-def process_media_pipeline(media_id: str) -> None:
+def run_processing_pipeline(media_id: str) -> None:
     """Trigger full processing pipeline for a media item.
 
-    Chains processors in order: hashing -> metadata -> ocr -> faces -> caption
-
-    Args:
-        media_id: UUID string of the Media to process.
+    Chains stages in order: hashing -> metadata -> ocr -> faces -> caption
     """
-    # Use .si() (immutable signature) to prevent previous task result
-    # from being passed as first argument to the next task
     chain(
-        process_media_hashing.si(media_id),
-        process_media_metadata.si(media_id),
-        process_media_ocr.si(media_id),
-        process_media_faces.si(media_id),
-        process_media_caption.si(media_id),
+        run_hashing_stage.si(media_id),
+        run_metadata_stage.si(media_id),
+        run_ocr_stage.si(media_id),
+        run_faces_stage.si(media_id),
+        run_captioning_stage.si(media_id),
     ).apply_async()
 
 
-def process_media_basic(media_id: str) -> None:
+def run_basic_processing(media_id: str) -> None:
     """Trigger basic processing (hashing + metadata only).
 
     Useful when ML dependencies are not available.
-
-    Args:
-        media_id: UUID string of the Media to process.
     """
     chain(
-        process_media_hashing.si(media_id),
-        process_media_metadata.si(media_id),
+        run_hashing_stage.si(media_id),
+        run_metadata_stage.si(media_id),
     ).apply_async()
 
 
@@ -403,26 +353,17 @@ def process_media_basic(media_id: str) -> None:
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def cluster_unassigned_faces(self: Task) -> dict[str, Any]:
-    """Run DBSCAN clustering on unclustered detected faces.
-
-    This is a periodic task that groups similar unclustered faces together.
-    New faces are assigned to existing clusters if similar enough,
-    or new clusters are created.
-
-    Returns:
-        Dict with clustering statistics.
-    """
+def cluster_unassigned_faces(self: Task[..., dict[str, Any]]) -> dict[str, Any]:
+    """Run DBSCAN clustering on unclustered detected faces."""
     from potluck.models.media import MediaPersonLink
     from potluck.models.people import ClusterStatus, FaceCluster
-    from potluck.processing.faces import FaceProcessor
+    from potluck.pipeline.processing.faces import FaceStage
 
     logger.info("Starting face clustering task")
 
     try:
         engine = get_engine()
         with Session(engine) as session:
-            # Get all unclustered faces with embeddings (cluster_id IS NULL and embedding IS NOT NULL)
             stmt = select(MediaPersonLink).where(
                 MediaPersonLink.cluster_id == None,  # noqa: E711
                 MediaPersonLink.embedding != None,  # noqa: E711
@@ -439,39 +380,31 @@ def cluster_unassigned_faces(self: Task) -> dict[str, Any]:
                     "faces_assigned": 0,
                 }
 
-            # Extract embeddings and IDs
             embeddings = [list(face.embedding) for face in unclustered_faces]
             face_ids = [face.id for face in unclustered_faces]
 
-            # Run clustering
-            processor = FaceProcessor()
-            clusters = processor.cluster_embeddings(embeddings, face_ids)
+            stage = FaceStage()
+            clusters = stage.cluster_embeddings(embeddings, face_ids)
 
             clusters_created = 0
             faces_assigned = 0
 
             for label, cluster_face_ids in clusters.items():
                 if label == -1:
-                    # Noise - faces that don't belong to any cluster
                     continue
 
-                # Get embeddings for this cluster
                 cluster_embeddings = [embeddings[face_ids.index(fid)] for fid in cluster_face_ids]
+                centroid = stage.compute_cluster_centroid(cluster_embeddings)
 
-                # Compute centroid
-                centroid = processor.compute_cluster_centroid(cluster_embeddings)
-
-                # Create new cluster
                 new_cluster = FaceCluster(
                     representative_encoding=centroid,
                     status=ClusterStatus.PENDING,
                     face_count=len(cluster_face_ids),
-                    needs_review=len(cluster_face_ids) < 3,  # Flag small clusters
+                    needs_review=len(cluster_face_ids) < 3,
                 )
                 session.add(new_cluster)
-                session.flush()  # Get the cluster ID
+                session.flush()
 
-                # Assign faces to cluster
                 for face_id in cluster_face_ids:
                     face = session.get(MediaPersonLink, face_id)
                     if face:

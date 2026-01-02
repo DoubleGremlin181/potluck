@@ -1,8 +1,4 @@
-"""Celery tasks for background ingestion jobs.
-
-This module provides Celery tasks for running ingestion in the background,
-enabling progress tracking from both CLI and web UI.
-"""
+"""Celery tasks for background ingestion jobs."""
 
 from pathlib import Path
 from typing import Any
@@ -22,10 +18,11 @@ from potluck.core.celery_utils import (
 )
 from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
-from potluck.ingesters.pipeline import IngestionPipeline
 from potluck.models.base import EntityType, SourceType
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
+from potluck.pipeline.orchestrator import PipelineOrchestrator
+from potluck.pipeline.utils.hashing import compute_file_hash
 
 logger = get_logger(__name__)
 
@@ -36,7 +33,8 @@ def _mark_import_failed(import_run_id: str, error_message: str) -> None:
         engine = get_engine()
         with Session(engine) as session:
             stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
-            import_run = session.exec(stmt).first()
+            result = session.execute(stmt)
+            import_run = result.scalars().first()
             if import_run:
                 import_run.status = ImportStatus.FAILED
                 import_run.error_message = error_message
@@ -49,9 +47,6 @@ def _mark_import_failed(import_run_id: str, error_message: str) -> None:
         )
 
 
-# Note: type: ignore required because Celery's @app.task decorator is untyped.
-# mypy error: "Untyped decorator makes function untyped" [untyped-decorator]
-# Celery doesn't provide typed decorators, so we suppress this warning.
 @celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
     autoretry_for=(Retry,),
@@ -61,8 +56,8 @@ def _mark_import_failed(import_run_id: str, error_message: str) -> None:
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def ingest_file(
-    self: "Task",
+def run_ingestion(
+    self: "Task[..., dict[str, Any]]",
     import_run_id: str,
     path: str,
     entity_types: list[str] | None = None,
@@ -112,29 +107,32 @@ def ingest_file(
         with Session(engine) as session:
             # Verify ImportRun exists
             stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
-            import_run = session.exec(stmt).first()
+            result = session.execute(stmt)
+            import_run = result.scalars().first()
             if import_run is None:
                 raise Reject(f"ImportRun not found: {import_run_id}", requeue=False)
 
             # Run ingestion
-            pipeline = IngestionPipeline(
+            orchestrator = PipelineOrchestrator(
                 session=session,
                 on_progress=on_progress,
             )
-            result = pipeline.run(
+            pipeline_result = orchestrator.run(
                 path=Path(path),
                 entity_types=types_to_ingest,
             )
 
             return {
-                "import_run_id": str(result.import_run.id),
-                "status": result.import_run.status.value,
-                "created": result.stats.created,
-                "updated": result.stats.updated,
-                "skipped": result.stats.skipped,
-                "failed": result.stats.failed,
+                "import_run_id": str(pipeline_result.import_run.id),
+                "status": pipeline_result.import_run.status.value,
+                "created": pipeline_result.stats.entities_created,
+                "updated": pipeline_result.stats.entities_updated,
+                "skipped": pipeline_result.stats.entities_skipped,
+                "failed": pipeline_result.stats.entities_failed,
             }
 
+    except Reject:
+        raise
     except Exception as exc:
         logger.exception(f"Ingestion task failed: {exc}")
 
@@ -149,8 +147,8 @@ def ingest_file(
 
 
 @celery_app.task  # type: ignore[untyped-decorator]
-def cancel_import(import_run_id: str) -> dict[str, Any]:
-    """Cancel a running import.
+def cancel_ingestion(import_run_id: str) -> dict[str, Any]:
+    """Cancel a running ingestion.
 
     Args:
         import_run_id: UUID of the ImportRun to cancel.
@@ -162,7 +160,8 @@ def cancel_import(import_run_id: str) -> dict[str, Any]:
         engine = get_engine()
         with Session(engine) as session:
             stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
-            import_run = session.exec(stmt).first()
+            result = session.execute(stmt)
+            import_run = result.scalars().first()
 
             if import_run is None:
                 return {"success": False, "error": "ImportRun not found"}
@@ -177,7 +176,7 @@ def cancel_import(import_run_id: str) -> dict[str, Any]:
             return {"success": True, "import_run_id": import_run_id}
 
     except Exception as e:
-        logger.exception(f"Failed to cancel import {import_run_id}")
+        logger.exception(f"Failed to cancel ingestion {import_run_id}")
         return {"success": False, "error": str(e)}
 
 
@@ -196,8 +195,6 @@ def start_ingestion(
     Returns:
         Tuple of (task_id, import_run_id).
     """
-    from potluck.ingesters.utils.dedup import compute_file_hash
-
     engine = get_engine()
     with Session(engine) as session:
         source = ImportSource(
@@ -219,6 +216,6 @@ def start_ingestion(
 
     # Start Celery task
     types_list = [et.value for et in entity_types] if entity_types else None
-    task = ingest_file.delay(import_run_id, str(path), types_list)
+    task = run_ingestion.delay(import_run_id, str(path), types_list)
 
     return task.id, import_run_id

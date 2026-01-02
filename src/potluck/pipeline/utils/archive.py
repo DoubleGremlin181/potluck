@@ -1,4 +1,4 @@
-"""Archive extraction utilities for data ingestion."""
+"""Archive extraction utilities for pipeline operations."""
 
 import shutil
 import tarfile
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from potluck.core.exceptions import IngestionError
+from potluck.core.exceptions import PipelineError
 from potluck.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -107,11 +107,11 @@ def extract_archive(
         ExtractedArchive with paths and cleanup info.
 
     Raises:
-        IngestionError: If the archive format is not supported or extraction fails.
+        PipelineError: If the archive format is not supported or extraction fails.
     """
     archive_type = get_archive_type(archive_path)
     if archive_type is None:
-        raise IngestionError(f"Unsupported archive format: {archive_path}")
+        raise PipelineError(f"Unsupported archive format: {archive_path}")
 
     is_temporary = dest_path is None
     final_dest: Path | None = dest_path
@@ -142,7 +142,7 @@ def extract_archive(
         # Clean up on failure if we created a temp directory
         if is_temporary and final_dest is not None and final_dest.exists():
             shutil.rmtree(final_dest)
-        raise IngestionError(f"Failed to extract {archive_path}: {e}") from e
+        raise PipelineError(f"Failed to extract {archive_path}: {e}") from e
 
 
 def _extract_zip(archive_path: Path, dest_path: Path) -> None:
@@ -153,7 +153,7 @@ def _extract_zip(archive_path: Path, dest_path: Path) -> None:
         dest_path: Destination directory.
 
     Raises:
-        IngestionError: If extraction fails.
+        PipelineError: If extraction fails.
     """
     with zipfile.ZipFile(archive_path, "r") as zf:
         zf.extractall(dest_path)
@@ -168,7 +168,7 @@ def _extract_tar(archive_path: Path, dest_path: Path, archive_type: str) -> None
         archive_type: Type of compression ('tar', 'tgz', 'tbz2').
 
     Raises:
-        IngestionError: If extraction fails.
+        PipelineError: If extraction fails.
     """
     mode = "r:"
     if archive_type == "tgz":
@@ -243,7 +243,7 @@ def extracted(path: Path, extract_nested: bool = True) -> Iterator[Path]:
         Path to the extracted contents (or the original path if not an archive).
     """
     if not path.exists():
-        raise IngestionError(f"Path does not exist: {path}")
+        raise PipelineError(f"Path does not exist: {path}")
 
     if path.is_dir():
         # Not an archive, yield as-is

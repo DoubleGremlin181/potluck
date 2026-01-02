@@ -1,4 +1,4 @@
-"""EXIF metadata extraction processor for media files.
+"""EXIF metadata extraction stage for media files.
 
 This module extracts metadata from images including:
 - GPS coordinates (converted from DMS to decimal degrees)
@@ -11,14 +11,15 @@ import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import exifread
 
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
-from potluck.processing.base import BaseProcessor, ProcessingResult, ProcessingStatus
+from potluck.pipeline.dtos import StageResult, StageStatus
+from potluck.pipeline.processing.base import BaseProcessingStage
 
 logger = get_logger(__name__)
 
@@ -34,8 +35,8 @@ EXIF_DATE_FORMATS = [
 ]
 
 
-class MetadataProcessor(BaseProcessor):
-    """Processor for extracting EXIF metadata from images.
+class MetadataStage(BaseProcessingStage):
+    """Stage for extracting EXIF metadata from images.
 
     Extracts:
     - GPS coordinates (latitude, longitude converted to decimal)
@@ -44,28 +45,28 @@ class MetadataProcessor(BaseProcessor):
     - Full EXIF data as JSON for reference
     """
 
-    NAME = "metadata"
+    NAME: ClassVar[str] = "metadata"
 
-    def should_process(self, media: Media) -> bool:
+    def should_execute(self, media: Media) -> bool:
         """Only process images which typically have EXIF data."""
         return media.media_type == MediaType.IMAGE
 
-    def process(self, media: Media) -> ProcessingResult:
+    def execute(self, media: Media) -> StageResult:
         """Extract EXIF metadata from an image file.
 
         Args:
             media: Media item to process.
 
         Returns:
-            ProcessingResult with extracted metadata.
+            StageResult with extracted metadata.
         """
         start_time = time.monotonic()
 
-        if not self.should_process(media):
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.SKIPPED,
+        if not self.should_execute(media):
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.SKIPPED,
                 error_message="Not an image file",
             )
 
@@ -73,10 +74,10 @@ class MetadataProcessor(BaseProcessor):
             path = Path(media.file_path)
 
             if not path.exists():
-                return ProcessingResult(
-                    media_id=media.id,
-                    processor_name=self.NAME,
-                    status=ProcessingStatus.FAILED,
+                return StageResult(
+                    item_id=media.id,
+                    stage_name=self.NAME,
+                    status=StageStatus.FAILED,
                     error_message=f"File not found: {media.file_path}",
                 )
 
@@ -86,10 +87,10 @@ class MetadataProcessor(BaseProcessor):
 
             if not tags:
                 elapsed_ms = int((time.monotonic() - start_time) * 1000)
-                return ProcessingResult(
-                    media_id=media.id,
-                    processor_name=self.NAME,
-                    status=ProcessingStatus.COMPLETED,
+                return StageResult(
+                    item_id=media.id,
+                    stage_name=self.NAME,
+                    status=StageStatus.COMPLETED,
                     processing_time_ms=elapsed_ms,
                     data={"exif_data": None, "has_exif": False},
                 )
@@ -105,10 +106,10 @@ class MetadataProcessor(BaseProcessor):
 
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.COMPLETED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.COMPLETED,
                 processing_time_ms=elapsed_ms,
                 data={
                     "latitude": latitude,
@@ -123,35 +124,26 @@ class MetadataProcessor(BaseProcessor):
 
         except ProcessingError as e:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.FAILED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.FAILED,
                 error_message=str(e),
                 processing_time_ms=elapsed_ms,
             )
         except Exception as e:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
             logger.exception(f"Metadata extraction failed for {media.file_path}: {e}")
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.FAILED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.FAILED,
                 error_message=f"Metadata extraction failed: {e}",
                 processing_time_ms=elapsed_ms,
             )
 
     def _extract_gps(self, tags: dict[str, Any]) -> tuple[float | None, float | None]:
-        """Extract GPS coordinates from EXIF tags.
-
-        Converts from degrees/minutes/seconds (DMS) to decimal degrees.
-
-        Args:
-            tags: EXIF tags dictionary.
-
-        Returns:
-            Tuple of (latitude, longitude) in decimal degrees, or (None, None).
-        """
+        """Extract GPS coordinates from EXIF tags."""
         try:
             lat_tag = tags.get("GPS GPSLatitude")
             lat_ref = tags.get("GPS GPSLatitudeRef")
@@ -161,11 +153,9 @@ class MetadataProcessor(BaseProcessor):
             if not all([lat_tag, lat_ref, lon_tag, lon_ref]):
                 return None, None
 
-            # Access the values attribute from the EXIF tag objects
             latitude = self._dms_to_decimal(lat_tag.values)  # type: ignore[union-attr]
             longitude = self._dms_to_decimal(lon_tag.values)  # type: ignore[union-attr]
 
-            # Apply reference direction
             if str(lat_ref) == "S":
                 latitude = -latitude
             if str(lon_ref) == "W":
@@ -178,14 +168,7 @@ class MetadataProcessor(BaseProcessor):
             return None, None
 
     def _dms_to_decimal(self, dms_values: list[Any]) -> float:
-        """Convert degrees/minutes/seconds to decimal degrees.
-
-        Args:
-            dms_values: List of [degrees, minutes, seconds] as Ratio objects.
-
-        Returns:
-            Decimal degrees value.
-        """
+        """Convert degrees/minutes/seconds to decimal degrees."""
         degrees = float(dms_values[0])
         minutes = float(dms_values[1])
         seconds = float(dms_values[2])
@@ -193,19 +176,7 @@ class MetadataProcessor(BaseProcessor):
         return degrees + (minutes / 60.0) + (seconds / 3600.0)
 
     def _extract_datetime(self, tags: dict[str, Any]) -> datetime | None:
-        """Extract timestamp from EXIF tags.
-
-        Tries multiple date fields in order of preference:
-        1. EXIF DateTimeOriginal (when photo was taken)
-        2. EXIF DateTimeDigitized (when photo was digitized)
-        3. Image DateTime (file modification time)
-
-        Args:
-            tags: EXIF tags dictionary.
-
-        Returns:
-            datetime object or None if no valid date found.
-        """
+        """Extract timestamp from EXIF tags."""
         date_tags = [
             "EXIF DateTimeOriginal",
             "EXIF DateTimeDigitized",
@@ -222,18 +193,10 @@ class MetadataProcessor(BaseProcessor):
         return None
 
     def _parse_exif_datetime(self, date_str: str) -> datetime | None:
-        """Parse EXIF datetime string with multiple format support.
-
-        Args:
-            date_str: Date string from EXIF tag.
-
-        Returns:
-            datetime object or None if parsing fails.
-        """
+        """Parse EXIF datetime string with multiple format support."""
         for fmt in EXIF_DATE_FORMATS:
             try:
                 dt = datetime.strptime(date_str.strip(), fmt)
-                # Assume UTC if no timezone info
                 return dt.replace(tzinfo=UTC)
             except ValueError:
                 continue
@@ -242,15 +205,7 @@ class MetadataProcessor(BaseProcessor):
         return None
 
     def _get_tag_value(self, tags: dict[str, Any], tag_name: str) -> str | None:
-        """Get string value from an EXIF tag.
-
-        Args:
-            tags: EXIF tags dictionary.
-            tag_name: Name of the tag to retrieve.
-
-        Returns:
-            String value or None if tag not present.
-        """
+        """Get string value from an EXIF tag."""
         tag = tags.get(tag_name)
         if tag:
             value = str(tag).strip()
@@ -258,19 +213,9 @@ class MetadataProcessor(BaseProcessor):
         return None
 
     def _serialize_exif(self, tags: dict[str, Any]) -> str:
-        """Serialize EXIF tags to JSON string.
-
-        Converts all tags to string representation for storage.
-
-        Args:
-            tags: EXIF tags dictionary.
-
-        Returns:
-            JSON string of EXIF data.
-        """
+        """Serialize EXIF tags to JSON string."""
         exif_dict = {}
         for key, value in tags.items():
-            # Skip thumbnail data (can be large)
             if key.startswith("Thumbnail") or key.startswith("EXIF MakerNote"):
                 continue
             try:

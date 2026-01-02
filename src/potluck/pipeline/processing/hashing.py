@@ -1,4 +1,4 @@
-"""Hashing processor for media file deduplication and similarity detection.
+"""Hashing stage for media file deduplication and similarity detection.
 
 This module provides:
 - SHA256 hashing for exact file matching (deduplication)
@@ -7,21 +7,23 @@ This module provides:
 
 import time
 from pathlib import Path
+from typing import ClassVar
 
 import imagehash
 from PIL import Image
 
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
-from potluck.ingesters.utils.dedup import compute_file_hash
 from potluck.models.media import Media, MediaType
-from potluck.processing.base import BaseProcessor, ProcessingResult, ProcessingStatus
+from potluck.pipeline.dtos import StageResult, StageStatus
+from potluck.pipeline.processing.base import BaseProcessingStage
+from potluck.pipeline.utils.hashing import compute_file_hash
 
 logger = get_logger(__name__)
 
 
-class HashingProcessor(BaseProcessor):
-    """Processor for computing file and perceptual hashes.
+class HashingStage(BaseProcessingStage):
+    """Stage for computing file and perceptual hashes.
 
     Computes:
     - SHA256 hash for all media files (exact matching)
@@ -32,16 +34,16 @@ class HashingProcessor(BaseProcessor):
     adjustments.
     """
 
-    NAME = "hashing"
+    NAME: ClassVar[str] = "hashing"
 
-    def process(self, media: Media) -> ProcessingResult:
+    def execute(self, media: Media) -> StageResult:
         """Compute hashes for a media file.
 
         Args:
             media: Media item to process.
 
         Returns:
-            ProcessingResult with file_hash and optionally perceptual_hash.
+            StageResult with file_hash and optionally perceptual_hash.
         """
         start_time = time.monotonic()
 
@@ -49,10 +51,10 @@ class HashingProcessor(BaseProcessor):
             path = Path(media.file_path)
 
             if not path.exists():
-                return ProcessingResult(
-                    media_id=media.id,
-                    processor_name=self.NAME,
-                    status=ProcessingStatus.FAILED,
+                return StageResult(
+                    item_id=media.id,
+                    stage_name=self.NAME,
+                    status=StageStatus.FAILED,
                     error_message=f"File not found: {media.file_path}",
                 )
 
@@ -66,10 +68,10 @@ class HashingProcessor(BaseProcessor):
 
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.COMPLETED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.COMPLETED,
                 processing_time_ms=elapsed_ms,
                 data={
                     "file_hash": file_hash,
@@ -79,20 +81,20 @@ class HashingProcessor(BaseProcessor):
 
         except ProcessingError as e:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.FAILED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.FAILED,
                 error_message=str(e),
                 processing_time_ms=elapsed_ms,
             )
         except Exception as e:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
             logger.exception(f"Hashing failed for {media.file_path}: {e}")
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.FAILED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.FAILED,
                 error_message=f"Hashing failed: {e}",
                 processing_time_ms=elapsed_ms,
             )

@@ -17,7 +17,15 @@ class DatabaseError(PotluckError):
     """Raised when a database operation fails."""
 
 
-class IngestionError(PotluckError):
+class PipelineError(PotluckError):
+    """Base exception for pipeline operations.
+
+    Both ingestion and processing errors inherit from this class,
+    allowing unified error handling for pipeline operations.
+    """
+
+
+class IngestionError(PipelineError):
     """Raised when data ingestion fails.
 
     Covers all ingestion-related errors including:
@@ -28,7 +36,7 @@ class IngestionError(PotluckError):
     """
 
 
-class ProcessingError(PotluckError):
+class ProcessingError(PipelineError):
     """Raised when media processing fails.
 
     Covers all processing-related errors including:

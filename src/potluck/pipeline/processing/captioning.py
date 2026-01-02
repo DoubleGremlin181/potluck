@@ -1,8 +1,11 @@
-"""Image captioning processor using BLIP-2."""
+"""Image captioning stage using BLIP-2.
+
+Requires ML dependencies: pip install potluck[ml]
+"""
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 from PIL import Image
@@ -10,21 +13,21 @@ from transformers import Blip2ForConditionalGeneration, Blip2Processor
 
 from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
-from potluck.processing.base import BaseProcessor, ProcessingResult, ProcessingStatus
+from potluck.pipeline.dtos import StageResult, StageStatus
+from potluck.pipeline.processing.base import BaseProcessingStage
 
 logger = get_logger(__name__)
 
 
-class CaptioningProcessor(BaseProcessor):
-    """Processor for generating AI image captions using BLIP-2.
+class CaptioningStage(BaseProcessingStage):
+    """Stage for generating AI image captions using BLIP-2.
 
     Generates human-readable alt-text descriptions for images using the
     BLIP-2 model from Salesforce.
     """
 
-    NAME = "captioning"
+    NAME: ClassVar[str] = "captioning"
 
-    # Default model for captioning
     DEFAULT_MODEL = "Salesforce/blip2-opt-2.7b"
 
     def __init__(
@@ -34,7 +37,7 @@ class CaptioningProcessor(BaseProcessor):
         max_length: int = 50,
         device: str | None = None,
     ) -> None:
-        """Initialize the captioning processor.
+        """Initialize the captioning stage.
 
         Args:
             model_name: HuggingFace model identifier for BLIP-2.
@@ -52,16 +55,13 @@ class CaptioningProcessor(BaseProcessor):
         if self._processor is not None:
             return
 
-        # Determine device
         if self._device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             device = self._device
 
-        # Load processor (handles tokenization and image preprocessing)
         self._processor = Blip2Processor.from_pretrained(self._model_name)
 
-        # Load model with appropriate dtype for the device
         if device == "cuda":
             self._model = Blip2ForConditionalGeneration.from_pretrained(
                 self._model_name,
@@ -74,77 +74,62 @@ class CaptioningProcessor(BaseProcessor):
             )
             self._model.to(device)
 
-    def should_process(self, media: Media) -> bool:
-        """Check if this media should be processed for captioning.
-
-        Only processes images.
-
-        Args:
-            media: The media item to check.
-
-        Returns:
-            True if the media is an image.
-        """
+    def should_execute(self, media: Media) -> bool:
+        """Only process images."""
         return media.media_type == MediaType.IMAGE
 
-    def process(self, media: Media) -> ProcessingResult:
+    def execute(self, media: Media) -> StageResult:
         """Generate an AI caption for the media.
 
         Args:
             media: The media item to process.
 
         Returns:
-            ProcessingResult with the generated caption.
+            StageResult with the generated caption.
         """
         start_time = time.monotonic()
 
-        if not self.should_process(media):
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.SKIPPED,
+        if not self.should_execute(media):
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.SKIPPED,
             )
 
         file_path = Path(media.file_path)
         if not file_path.exists():
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.FAILED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.FAILED,
                 error_message=f"File not found: {media.file_path}",
             )
 
         try:
-            # Load model on first use
             self._load_model()
 
-            # Open and prepare image
             image = Image.open(file_path).convert("RGB")
 
-            # Process image and generate caption
             inputs = self._processor(images=image, return_tensors="pt")
 
-            # Move inputs to same device as model
             if hasattr(self._model, "device"):
                 inputs = inputs.to(self._model.device)
 
-            # Generate caption
             generated_ids = self._model.generate(
                 **inputs,
                 max_length=self._max_length,
             )
 
-            # Decode the generated caption
             caption = self._processor.batch_decode(generated_ids, skip_special_tokens=True)[
                 0
             ].strip()
 
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.COMPLETED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.COMPLETED,
                 processing_time_ms=elapsed_ms,
                 data={
                     "caption": caption,
@@ -156,10 +141,10 @@ class CaptioningProcessor(BaseProcessor):
         except Exception as e:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
             logger.exception(f"Captioning failed for {media.file_path}: {e}")
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.FAILED,
+            return StageResult(
+                item_id=media.id,
+                stage_name=self.NAME,
+                status=StageStatus.FAILED,
                 processing_time_ms=elapsed_ms,
                 error_message=f"Captioning failed: {e}",
             )

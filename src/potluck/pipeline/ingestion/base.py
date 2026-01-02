@@ -1,81 +1,40 @@
-"""Base ingester protocol and common types for data ingestion."""
+"""Base ingestion stage protocol and common types."""
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Iterator
-from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, ClassVar, Self
-
-from pydantic import BaseModel, Field, model_validator
+from typing import Any, ClassVar
 
 from potluck.core.exceptions import ConfigurationError
 from potluck.core.logging import get_logger
 from potluck.models.base import BaseEntity, EntityType, SourceType
+from potluck.pipeline.base import Stage
+from potluck.pipeline.dtos import DetectionResult, PipelineFilter
 
 logger = get_logger(__name__)
 
 
-class IngestionFilter(BaseModel):
-    """Common filter fields for ingestion operations.
+class BaseIngestionStage(Stage[Path, Iterator[BaseEntity]]):
+    """Abstract base class for data source ingestion stages.
 
-    Allows filtering entities by date range during ingestion.
-    Ingesters use these filters to skip entities outside the specified range.
-    """
-
-    since: datetime | None = Field(
-        default=None,
-        description="Only ingest entities occurring on or after this datetime",
-    )
-    until: datetime | None = Field(
-        default=None,
-        description="Only ingest entities occurring before this datetime",
-    )
-
-    @model_validator(mode="after")
-    def validate_date_range(self) -> Self:
-        """Validate that since is before until when both are specified."""
-        if self.since and self.until and self.since > self.until:
-            raise ValueError("'since' must be before 'until'")
-        return self
-
-
-class DetectionResult(BaseModel):
-    """Result of detecting available entity types in a source."""
-
-    entity_counts: dict[EntityType, int] = Field(default_factory=dict)
-    """Mapping of entity types to their counts."""
-
-    metadata: dict[str, str] = Field(default_factory=dict)
-    """Additional metadata about the detected content."""
-
-    def total_entities(self) -> int:
-        """Get total count of all entities."""
-        return sum(self.entity_counts.values())
-
-    model_config = {"arbitrary_types_allowed": True}
-
-
-class BaseIngester(ABC):
-    """Abstract base class for data source ingesters.
-
-    Each ingester handles a specific data source (e.g., Google Takeout, Reddit).
-    Ingesters are responsible for:
+    Each ingestion stage handles a specific data source (e.g., Google Takeout, Reddit).
+    Stages are responsible for:
     - Detecting what entity types are available in a given path
     - Parsing and yielding entities from the source data
     - Providing user-facing instructions for obtaining exports
 
     Class Attributes:
-        SOURCE_TYPE: The SourceType enum value for this ingester.
+        SOURCE_TYPE: The SourceType enum value for this stage.
         FILENAME_PATTERNS: Regex patterns for auto-detecting this source by filename.
-        SUPPORTED_ENTITY_TYPES: Entity types this ingester can produce.
+        SUPPORTED_ENTITY_TYPES: Entity types this stage can produce.
 
     Implementation Pattern:
         For sources with multiple entity types (e.g., Google Takeout with photos
-        AND emails), organize your ingester with private methods per entity type:
+        AND emails), organize your stage with private methods per entity type:
 
-        class GoogleTakeoutIngester(BaseIngester):
-            def ingest(self, path, entity_types, filters):
+        class GoogleTakeoutStage(BaseIngestionStage):
+            def execute(self, path, entity_types, filters):
                 if EntityType.MEDIA in entity_types:
                     yield from self._ingest_media(path, filters)
                 if EntityType.EMAIL in entity_types:
@@ -91,27 +50,27 @@ class BaseIngester(ABC):
 
     Usage:
         @register
-        class GoogleTakeoutIngester(BaseIngester):
+        class GoogleTakeoutStage(BaseIngestionStage):
             SOURCE_TYPE = SourceType.GOOGLE_TAKEOUT
             FILENAME_PATTERNS = [r"takeout-.*\\.zip"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA, EntityType.EMAIL}
 
-            def detect_contents(self, path: Path) -> DetectionResult:
+            def detect(self, path: Path) -> DetectionResult:
                 ...
 
-            def ingest(self, path, entity_types, filters) -> Iterator[BaseEntity]:
+            def execute(self, path, entity_types, filters) -> Iterator[BaseEntity]:
                 ...
     """
 
     # Class attributes - must be defined by subclasses
     SOURCE_TYPE: ClassVar[SourceType]
-    """The source type enum value for this ingester."""
+    """The source type enum value for this stage."""
 
     FILENAME_PATTERNS: ClassVar[list[str]]
     """Regex patterns matching source file/directory names (e.g., r'Takeout-.*\\.zip')."""
 
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]]
-    """Entity types this ingester can produce."""
+    """Entity types this stage can produce."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Validate that required class attributes are defined by subclasses."""
@@ -123,7 +82,7 @@ class BaseIngester(ABC):
                 raise ConfigurationError(f"{cls.__name__} must define class attribute '{attr}'")
 
     @abstractmethod
-    def detect_contents(self, path: Path) -> DetectionResult:
+    def detect(self, path: Path) -> DetectionResult:
         """Scan the source and return available entity types with counts.
 
         This method should scan the given path (extracted archive or directory)
@@ -139,11 +98,11 @@ class BaseIngester(ABC):
         ...
 
     @abstractmethod
-    def ingest(
+    def execute(
         self,
         path: Path,
-        entity_types: set[EntityType],
-        filters: IngestionFilter | None = None,
+        entity_types: set[EntityType] | None = None,
+        filters: PipelineFilter | None = None,
     ) -> Iterator[BaseEntity]:
         """Yield entities from the source.
 
@@ -153,7 +112,7 @@ class BaseIngester(ABC):
         For complex sources with multiple entity types, delegate to private
         methods per entity type for cleaner code organization:
 
-            def ingest(self, path, entity_types, filters):
+            def execute(self, path, entity_types, filters):
                 if EntityType.MEDIA in entity_types:
                     yield from self._ingest_media(path, filters)
                 if EntityType.EMAIL in entity_types:
@@ -161,7 +120,7 @@ class BaseIngester(ABC):
 
         Args:
             path: Path to the extracted source data.
-            entity_types: Set of entity types to ingest.
+            entity_types: Set of entity types to ingest (None = all supported).
             filters: Optional date range filters.
 
         Yields:
@@ -171,17 +130,17 @@ class BaseIngester(ABC):
 
     @classmethod
     def get_instructions(cls) -> str:
-        """Load instructions from the ingester's package.
+        """Load instructions from the stage's package.
 
         Instructions are loaded from:
-        potluck/ingesters/{source_type}/instructions.md
+        potluck/pipeline/ingestion/{source_type}/instructions.md
 
         Returns:
             Markdown instructions for obtaining this data export,
             or empty string if no instructions file exists.
         """
         try:
-            package_name = f"potluck.ingesters.{cls.SOURCE_TYPE.value}"
+            package_name = f"potluck.pipeline.ingestion.{cls.SOURCE_TYPE.value}"
             resource = files(package_name).joinpath("instructions.md")
             return resource.read_text()
         except FileNotFoundError:
@@ -193,16 +152,16 @@ class BaseIngester(ABC):
 
     @classmethod
     def get_assets_path(cls) -> Path | None:
-        """Get path to assets folder for this ingester's instructions.
+        """Get path to assets folder for this stage's instructions.
 
-        Assets (images, etc.) for instructions are stored alongside the ingester:
-        potluck/ingesters/{source_type}/assets/
+        Assets (images, etc.) for instructions are stored alongside the stage:
+        potluck/pipeline/ingestion/{source_type}/assets/
 
         Returns:
             Path to the assets folder, or None if it doesn't exist.
         """
         try:
-            package_name = f"potluck.ingesters.{cls.SOURCE_TYPE.value}"
+            package_name = f"potluck.pipeline.ingestion.{cls.SOURCE_TYPE.value}"
             assets_resource = files(package_name).joinpath("assets")
             assets_path = Path(str(assets_resource))
             if not assets_path.is_dir():
