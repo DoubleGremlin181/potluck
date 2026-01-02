@@ -10,10 +10,16 @@ from uuid import UUID
 
 from celery import Task
 from celery.exceptions import Reject, Retry
-from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlmodel import Session, select
 
 from potluck.core.celery import celery_app
+from potluck.core.celery_utils import (
+    MAX_RETRIES,
+    RETRY_BACKOFF,
+    RETRY_BACKOFF_MAX,
+    is_fatal_error,
+    is_transient_error,
+)
 from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
 from potluck.ingesters.pipeline import IngestionPipeline
@@ -22,25 +28,6 @@ from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
 
 logger = get_logger(__name__)
-
-
-# Retry configuration
-MAX_RETRIES = 3
-RETRY_BACKOFF = 60  # seconds
-RETRY_BACKOFF_MAX = 600  # 10 minutes
-
-
-def _is_transient_error(exc: Exception) -> bool:
-    """Check if exception is transient and should be retried."""
-    if isinstance(exc, (OperationalError, InterfaceError)):
-        return True
-    # Disk I/O errors (EIO, ENOSPC, EROFS)
-    return isinstance(exc, OSError) and exc.errno in (5, 28, 30)
-
-
-def _is_fatal_error(exc: Exception) -> bool:
-    """Check if exception is fatal and should not be retried."""
-    return isinstance(exc, (FileNotFoundError, PermissionError))
 
 
 def _mark_import_failed(import_run_id: str, error_message: str) -> None:
@@ -151,10 +138,10 @@ def ingest_file(
     except Exception as exc:
         logger.exception(f"Ingestion task failed: {exc}")
 
-        if _is_fatal_error(exc):
+        if is_fatal_error(exc):
             _mark_import_failed(import_run_id, str(exc))
             raise Reject(str(exc), requeue=False) from exc
-        elif _is_transient_error(exc):
+        elif is_transient_error(exc):
             raise self.retry(exc=exc) from exc
         else:
             _mark_import_failed(import_run_id, str(exc))

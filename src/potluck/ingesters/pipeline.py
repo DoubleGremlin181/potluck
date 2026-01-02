@@ -11,8 +11,8 @@ from potluck.core.logging import get_logger
 from potluck.ingesters.base import BaseIngester, IngestionFilter
 from potluck.ingesters.utils.archive import extracted
 from potluck.ingesters.utils.dedup import compute_file_hash
-from potluck.models import get_entity_type_model_map
 from potluck.models.base import BaseEntity, EntityType, SourceType
+from potluck.models.media import Media
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
 
@@ -26,9 +26,6 @@ DEFAULT_BATCH_SIZE = 100
 # Callback types
 ProgressCallback = Callable[[int, int, str | None], None]
 """Progress callback: (current, total, message) -> None"""
-
-EntityCallback = Callable[[EntityType, BaseEntity], None]
-"""Entity callback for post-processing (embeddings): (entity_type, entity) -> None"""
 
 
 class IngestionStats(BaseModel):
@@ -128,7 +125,6 @@ class IngestionPipeline:
         session: Session,
         batch_size: int = DEFAULT_BATCH_SIZE,
         on_progress: ProgressCallback | None = None,
-        on_entity: EntityCallback | None = None,
     ):
         """Initialize the pipeline.
 
@@ -136,12 +132,10 @@ class IngestionPipeline:
             session: SQLModel session for database operations.
             batch_size: Number of entities to batch before committing.
             on_progress: Optional callback for progress updates (current, total, message).
-            on_entity: Optional callback for each entity created (for embeddings).
         """
         self.session = session
         self.batch_size = batch_size
         self.on_progress = on_progress
-        self.on_entity = on_entity
         # In-memory cache of seen content hashes to avoid N+1 queries
         self._seen_hashes: set[str] = set()
 
@@ -364,10 +358,6 @@ class IngestionPipeline:
         current = 0
         total = import_run.progress_total or 0
 
-        # Build reverse map from model class to EntityType for callbacks
-        entity_type_map = get_entity_type_model_map()
-        model_to_type = {v: k for k, v in entity_type_map.items()}
-
         for entity in ingester.ingest(content_path, entity_types, filters):
             current += 1
 
@@ -379,18 +369,6 @@ class IngestionPipeline:
 
             # Add to batch
             batch.append(entity)
-
-            # Notify entity callback (for embeddings)
-            if self.on_entity:
-                try:
-                    entity_type = model_to_type.get(type(entity))
-                    if entity_type:
-                        self.on_entity(entity_type, entity)
-                except Exception as e:
-                    logger.warning(
-                        f"Entity callback failed for {type(entity).__name__} "
-                        f"(hash={entity.content_hash}): {e}"
-                    )
 
             # Flush batch if full
             if len(batch) >= self.batch_size:
@@ -438,12 +416,33 @@ class IngestionPipeline:
         return False
 
     def _flush_batch(self, batch: list[BaseEntity], stats: IngestionStats) -> None:
-        """Flush a batch of entities to the database."""
+        """Flush a batch of entities to the database and queue processing."""
         for entity in batch:
             self.session.add(entity)
             stats.created += 1
 
         self.session.commit()
+
+        # Queue processing for Media entities
+        for entity in batch:
+            if isinstance(entity, Media):
+                self._queue_media_processing(entity)
+
+    def _queue_media_processing(self, media: Media) -> None:
+        """Queue processing tasks for a media entity.
+
+        Args:
+            media: The media entity to process.
+        """
+        from potluck.processing.tasks import process_media_pipeline
+
+        try:
+            # process_media_pipeline creates and applies a Celery chain internally
+            process_media_pipeline(str(media.id))
+            logger.debug(f"Queued processing for media {media.id}")
+        except Exception as e:
+            # Don't fail ingestion if processing queue fails
+            logger.warning(f"Failed to queue processing for media {media.id}: {e}")
 
     def _update_progress(
         self,

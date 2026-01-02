@@ -9,35 +9,22 @@ from uuid import UUID
 
 from celery import Task, chain
 from celery.exceptions import Reject, Retry
-from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlmodel import Session, select
 
 from potluck.core.celery import celery_app
+from potluck.core.celery_utils import (
+    MAX_RETRIES,
+    RETRY_BACKOFF,
+    RETRY_BACKOFF_MAX,
+    is_fatal_error,
+    is_transient_error,
+)
 from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
 from potluck.models.media import Media
 from potluck.processing.base import ProcessingStatus
 
 logger = get_logger(__name__)
-
-
-# Retry configuration
-MAX_RETRIES = 3
-RETRY_BACKOFF = 60  # seconds
-RETRY_BACKOFF_MAX = 600  # 10 minutes
-
-
-def _is_transient_error(error: Exception) -> bool:
-    """Check if exception is transient and should be retried."""
-    if isinstance(error, (OperationalError, InterfaceError)):
-        return True
-    # Disk I/O errors (EIO, ENOSPC, EROFS)
-    return isinstance(error, OSError) and error.errno in (5, 28, 30)
-
-
-def _is_fatal_error(error: Exception) -> bool:
-    """Check if exception is fatal and should not be retried."""
-    return isinstance(error, (FileNotFoundError, PermissionError))
 
 
 def _get_media(session: Session, media_id: str) -> Media | None:
@@ -111,9 +98,9 @@ def process_media_hashing(self: Task, media_id: str) -> dict[str, Any]:
         raise
     except Exception as err:
         logger.exception(f"Hashing task failed for {media_id}: {err}")
-        if _is_fatal_error(err):
+        if is_fatal_error(err):
             raise Reject(str(err), requeue=False) from err
-        elif _is_transient_error(err):
+        elif is_transient_error(err):
             raise self.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err
@@ -176,9 +163,9 @@ def process_media_metadata(self: Task, media_id: str) -> dict[str, Any]:
         raise
     except Exception as err:
         logger.exception(f"Metadata task failed for {media_id}: {err}")
-        if _is_fatal_error(err):
+        if is_fatal_error(err):
             raise Reject(str(err), requeue=False) from err
-        elif _is_transient_error(err):
+        elif is_transient_error(err):
             raise self.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err
@@ -233,9 +220,9 @@ def process_media_ocr(self: Task, media_id: str) -> dict[str, Any]:
         raise
     except Exception as err:
         logger.exception(f"OCR task failed for {media_id}: {err}")
-        if _is_fatal_error(err):
+        if is_fatal_error(err):
             raise Reject(str(err), requeue=False) from err
-        elif _is_transient_error(err):
+        elif is_transient_error(err):
             raise self.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err
@@ -260,6 +247,8 @@ def process_media_faces(self: Task, media_id: str) -> dict[str, Any]:
     Returns:
         Dict with processing result.
     """
+    from potluck.models.base import SourceType
+    from potluck.models.media import MediaPersonLink
     from potluck.processing.faces import FaceProcessor
 
     logger.info(f"Starting face detection for media {media_id}")
@@ -274,13 +263,32 @@ def process_media_faces(self: Task, media_id: str) -> dict[str, Any]:
             processor = FaceProcessor()
             result = processor.process(media)
 
-            # Face results are stored in DetectedFace table, not Media
-            # The processor handles this internally
+            # Persist detected faces to MediaPersonLink table
+            faces = result.data.get("faces", [])
+            for face_data in faces:
+                face_link = MediaPersonLink(
+                    media_id=media.id,
+                    person_id=None,  # Unidentified until clustered/assigned
+                    cluster_id=None,  # Will be assigned by clustering task
+                    source_type=SourceType.FACE_DETECTION,
+                    confidence=face_data.get("confidence", 1.0),
+                    is_confirmed=False,
+                    embedding=face_data.get("embedding"),
+                    bbox_x=face_data.get("bbox_x"),
+                    bbox_y=face_data.get("bbox_y"),
+                    bbox_width=face_data.get("bbox_width"),
+                    bbox_height=face_data.get("bbox_height"),
+                )
+                session.add(face_link)
+
+            if faces:
+                session.commit()
+                logger.info(f"Persisted {len(faces)} faces for media {media_id}")
 
             return {
                 "media_id": media_id,
                 "status": result.status.value,
-                "faces_detected": len(result.data.get("faces", [])),
+                "faces_detected": len(faces),
                 "processing_time_ms": result.processing_time_ms,
             }
 
@@ -288,9 +296,9 @@ def process_media_faces(self: Task, media_id: str) -> dict[str, Any]:
         raise
     except Exception as err:
         logger.exception(f"Face detection task failed for {media_id}: {err}")
-        if _is_fatal_error(err):
+        if is_fatal_error(err):
             raise Reject(str(err), requeue=False) from err
-        elif _is_transient_error(err):
+        elif is_transient_error(err):
             raise self.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err
@@ -345,9 +353,9 @@ def process_media_caption(self: Task, media_id: str) -> dict[str, Any]:
         raise
     except Exception as err:
         logger.exception(f"Captioning task failed for {media_id}: {err}")
-        if _is_fatal_error(err):
+        if is_fatal_error(err):
             raise Reject(str(err), requeue=False) from err
-        elif _is_transient_error(err):
+        elif is_transient_error(err):
             raise self.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err
@@ -361,12 +369,14 @@ def process_media_pipeline(media_id: str) -> None:
     Args:
         media_id: UUID string of the Media to process.
     """
+    # Use .si() (immutable signature) to prevent previous task result
+    # from being passed as first argument to the next task
     chain(
-        process_media_hashing.s(media_id),
-        process_media_metadata.s(media_id),
-        process_media_ocr.s(media_id),
-        process_media_faces.s(media_id),
-        process_media_caption.s(media_id),
+        process_media_hashing.si(media_id),
+        process_media_metadata.si(media_id),
+        process_media_ocr.si(media_id),
+        process_media_faces.si(media_id),
+        process_media_caption.si(media_id),
     ).apply_async()
 
 
@@ -379,8 +389,8 @@ def process_media_basic(media_id: str) -> None:
         media_id: UUID string of the Media to process.
     """
     chain(
-        process_media_hashing.s(media_id),
-        process_media_metadata.s(media_id),
+        process_media_hashing.si(media_id),
+        process_media_metadata.si(media_id),
     ).apply_async()
 
 
@@ -403,7 +413,8 @@ def cluster_unassigned_faces(self: Task) -> dict[str, Any]:
     Returns:
         Dict with clustering statistics.
     """
-    from potluck.models.people import ClusterStatus, DetectedFace, FaceCluster
+    from potluck.models.media import MediaPersonLink
+    from potluck.models.people import ClusterStatus, FaceCluster
     from potluck.processing.faces import FaceProcessor
 
     logger.info("Starting face clustering task")
@@ -411,8 +422,11 @@ def cluster_unassigned_faces(self: Task) -> dict[str, Any]:
     try:
         engine = get_engine()
         with Session(engine) as session:
-            # Get all unclustered faces (cluster_id == None translates to IS NULL)
-            stmt = select(DetectedFace).where(DetectedFace.cluster_id == None)  # noqa: E711
+            # Get all unclustered faces with embeddings (cluster_id IS NULL and embedding IS NOT NULL)
+            stmt = select(MediaPersonLink).where(
+                MediaPersonLink.cluster_id == None,  # noqa: E711
+                MediaPersonLink.embedding != None,  # noqa: E711
+            )
             result = session.execute(stmt)
             unclustered_faces = list(result.scalars().all())
 
@@ -459,7 +473,7 @@ def cluster_unassigned_faces(self: Task) -> dict[str, Any]:
 
                 # Assign faces to cluster
                 for face_id in cluster_face_ids:
-                    face = session.get(DetectedFace, face_id)
+                    face = session.get(MediaPersonLink, face_id)
                     if face:
                         face.cluster_id = new_cluster.id
                         faces_assigned += 1
@@ -482,7 +496,7 @@ def cluster_unassigned_faces(self: Task) -> dict[str, Any]:
 
     except Exception as err:
         logger.exception(f"Face clustering task failed: {err}")
-        if _is_transient_error(err):
+        if is_transient_error(err):
             raise self.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err

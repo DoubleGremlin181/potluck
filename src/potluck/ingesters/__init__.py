@@ -32,7 +32,6 @@ from potluck.ingesters.base import (
 )
 from potluck.ingesters.pipeline import (
     DiscoveryResult,
-    EntityCallback,
     IngestionPipeline,
     IngestionResult,
     IngestionStats,
@@ -126,13 +125,12 @@ def ingest(
     entity_types: set[EntityType] | None = None,
     filters: IngestionFilter | None = None,
     on_progress: ProgressCallback | None = None,
-    on_entity: EntityCallback | None = None,
     resume_failed: bool = False,
 ) -> IngestionResult:
     """Run the ingestion pipeline for a path.
 
     This is a convenience function that creates an IngestionPipeline
-    and runs it.
+    and runs it. Media entities are automatically queued for processing.
 
     Args:
         path: Path to source file or directory.
@@ -140,7 +138,6 @@ def ingest(
         entity_types: Entity types to ingest (None = all available).
         filters: Optional date range filters.
         on_progress: Optional progress callback (current, total, message).
-        on_entity: Optional entity callback for post-processing (embeddings).
         resume_failed: If True, retry failed entities from previous runs.
 
     Returns:
@@ -149,7 +146,6 @@ def ingest(
     pipeline = IngestionPipeline(
         session=session,
         on_progress=on_progress,
-        on_entity=on_entity,
     )
     return pipeline.run(
         path,
@@ -176,7 +172,6 @@ __all__ = [
     "IngestionStats",
     "DiscoveryResult",
     "ProgressCallback",
-    "EntityCallback",
     "discover",
     "ingest",
 ]
