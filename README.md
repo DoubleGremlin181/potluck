@@ -144,30 +144,20 @@ pg_tde also supports KMIP-compatible KMS providers (AWS KMS, Azure Key Vault, et
 
 ## Testing
 
-### Quick Test (Docker - Recommended)
+All tests run in Docker to ensure consistency between local development and CI.
 
 ```bash
-# Run all tests in Docker (same environment as CI)
+# Run all tests
 docker compose -f docker-compose.test.yml run --rm test
+
+# Run specific test file
+docker compose -f docker-compose.test.yml run --rm test uv run pytest tests/unit/models/ -v
+
+# Run with e2e tests (database integration)
+docker compose -f docker-compose.test.yml run --rm test uv run pytest tests/ -v --run-e2e
 ```
 
-### Local Testing
-
-```bash
-# Install all dependencies
-uv sync --all-extras
-
-# Run unit tests only (fast, no Docker needed)
-uv run pytest tests/unit/ -v
-
-# Run with database (requires Docker for PostgreSQL)
-./scripts/setup.sh --db-only
-uv run pytest tests/ -v --run-e2e
-```
-
-### CI
-
-GitHub Actions runs tests in Docker using `docker-compose.test.yml` - identical to local Docker testing.
+GitHub Actions uses the same `docker-compose.test.yml` configuration.
 
 The tests verify:
 - Docker containers start correctly (Percona PostgreSQL 17 with pgvector + pg_tde)
