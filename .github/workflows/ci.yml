@@ -21,75 +21,53 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --all-extras
 
       - name: Run ruff check
-        run: ruff check src/ tests/ alembic/
+        run: uv run ruff check src/ tests/ alembic/
 
       - name: Run ruff format check
-        run: ruff format --check src/ tests/ alembic/
+        run: uv run ruff format --check src/ tests/ alembic/
 
       - name: Run mypy
-        run: mypy src/ tests/ alembic/
+        run: uv run mypy src/ tests/ alembic/
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Build app image
+        uses: docker/build-push-action@v6
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
-
-      - name: Run unit tests
-        run: pytest tests/ -v --ignore=tests/integration --cov=potluck --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-
-  e2e:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+          context: .
+          file: docker/Dockerfile.app
+          load: true
+          tags: potluck:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Create .env file
         run: |
           cat > .env << EOF
           POSTGRES_USER=potluck
           POSTGRES_PASSWORD=testpassword
-          POSTGRES_DB=potluck
-          POSTGRES_HOST=localhost
+          POSTGRES_DB=potluck_test
+          POSTGRES_HOST=db
           POSTGRES_PORT=5432
+          REDIS_URL=redis://redis:6379/0
           EOF
 
-      - name: Start database with docker-compose
+      - name: Start services
+        run: docker compose -f docker-compose.test.yml up -d db redis
+
+      - name: Wait for DB
         run: |
-          docker compose up -d db
-          # Wait for database to be healthy
           for i in {1..30}; do
-            if docker compose exec -T db pg_isready -U potluck -d potluck; then
+            if docker compose -f docker-compose.test.yml exec -T db pg_isready -U potluck -d potluck_test; then
               echo "Database is ready"
               break
             fi
@@ -97,14 +75,22 @@ jobs:
             sleep 2
           done
 
-      - name: Run migrations
+      - name: Run all tests
         run: |
-          export DATABASE_URL="postgresql://potluck:testpassword@localhost:5432/potluck"
-          alembic upgrade head
+          docker compose -f docker-compose.test.yml run --rm test \
+            uv run pytest tests/ -v --run-e2e --cov=potluck --cov-report=xml
 
-      - name: Run E2E tests
-        run: pytest tests/integration/ -v --run-e2e
-
-      - name: Stop database
+      - name: Copy coverage report
         if: always()
-        run: docker compose down -v
+        run: |
+          docker compose -f docker-compose.test.yml cp test:/app/coverage.xml ./coverage.xml 2>/dev/null || true
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v

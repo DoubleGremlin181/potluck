@@ -1,16 +1,17 @@
 # Docker Compose for running tests in production-identical environment
 #
 # Uses the EXACT SAME Dockerfile as production to ensure test relevance.
+# Tests are mounted at runtime (not baked into the image).
 #
 # Usage:
 #   # Run all tests
-#   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
+#   docker compose -f docker-compose.test.yml run --rm test
 #
 #   # Run specific test files
-#   docker compose -f docker-compose.test.yml run --rm test pytest tests/unit/test_processing.py -v
+#   docker compose -f docker-compose.test.yml run --rm test uv run pytest tests/unit/ -v
 #
-#   # Run with ML tests enabled
-#   docker compose -f docker-compose.test.yml run --rm test pytest --run-ml -v
+#   # Run with e2e tests
+#   docker compose -f docker-compose.test.yml run --rm test uv run pytest tests/ -v --run-e2e
 
 services:
   test:
@@ -19,7 +20,7 @@ services:
       dockerfile: docker/Dockerfile.app  # Same as production!
     container_name: potluck-test
     # Override the default CMD to run tests instead of the web server
-    command: ["pytest", "-v", "--tb=short", "--run-ml"]
+    command: ["uv", "run", "pytest", "-v", "--tb=short"]
     environment:
       # Test database connection
       DATABASE_URL: postgresql://potluck:potluck@db:5432/potluck_test

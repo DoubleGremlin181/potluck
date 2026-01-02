@@ -74,11 +74,11 @@ docker compose up -d
 docker compose exec app alembic upgrade head
 ```
 
-### Local Development (without Docker)
+### Local Development
 
 ```bash
-# Install dependencies with uv
-uv sync
+# Install all dependencies with uv
+uv sync --all-extras
 
 # Setup git hooks (runs lint/tests on commit and push)
 ./scripts/setup-hooks.sh
@@ -86,8 +86,8 @@ uv sync
 # Start database only (requires Docker)
 ./scripts/setup.sh --db-only
 
-# Run migrations against local database
-alembic upgrade head
+# Run the app locally
+uv run potluck web
 ```
 
 > **Note**: The `setup.sh` script automatically configures git hooks. If you only need hooks without Docker, run `./scripts/setup-hooks.sh` directly.
@@ -144,22 +144,37 @@ pg_tde also supports KMIP-compatible KMS providers (AWS KMS, Azure Key Vault, et
 
 ## Testing
 
+### Quick Test (Docker - Recommended)
+
 ```bash
-# Install dev dependencies
-uv sync
-
-# Run unit tests (no Docker required)
-uv run pytest tests/ -v
-
-# Run end-to-end tests (requires Docker)
-uv run pytest tests/integration/ -v --run-e2e
+# Run all tests in Docker (same environment as CI)
+docker compose -f docker-compose.test.yml run --rm test
 ```
 
-The E2E tests verify:
+### Local Testing
+
+```bash
+# Install all dependencies
+uv sync --all-extras
+
+# Run unit tests only (fast, no Docker needed)
+uv run pytest tests/unit/ -v
+
+# Run with database (requires Docker for PostgreSQL)
+./scripts/setup.sh --db-only
+uv run pytest tests/ -v --run-e2e
+```
+
+### CI
+
+GitHub Actions runs tests in Docker using `docker-compose.test.yml` - identical to local Docker testing.
+
+The tests verify:
 - Docker containers start correctly (Percona PostgreSQL 17 with pgvector + pg_tde)
 - PostgreSQL extensions are installed (vector, pg_tde, uuid-ossp)
 - All tables are created with pg_tde encryption enabled
 - Alembic migrations run successfully
+- ML processing (OCR, face detection, captioning) works correctly
 
 ## Usage
 
@@ -192,9 +207,12 @@ potluck/
 ├── src/potluck/
 │   ├── core/          # Config, logging, Celery, exceptions
 │   ├── models/        # SQLModel entities
-│   ├── ingesters/     # Source-specific data importers
+│   ├── pipeline/      # Ingestion + processing pipeline
+│   │   ├── ingestion/ # Source-specific data importers
+│   │   ├── processing/# OCR, hashing, faces, captioning
+│   │   ├── tasks/     # Celery background tasks
+│   │   └── utils/     # Archive extraction, parsers
 │   ├── embeddings/    # Embedding providers
-│   ├── processing/    # OCR, hashing, face detection
 │   ├── search/        # Hybrid search implementation
 │   ├── linkers/       # Entity relationship detection
 │   ├── mcp/           # MCP server and tools
