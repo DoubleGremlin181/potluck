@@ -286,3 +286,44 @@ class TestGeolocatedEntity:
             location_name="New York, NY",
         )
         assert entity.location_name == "New York, NY"
+
+
+class TestSimpleEntity:
+    """Tests for SimpleEntity base class."""
+
+    def test_simple_entity_has_id_and_timestamps(self) -> None:
+        """SimpleEntity provides id, created_at, and updated_at."""
+        from potluck.models.calendar import EventParticipant, ResponseStatus
+
+        participant = EventParticipant(
+            event_id=ConcreteBase(source_type=SourceType.MANUAL).id,
+            email="test@example.com",
+            response_status=ResponseStatus.ACCEPTED,
+        )
+        assert isinstance(participant.id, UUID)
+        assert isinstance(participant.created_at, datetime)
+        assert isinstance(participant.updated_at, datetime)
+
+
+class TestBaseEntityInheritance:
+    """Tests for BaseEntity inheriting from SimpleEntity."""
+
+    def test_base_entity_inherits_from_simple_entity(self) -> None:
+        """BaseEntity inherits from SimpleEntity."""
+        from potluck.models.base import SimpleEntity
+
+        assert issubclass(BaseEntity, SimpleEntity)
+
+    def test_base_entity_adds_source_tracking(self) -> None:
+        """BaseEntity adds source_type and source_id fields."""
+        from potluck.models.browsing import Bookmark
+
+        bookmark = Bookmark(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            url="https://example.com",
+            title="Test",
+        )
+        assert bookmark.source_type == SourceType.GOOGLE_TAKEOUT
+        assert isinstance(bookmark.id, UUID)
+        assert isinstance(bookmark.created_at, datetime)
+        assert isinstance(bookmark.updated_at, datetime)
