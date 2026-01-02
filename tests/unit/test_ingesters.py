@@ -1,4 +1,4 @@
-"""Tests for ingestion infrastructure (Phase 3)."""
+"""Tests for ingestion infrastructure."""
 
 import tempfile
 import zipfile
@@ -8,6 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from potluck.core.celery_utils import (
+    is_fatal_error,
+    is_transient_error,
+)
 from potluck.core.exceptions import ConfigurationError, IngestionError
 from potluck.ingesters import (
     BaseIngester,
@@ -20,10 +24,6 @@ from potluck.ingesters import (
     discover,
     list_ingesters,
     register,
-)
-from potluck.ingesters.celery_tasks import (
-    _is_fatal_error,
-    _is_transient_error,
 )
 from potluck.ingesters.utils.archive import (
     extract_archive,
@@ -549,49 +549,49 @@ class TestRegisterDecorator:
 class TestCeleryTaskHelpers:
     """Tests for Celery task helper functions."""
 
-    def test_is_transient_error_operational_error(self) -> None:
+    def testis_transient_error_operational_error(self) -> None:
         """OperationalError is classified as transient."""
         from sqlalchemy.exc import OperationalError
 
         exc = OperationalError("db connection lost", None, Exception("db error"))
-        assert _is_transient_error(exc) is True
+        assert is_transient_error(exc) is True
 
-    def test_is_transient_error_interface_error(self) -> None:
+    def testis_transient_error_interface_error(self) -> None:
         """InterfaceError is classified as transient."""
         from sqlalchemy.exc import InterfaceError
 
         exc = InterfaceError("interface error", None, Exception("interface error"))
-        assert _is_transient_error(exc) is True
+        assert is_transient_error(exc) is True
 
-    def test_is_transient_error_disk_io(self) -> None:
+    def testis_transient_error_disk_io(self) -> None:
         """Disk I/O errors (EIO) are classified as transient."""
         exc = OSError(5, "Input/output error")
-        assert _is_transient_error(exc) is True
+        assert is_transient_error(exc) is True
 
-    def test_is_transient_error_disk_full(self) -> None:
+    def testis_transient_error_disk_full(self) -> None:
         """Disk full errors (ENOSPC) are classified as transient."""
         exc = OSError(28, "No space left on device")
-        assert _is_transient_error(exc) is True
+        assert is_transient_error(exc) is True
 
-    def test_is_transient_error_regular_exception(self) -> None:
+    def testis_transient_error_regular_exception(self) -> None:
         """Regular exceptions are not classified as transient."""
         exc = ValueError("not transient")
-        assert _is_transient_error(exc) is False
+        assert is_transient_error(exc) is False
 
-    def test_is_fatal_error_file_not_found(self) -> None:
+    def testis_fatal_error_file_not_found(self) -> None:
         """FileNotFoundError is classified as fatal."""
         exc = FileNotFoundError("file missing")
-        assert _is_fatal_error(exc) is True
+        assert is_fatal_error(exc) is True
 
-    def test_is_fatal_error_permission_error(self) -> None:
+    def testis_fatal_error_permission_error(self) -> None:
         """PermissionError is classified as fatal."""
         exc = PermissionError("access denied")
-        assert _is_fatal_error(exc) is True
+        assert is_fatal_error(exc) is True
 
-    def test_is_fatal_error_regular_exception(self) -> None:
+    def testis_fatal_error_regular_exception(self) -> None:
         """Regular exceptions are not classified as fatal."""
         exc = ValueError("not fatal")
-        assert _is_fatal_error(exc) is False
+        assert is_fatal_error(exc) is False
 
 
 class TestCeleryTaskEntityTypeValidation:

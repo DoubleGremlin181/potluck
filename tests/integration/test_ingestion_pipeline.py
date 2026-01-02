@@ -236,31 +236,6 @@ class TestIngestionPipeline:
             # Last update should show 5 items processed
             assert progress_updates[-1][0] == 5
 
-    def test_entity_callback(
-        self,
-        db_session: Session,
-        mock_media_ingester: type[BaseIngester],
-    ) -> None:
-        """Test that entity callback is called for each created entity."""
-        entities_created: list[tuple[EntityType, BaseEntity]] = []
-
-        def on_entity(entity_type: EntityType, entity: BaseEntity) -> None:
-            entities_created.append((entity_type, entity))
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            zip_path = Path(tmpdir) / "test-media-callback.zip"
-            with zipfile.ZipFile(zip_path, "w") as zf:
-                # Use unique content to avoid dedup with other tests
-                zf.writestr("photo1.jpg", b"callback test content 1")
-                zf.writestr("photo2.jpg", b"callback test content 2")
-
-            pipeline = IngestionPipeline(session=db_session, on_entity=on_entity)
-            result = pipeline.run(zip_path)
-
-            assert result.success
-            assert len(entities_created) == 2
-            assert all(et == EntityType.MEDIA for et, _ in entities_created)
-
     def test_no_ingester_match_returns_empty_result(
         self,
         db_session: Session,

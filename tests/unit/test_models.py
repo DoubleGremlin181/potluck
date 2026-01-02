@@ -44,7 +44,15 @@ class TestSourceType:
 
     def test_all_sources_defined(self) -> None:
         """All expected source types are defined."""
-        expected = {"google_takeout", "reddit", "whatsapp", "ynab", "generic", "manual"}
+        expected = {
+            "google_takeout",
+            "reddit",
+            "whatsapp",
+            "ynab",
+            "generic",
+            "manual",
+            "face_detection",
+        }
         actual = {s.value for s in SourceType}
         assert actual == expected
 

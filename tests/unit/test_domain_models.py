@@ -1,4 +1,8 @@
-"""Tests for Phase 2 models."""
+"""Tests for domain models.
+
+These tests verify all entity models defined in potluck.models,
+including people, media, messages, emails, social, locations, etc.
+"""
 
 from datetime import UTC, date, datetime
 from decimal import Decimal

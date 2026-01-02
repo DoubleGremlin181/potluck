@@ -96,7 +96,7 @@ class TestExpectedTables:
         # People
         "people",
         "person_aliases",
-        # Face detection (Phase 4)
+        # Face detection
         "face_clusters",
         "detected_faces",
         # Media
