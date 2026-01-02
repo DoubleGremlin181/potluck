@@ -13,31 +13,31 @@ from potluck.core.celery_utils import (
     is_transient_error,
 )
 from potluck.core.exceptions import ConfigurationError, IngestionError
-from potluck.ingesters import (
-    BaseIngester,
+from potluck.models.base import BaseEntity, EntityType, SourceType
+from potluck.pipeline import (
+    BaseIngestionStage,
     DetectionResult,
     DiscoveryResult,
-    IngestionFilter,
-    IngestionStats,
+    PipelineFilter,
+    PipelineStats,
     clear_registry,
-    detect_ingester,
+    detect_stage,
     discover,
-    list_ingesters,
+    list_stages,
     register,
 )
-from potluck.ingesters.utils.archive import (
+from potluck.pipeline.utils.archive import (
     extract_archive,
     extracted,
     get_archive_type,
     is_archive,
 )
-from potluck.ingesters.utils.dedup import compute_content_hash, compute_file_hash
-from potluck.ingesters.utils.parsers import (
+from potluck.pipeline.utils.hashing import compute_content_hash, compute_file_hash
+from potluck.pipeline.utils.parsers import (
     parse_csv,
     parse_datetime,
     parse_json,
 )
-from potluck.models.base import BaseEntity, EntityType, SourceType
 
 
 class TestEntityType:
@@ -68,12 +68,12 @@ class TestEntityType:
         assert isinstance(EntityType.CHAT_MESSAGE.value, str)
 
 
-class TestIngestionFilter:
-    """Tests for IngestionFilter dataclass."""
+class TestPipelineFilter:
+    """Tests for PipelineFilter dataclass."""
 
     def test_default_values(self) -> None:
         """Filter has None defaults."""
-        f = IngestionFilter()
+        f = PipelineFilter()
         assert f.since is None
         assert f.until is None
 
@@ -81,69 +81,69 @@ class TestIngestionFilter:
         """Filter can be created with dates."""
         since = datetime(2024, 1, 1, tzinfo=UTC)
         until = datetime(2024, 12, 31, tzinfo=UTC)
-        f = IngestionFilter(since=since, until=until)
+        f = PipelineFilter(since=since, until=until)
         assert f.since == since
         assert f.until == until
 
 
 class TestIngesterRegistry:
-    """Tests for ingester registration."""
+    """Tests for ingestion stage registration."""
 
     def setup_method(self) -> None:
         """Clear registry before each test."""
         clear_registry()
 
-    def test_register_ingester(self) -> None:
-        """Can register an ingester class."""
+    def test_register_stage(self) -> None:
+        """Can register an ingestion stage class."""
 
         @register
-        class MockIngester(BaseIngester):
+        class MockIngester(BaseIngestionStage):
             SOURCE_TYPE = SourceType.GENERIC
             FILENAME_PATTERNS = [r"mock-.*"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
 
-            def detect_contents(self, path: Path) -> DetectionResult:
+            def detect(self, path: Path) -> DetectionResult:
                 return DetectionResult()
 
-            def ingest(
+            def execute(
                 self,
                 path: Path,
-                entity_types: set[EntityType],
-                filters: IngestionFilter | None = None,
+                entity_types: set[EntityType] | None = None,
+                filters: PipelineFilter | None = None,
             ) -> Iterator[BaseEntity]:
                 yield from []
 
-        assert MockIngester in list_ingesters()
+        assert MockIngester in list_stages()
 
     def test_detect_no_match(self) -> None:
-        """detect_ingester() returns None when no pattern matches."""
-        result = detect_ingester(Path("unknown-file.xyz"))
+        """detect_stage() returns None when no pattern matches."""
+        result = detect_stage(Path("unknown-file.xyz"))
         assert result is None
 
     def test_detect_with_pattern_match(self) -> None:
-        """detect_ingester() returns ingester when pattern matches."""
+        """detect_stage() returns stage when pattern matches."""
 
         @register
-        class MockIngester(BaseIngester):
+        class MockIngester(BaseIngestionStage):
             SOURCE_TYPE = SourceType.GENERIC
             FILENAME_PATTERNS = [r"test-export-.*\.zip"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
 
-            def detect_contents(self, path: Path) -> DetectionResult:
+            def detect(self, path: Path) -> DetectionResult:
                 return DetectionResult()
 
-            def ingest(
+            def execute(
                 self,
                 path: Path,
-                entity_types: set[EntityType],
-                filters: IngestionFilter | None = None,
+                entity_types: set[EntityType] | None = None,
+                filters: PipelineFilter | None = None,
             ) -> Iterator[BaseEntity]:
                 yield from []
 
-        result = detect_ingester(Path("test-export-2024.zip"))
+        result = detect_stage(Path("test-export-2024.zip"))
         assert result is MockIngester
 
-        result = detect_ingester(Path("other-file.zip"))
+        result = detect_stage(Path("other-file.zip"))
         assert result is None
 
 
@@ -302,8 +302,8 @@ class TestParserUtils:
             path.unlink()
 
 
-class TestDedupUtils:
-    """Tests for deduplication utilities."""
+class TestHashingUtils:
+    """Tests for hashing utilities."""
 
     def test_compute_file_hash(self) -> None:
         """File hashing works."""
@@ -335,21 +335,25 @@ class TestDedupUtils:
         assert len(h) == 64
 
 
-class TestIngestionStats:
-    """Tests for IngestionStats."""
+class TestPipelineStats:
+    """Tests for PipelineStats."""
 
-    def test_ingestion_stats_default(self) -> None:
-        """IngestionStats has zero defaults."""
-        stats = IngestionStats()
-        assert stats.created == 0
-        assert stats.updated == 0
-        assert stats.skipped == 0
-        assert stats.failed == 0
-        assert stats.total_processed == 0
+    def test_pipeline_stats_default(self) -> None:
+        """PipelineStats has zero defaults."""
+        stats = PipelineStats()
+        assert stats.entities_created == 0
+        assert stats.entities_updated == 0
+        assert stats.entities_skipped == 0
+        assert stats.entities_failed == 0
 
-    def test_ingestion_stats_total(self) -> None:
+    def test_pipeline_stats_total(self) -> None:
         """total_processed sums all counts."""
-        stats = IngestionStats(created=10, updated=5, skipped=3, failed=2)
+        stats = PipelineStats(
+            entities_created=10,
+            entities_updated=5,
+            entities_skipped=3,
+            entities_failed=2,
+        )
         assert stats.total_processed == 20
 
 
@@ -366,32 +370,32 @@ class TestDiscovery:
             discover(Path("/nonexistent/path"))
 
     def test_discover_empty_directory(self) -> None:
-        """discover() handles empty directories with no matching ingester."""
+        """discover() handles empty directories with no matching stage."""
         with tempfile.TemporaryDirectory() as tmpdir:
             result = discover(Path(tmpdir))
-            # No ingester matches, so is_generic=True and no content
+            # No stage matches, so is_generic=True and no content
             assert result.is_generic
             assert not result.has_content
 
-    def test_discover_with_registered_ingester(self) -> None:
-        """discover() uses registered ingester when pattern matches."""
+    def test_discover_with_registered_stage(self) -> None:
+        """discover() uses registered stage when pattern matches."""
 
         @register
-        class MockIngester(BaseIngester):
+        class MockIngester(BaseIngestionStage):
             SOURCE_TYPE = SourceType.GENERIC
             FILENAME_PATTERNS = [r"test-data"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
 
-            def detect_contents(self, path: Path) -> DetectionResult:
+            def detect(self, path: Path) -> DetectionResult:
                 # Count files in the directory
                 count = sum(1 for f in path.rglob("*") if f.is_file())
                 return DetectionResult(entity_counts={EntityType.MEDIA: count})
 
-            def ingest(
+            def execute(
                 self,
                 path: Path,
-                entity_types: set[EntityType],
-                filters: IngestionFilter | None = None,
+                entity_types: set[EntityType] | None = None,
+                filters: PipelineFilter | None = None,
             ) -> Iterator[BaseEntity]:
                 yield from []
 
@@ -403,7 +407,7 @@ class TestDiscovery:
             (test_dir / "photo2.png").write_bytes(b"fake png")
 
             result = discover(test_dir)
-            assert not result.is_generic  # Ingester matched
+            assert not result.is_generic  # Stage matched
             assert result.has_content
             assert EntityType.MEDIA in result.available_entities
             assert result.available_entities[EntityType.MEDIA] == 2
@@ -413,7 +417,7 @@ class TestDiscoveryResult:
     """Tests for DiscoveryResult dataclass."""
 
     def test_discovery_result_is_generic(self) -> None:
-        """is_generic returns True when no ingester."""
+        """is_generic returns True when no stage."""
         result = DiscoveryResult(source_path=Path("/test"))
         assert result.is_generic
 
@@ -426,19 +430,19 @@ class TestDiscoveryResult:
         assert result.has_content
 
     def test_discovery_result_source_type(self) -> None:
-        """source_type returns GENERIC when no ingester."""
+        """source_type returns GENERIC when no stage."""
         result = DiscoveryResult(source_path=Path("/test"))
         assert result.source_type == SourceType.GENERIC
 
 
-class TestIngestionFilterValidation:
-    """Tests for IngestionFilter validation."""
+class TestPipelineFilterValidation:
+    """Tests for PipelineFilter validation."""
 
     def test_valid_date_range(self) -> None:
         """Valid date range (since < until) passes validation."""
         since = datetime(2024, 1, 1, tzinfo=UTC)
         until = datetime(2024, 12, 31, tzinfo=UTC)
-        f = IngestionFilter(since=since, until=until)
+        f = PipelineFilter(since=since, until=until)
         assert f.since == since
         assert f.until == until
 
@@ -447,17 +451,17 @@ class TestIngestionFilterValidation:
         since = datetime(2024, 12, 31, tzinfo=UTC)
         until = datetime(2024, 1, 1, tzinfo=UTC)
         with pytest.raises(ValueError, match="'since' must be before 'until'"):
-            IngestionFilter(since=since, until=until)
+            PipelineFilter(since=since, until=until)
 
     def test_equal_dates_valid(self) -> None:
         """Equal since and until dates are valid (single moment in time)."""
         date = datetime(2024, 6, 15, tzinfo=UTC)
-        f = IngestionFilter(since=date, until=date)
+        f = PipelineFilter(since=date, until=date)
         assert f.since == f.until
 
 
-class TestBaseIngesterValidation:
-    """Tests for BaseIngester subclass validation."""
+class TestBaseIngestionStageValidation:
+    """Tests for BaseIngestionStage subclass validation."""
 
     def setup_method(self) -> None:
         """Clear registry before each test."""
@@ -467,18 +471,18 @@ class TestBaseIngesterValidation:
         """Subclass without SOURCE_TYPE raises ConfigurationError."""
         with pytest.raises(ConfigurationError, match="must define class attribute 'SOURCE_TYPE'"):
 
-            class BadIngester(BaseIngester):
+            class BadIngester(BaseIngestionStage):
                 FILENAME_PATTERNS = [r"test-.*"]
                 SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
 
-                def detect_contents(self, path: Path) -> DetectionResult:
+                def detect(self, path: Path) -> DetectionResult:
                     return DetectionResult()
 
-                def ingest(
+                def execute(
                     self,
                     path: Path,
-                    entity_types: set[EntityType],
-                    filters: IngestionFilter | None = None,
+                    entity_types: set[EntityType] | None = None,
+                    filters: PipelineFilter | None = None,
                 ) -> Iterator[BaseEntity]:
                     yield from []
 
@@ -488,37 +492,37 @@ class TestBaseIngesterValidation:
             ConfigurationError, match="must define class attribute 'FILENAME_PATTERNS'"
         ):
 
-            class BadIngester(BaseIngester):
+            class BadIngester(BaseIngestionStage):
                 SOURCE_TYPE = SourceType.GENERIC
                 SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
 
-                def detect_contents(self, path: Path) -> DetectionResult:
+                def detect(self, path: Path) -> DetectionResult:
                     return DetectionResult()
 
-                def ingest(
+                def execute(
                     self,
                     path: Path,
-                    entity_types: set[EntityType],
-                    filters: IngestionFilter | None = None,
+                    entity_types: set[EntityType] | None = None,
+                    filters: PipelineFilter | None = None,
                 ) -> Iterator[BaseEntity]:
                     yield from []
 
-    def test_valid_ingester_passes_validation(self) -> None:
-        """Properly defined ingester passes validation."""
+    def test_valid_stage_passes_validation(self) -> None:
+        """Properly defined ingestion stage passes validation."""
 
-        class ValidIngester(BaseIngester):
+        class ValidIngester(BaseIngestionStage):
             SOURCE_TYPE = SourceType.GENERIC
             FILENAME_PATTERNS = [r"test-.*"]
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
 
-            def detect_contents(self, path: Path) -> DetectionResult:
+            def detect(self, path: Path) -> DetectionResult:
                 return DetectionResult()
 
-            def ingest(
+            def execute(
                 self,
                 path: Path,
-                entity_types: set[EntityType],
-                filters: IngestionFilter | None = None,
+                entity_types: set[EntityType] | None = None,
+                filters: PipelineFilter | None = None,
             ) -> Iterator[BaseEntity]:
                 yield from []
 
@@ -537,7 +541,7 @@ class TestRegisterDecorator:
         """register() raises ConfigurationError if SOURCE_TYPE is missing."""
         # The register function checks hasattr for SOURCE_TYPE
         with pytest.raises(ConfigurationError, match="must define SOURCE_TYPE"):
-            from potluck.ingesters import register as register_fn
+            from potluck.pipeline.ingestion import register as register_fn
 
             # Create a minimal class without SOURCE_TYPE
             class NoSourceType:

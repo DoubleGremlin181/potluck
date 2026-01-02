@@ -1,4 +1,4 @@
-"""Unit tests for HashingProcessor."""
+"""Unit tests for HashingStage."""
 
 import tempfile
 from pathlib import Path
@@ -7,12 +7,12 @@ from uuid import uuid4
 from PIL import Image
 
 from potluck.models.media import Media, MediaType
-from potluck.processing.base import ProcessingStatus
-from potluck.processing.hashing import HashingProcessor, compute_phash_distance
+from potluck.pipeline.dtos import StageStatus
+from potluck.pipeline.processing.hashing import HashingStage, compute_phash_distance
 
 
-class TestHashingProcessor:
-    """Tests for HashingProcessor."""
+class TestHashingStage:
+    """Tests for HashingStage."""
 
     @staticmethod
     def _create_test_image() -> Path:
@@ -29,15 +29,15 @@ class TestHashingProcessor:
             f.write(b"Hello, World!")
             return Path(f.name)
 
-    def test_processor_has_name(self) -> None:
-        """HashingProcessor should have a NAME attribute."""
-        processor = HashingProcessor()
-        assert processor.NAME == "hashing"
+    def test_stage_has_name(self) -> None:
+        """HashingStage should have a NAME attribute."""
+        stage = HashingStage()
+        assert stage.NAME == "hashing"
 
     def test_hash_image_computes_both_hashes(self) -> None:
-        """HashingProcessor should compute both SHA256 and pHash for images."""
+        """HashingStage should compute both SHA256 and pHash for images."""
         sample_image = self._create_test_image()
-        processor = HashingProcessor()
+        stage = HashingStage()
         media = Media(
             id=uuid4(),
             file_path=str(sample_image),
@@ -45,17 +45,17 @@ class TestHashingProcessor:
             source_type="generic",
         )
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.COMPLETED
+        assert result.status == StageStatus.COMPLETED
         assert result.data["file_hash"] is not None
         assert len(result.data["file_hash"]) == 64  # SHA256 hex length
         assert result.data["perceptual_hash"] is not None
 
     def test_hash_non_image_only_file_hash(self) -> None:
-        """HashingProcessor should only compute SHA256 for non-images."""
+        """HashingStage should only compute SHA256 for non-images."""
         sample_text_file = self._create_test_text_file()
-        processor = HashingProcessor()
+        stage = HashingStage()
         media = Media(
             id=uuid4(),
             file_path=str(sample_text_file),
@@ -63,15 +63,15 @@ class TestHashingProcessor:
             source_type="generic",
         )
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.COMPLETED
+        assert result.status == StageStatus.COMPLETED
         assert result.data["file_hash"] is not None
         assert result.data["perceptual_hash"] is None
 
     def test_hash_missing_file_fails(self) -> None:
-        """HashingProcessor should fail for missing files."""
-        processor = HashingProcessor()
+        """HashingStage should fail for missing files."""
+        stage = HashingStage()
         media = Media(
             id=uuid4(),
             file_path="/nonexistent/file.png",
@@ -79,16 +79,16 @@ class TestHashingProcessor:
             source_type="generic",
         )
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.FAILED
+        assert result.status == StageStatus.FAILED
         assert result.error_message is not None
         assert "not found" in result.error_message.lower()
 
     def test_hash_deterministic(self) -> None:
-        """HashingProcessor should produce deterministic hashes."""
+        """HashingStage should produce deterministic hashes."""
         sample_image = self._create_test_image()
-        processor = HashingProcessor()
+        stage = HashingStage()
         media = Media(
             id=uuid4(),
             file_path=str(sample_image),
@@ -96,8 +96,8 @@ class TestHashingProcessor:
             source_type="generic",
         )
 
-        result1 = processor.process(media)
-        result2 = processor.process(media)
+        result1 = stage.execute(media)
+        result2 = stage.execute(media)
 
         assert result1.data["file_hash"] == result2.data["file_hash"]
         assert result1.data["perceptual_hash"] == result2.data["perceptual_hash"]

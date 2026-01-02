@@ -1,4 +1,4 @@
-"""Unit tests for FaceProcessor."""
+"""Unit tests for FaceStage."""
 
 import pytest
 
@@ -9,21 +9,21 @@ from uuid import uuid4
 
 from potluck.core.exceptions import ProcessingError
 from potluck.models.media import Media, MediaType
-from potluck.processing.base import ProcessingStatus
-from potluck.processing.faces import FaceProcessor
+from potluck.pipeline.dtos import StageStatus
+from potluck.pipeline.processing.faces import FaceStage
 
 
-class TestFaceProcessor:
-    """Tests for FaceProcessor."""
+class TestFaceStage:
+    """Tests for FaceStage."""
 
-    def test_processor_has_name(self) -> None:
-        """FaceProcessor should have a NAME attribute."""
-        processor = FaceProcessor()
-        assert processor.NAME == "faces"
+    def test_stage_has_name(self) -> None:
+        """FaceStage should have a NAME attribute."""
+        stage = FaceStage()
+        assert stage.NAME == "faces"
 
-    def test_should_process_only_images(self) -> None:
-        """FaceProcessor should only process images."""
-        processor = FaceProcessor()
+    def test_should_execute_only_images(self) -> None:
+        """FaceStage should only process images."""
+        stage = FaceStage()
 
         image_media = Media(
             id=uuid4(),
@@ -38,12 +38,12 @@ class TestFaceProcessor:
             source_type="generic",
         )
 
-        assert processor.should_process(image_media) is True
-        assert processor.should_process(video_media) is False
+        assert stage.should_execute(image_media) is True
+        assert stage.should_execute(video_media) is False
 
     def test_skip_non_image(self) -> None:
-        """FaceProcessor should skip non-image media."""
-        processor = FaceProcessor()
+        """FaceStage should skip non-image media."""
+        stage = FaceStage()
         media = Media(
             id=uuid4(),
             file_path="/test.mp4",
@@ -51,13 +51,13 @@ class TestFaceProcessor:
             source_type="generic",
         )
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.SKIPPED
+        assert result.status == StageStatus.SKIPPED
 
     def test_missing_file_fails(self) -> None:
-        """FaceProcessor should fail for missing files."""
-        processor = FaceProcessor()
+        """FaceStage should fail for missing files."""
+        stage = FaceStage()
         media = Media(
             id=uuid4(),
             file_path="/nonexistent/file.jpg",
@@ -65,55 +65,55 @@ class TestFaceProcessor:
             source_type="generic",
         )
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.FAILED
+        assert result.status == StageStatus.FAILED
         assert result.error_message is not None
         assert "not found" in result.error_message.lower()
 
     def test_default_model_settings(self) -> None:
-        """FaceProcessor should use Facenet model by default."""
-        processor = FaceProcessor()
-        assert processor._model_name == "Facenet"
-        assert processor._detector_backend == "retinaface"
+        """FaceStage should use Facenet model by default."""
+        stage = FaceStage()
+        assert stage._model_name == "Facenet"
+        assert stage._detector_backend == "retinaface"
 
     def test_custom_model_settings(self) -> None:
-        """FaceProcessor should accept custom model settings."""
-        processor = FaceProcessor(
+        """FaceStage should accept custom model settings."""
+        stage = FaceStage(
             model_name="VGG-Face",
             detector_backend="mtcnn",
             clustering_eps=0.5,
             min_samples=3,
         )
-        assert processor._model_name == "VGG-Face"
-        assert processor._detector_backend == "mtcnn"
-        assert processor._clustering_eps == 0.5
-        assert processor._min_samples == 3
+        assert stage._model_name == "VGG-Face"
+        assert stage._detector_backend == "mtcnn"
+        assert stage._clustering_eps == 0.5
+        assert stage._min_samples == 3
 
 
-class TestFaceProcessorClustering:
-    """Tests for FaceProcessor clustering functionality."""
+class TestFaceStageClustering:
+    """Tests for FaceStage clustering functionality."""
 
     def test_cluster_embeddings_not_enough_samples(self) -> None:
         """cluster_embeddings should return all as noise with insufficient samples."""
-        processor = FaceProcessor(min_samples=3)
+        stage = FaceStage(min_samples=3)
         embeddings = [[0.1] * 128, [0.2] * 128]
         face_ids = [uuid4(), uuid4()]
 
-        clusters = processor.cluster_embeddings(embeddings, face_ids)
+        clusters = stage.cluster_embeddings(embeddings, face_ids)
 
         assert -1 in clusters
         assert len(clusters[-1]) == 2
 
     def test_compute_cluster_centroid(self) -> None:
         """compute_cluster_centroid should return mean of embeddings."""
-        processor = FaceProcessor()
+        stage = FaceStage()
         embeddings = [
             [1.0, 2.0, 3.0],
             [3.0, 4.0, 5.0],
         ]
 
-        centroid = processor.compute_cluster_centroid(embeddings)
+        centroid = stage.compute_cluster_centroid(embeddings)
 
         assert len(centroid) == 3
         assert centroid[0] == 2.0
@@ -122,63 +122,63 @@ class TestFaceProcessorClustering:
 
     def test_compute_cluster_centroid_empty(self) -> None:
         """compute_cluster_centroid should raise for empty list."""
-        processor = FaceProcessor()
+        stage = FaceStage()
 
         with pytest.raises(ProcessingError, match="empty"):
-            processor.compute_cluster_centroid([])
+            stage.compute_cluster_centroid([])
 
     def test_compute_embedding_distance(self) -> None:
         """compute_embedding_distance should return Euclidean distance."""
-        processor = FaceProcessor()
+        stage = FaceStage()
         e1 = [0.0, 0.0, 0.0]
         e2 = [3.0, 4.0, 0.0]
 
-        distance = processor.compute_embedding_distance(e1, e2)
+        distance = stage.compute_embedding_distance(e1, e2)
 
         assert distance == pytest.approx(5.0)
 
     def test_compute_embedding_distance_identical(self) -> None:
         """compute_embedding_distance should return 0 for identical embeddings."""
-        processor = FaceProcessor()
+        stage = FaceStage()
         e1 = [1.0, 2.0, 3.0]
 
-        distance = processor.compute_embedding_distance(e1, e1)
+        distance = stage.compute_embedding_distance(e1, e1)
 
         assert distance == pytest.approx(0.0)
 
     def test_find_closest_cluster_empty(self) -> None:
         """find_closest_cluster should return None for empty clusters."""
-        processor = FaceProcessor()
+        stage = FaceStage()
         embedding = [0.5] * 128
 
-        closest_id, distance = processor.find_closest_cluster(embedding, {})
+        closest_id, distance = stage.find_closest_cluster(embedding, {})
 
         assert closest_id is None
         assert distance == float("inf")
 
     def test_find_closest_cluster_within_threshold(self) -> None:
         """find_closest_cluster should return closest cluster within threshold."""
-        processor = FaceProcessor(clustering_eps=1.0)
+        stage = FaceStage(clustering_eps=1.0)
         embedding = [0.0, 0.0, 0.0]
         cluster_id = uuid4()
         cluster_centroids = {
             cluster_id: [0.1, 0.1, 0.1],
         }
 
-        closest_id, distance = processor.find_closest_cluster(embedding, cluster_centroids)
+        closest_id, distance = stage.find_closest_cluster(embedding, cluster_centroids)
 
         assert closest_id == cluster_id
         assert distance < 1.0
 
     def test_find_closest_cluster_beyond_threshold(self) -> None:
         """find_closest_cluster should return None if beyond threshold."""
-        processor = FaceProcessor(clustering_eps=0.1)
+        stage = FaceStage(clustering_eps=0.1)
         embedding = [0.0, 0.0, 0.0]
         cluster_id = uuid4()
         cluster_centroids = {
             cluster_id: [10.0, 10.0, 10.0],
         }
 
-        closest_id, distance = processor.find_closest_cluster(embedding, cluster_centroids)
+        closest_id, distance = stage.find_closest_cluster(embedding, cluster_centroids)
 
         assert closest_id is None

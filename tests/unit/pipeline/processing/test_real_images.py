@@ -1,6 +1,6 @@
 """Tests for processing with real images.
 
-These tests use actual image files to verify processors work correctly
+These tests use actual image files to verify stages work correctly
 with real data. They require ML dependencies and should run in Docker.
 """
 
@@ -11,7 +11,7 @@ import pytest
 
 from potluck.models.base import SourceType
 from potluck.models.media import Media, MediaType
-from potluck.processing.base import ProcessingStatus
+from potluck.pipeline.dtos import StageStatus
 
 
 def _create_test_media(file_path: Path) -> Media:
@@ -25,34 +25,34 @@ def _create_test_media(file_path: Path) -> Media:
 
 
 class TestHashingWithRealImages:
-    """Test hashing processor with actual image files."""
+    """Test hashing stage with actual image files."""
 
     @pytest.mark.ml
     def test_hashing_jpeg_image(self, sample_jpeg_path: Path) -> None:
-        """HashingProcessor correctly processes JPEG images."""
-        from potluck.processing.hashing import HashingProcessor
+        """HashingStage correctly processes JPEG images."""
+        from potluck.pipeline.processing.hashing import HashingStage
 
         media = _create_test_media(sample_jpeg_path)
-        processor = HashingProcessor()
+        stage = HashingStage()
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.COMPLETED
+        assert result.status == StageStatus.COMPLETED
         assert result.data["file_hash"] is not None
         assert len(result.data["file_hash"]) == 64  # SHA256 hex
         assert result.data["perceptual_hash"] is not None
 
     @pytest.mark.ml
     def test_hashing_png_image(self, sample_png_path: Path) -> None:
-        """HashingProcessor correctly processes PNG images."""
-        from potluck.processing.hashing import HashingProcessor
+        """HashingStage correctly processes PNG images."""
+        from potluck.pipeline.processing.hashing import HashingStage
 
         media = _create_test_media(sample_png_path)
-        processor = HashingProcessor()
+        stage = HashingStage()
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.COMPLETED
+        assert result.status == StageStatus.COMPLETED
         assert result.data["file_hash"] is not None
         assert result.data["perceptual_hash"] is not None
 
@@ -66,20 +66,20 @@ class TestPerceptualHashDuplicateDetection:
         identical_images_different_formats: tuple[Path, Path],
     ) -> None:
         """Same image in PNG and JPEG has similar perceptual hash."""
-        from potluck.processing.hashing import HashingProcessor, compute_phash_distance
+        from potluck.pipeline.processing.hashing import HashingStage, compute_phash_distance
 
         jpeg_path, png_path = identical_images_different_formats
 
-        processor = HashingProcessor()
+        stage = HashingStage()
 
         jpeg_media = _create_test_media(jpeg_path)
         png_media = _create_test_media(png_path)
 
-        jpeg_result = processor.process(jpeg_media)
-        png_result = processor.process(png_media)
+        jpeg_result = stage.execute(jpeg_media)
+        png_result = stage.execute(png_media)
 
-        assert jpeg_result.status == ProcessingStatus.COMPLETED
-        assert png_result.status == ProcessingStatus.COMPLETED
+        assert jpeg_result.status == StageStatus.COMPLETED
+        assert png_result.status == StageStatus.COMPLETED
 
         jpeg_phash = jpeg_result.data["perceptual_hash"]
         png_phash = png_result.data["perceptual_hash"]
@@ -98,18 +98,18 @@ class TestPerceptualHashDuplicateDetection:
         image_with_text: Path,
     ) -> None:
         """Different images have different perceptual hashes."""
-        from potluck.processing.hashing import HashingProcessor, compute_phash_distance
+        from potluck.pipeline.processing.hashing import HashingStage, compute_phash_distance
 
-        processor = HashingProcessor()
+        stage = HashingStage()
 
         img1_media = _create_test_media(sample_jpeg_path)
         img2_media = _create_test_media(image_with_text)
 
-        result1 = processor.process(img1_media)
-        result2 = processor.process(img2_media)
+        result1 = stage.execute(img1_media)
+        result2 = stage.execute(img2_media)
 
-        assert result1.status == ProcessingStatus.COMPLETED
-        assert result2.status == ProcessingStatus.COMPLETED
+        assert result1.status == StageStatus.COMPLETED
+        assert result2.status == StageStatus.COMPLETED
 
         phash1 = result1.data["perceptual_hash"]
         phash2 = result2.data["perceptual_hash"]
@@ -120,19 +120,19 @@ class TestPerceptualHashDuplicateDetection:
 
 
 class TestOCRWithRealImages:
-    """Test OCR processor with actual images containing text."""
+    """Test OCR stage with actual images containing text."""
 
     @pytest.mark.ml
     def test_ocr_extracts_text_from_image(self, image_with_text: Path) -> None:
-        """OCRProcessor extracts readable text from images."""
-        from potluck.processing.ocr import OCRProcessor
+        """OCRStage extracts readable text from images."""
+        from potluck.pipeline.processing.ocr import OCRStage
 
         media = _create_test_media(image_with_text)
-        processor = OCRProcessor()
+        stage = OCRStage()
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.COMPLETED
+        assert result.status == StageStatus.COMPLETED
         ocr_text = result.data.get("ocr_text", "")
         # Should find some text (case-insensitive check)
         assert "hello" in ocr_text.lower() or "world" in ocr_text.lower()
@@ -143,19 +143,19 @@ class TestFaceDetectionWithRealImages:
 
     @pytest.mark.ml
     def test_face_detection_returns_embeddings(self, image_with_face: Path) -> None:
-        """FaceProcessor returns face embeddings when faces are detected."""
-        from potluck.processing.faces import FaceProcessor
+        """FaceStage returns face embeddings when faces are detected."""
+        from potluck.pipeline.processing.faces import FaceStage
 
         media = _create_test_media(image_with_face)
-        processor = FaceProcessor()
+        stage = FaceStage()
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
         # Note: Simple drawn "face" may not be detected by ML model
-        # This test verifies the processor runs without error
-        assert result.status in (ProcessingStatus.COMPLETED, ProcessingStatus.SKIPPED)
+        # This test verifies the stage runs without error
+        assert result.status in (StageStatus.COMPLETED, StageStatus.SKIPPED)
 
-        if result.status == ProcessingStatus.COMPLETED:
+        if result.status == StageStatus.COMPLETED:
             faces = result.data.get("faces", [])
             for face in faces:
                 assert "embedding" in face
@@ -169,15 +169,15 @@ class TestCaptioningWithRealImages:
 
     @pytest.mark.ml
     def test_captioning_generates_description(self, sample_jpeg_path: Path) -> None:
-        """CaptioningProcessor generates text description for images."""
-        from potluck.processing.captioning import CaptioningProcessor
+        """CaptioningStage generates text description for images."""
+        from potluck.pipeline.processing.captioning import CaptioningStage
 
         media = _create_test_media(sample_jpeg_path)
-        processor = CaptioningProcessor()
+        stage = CaptioningStage()
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        assert result.status == ProcessingStatus.COMPLETED
+        assert result.status == StageStatus.COMPLETED
         caption = result.data.get("caption", "")
         assert len(caption) > 0, "Caption should not be empty"
 
@@ -187,15 +187,15 @@ class TestMetadataWithRealImages:
 
     @pytest.mark.ml
     def test_metadata_processes_without_exif(self, sample_jpeg_path: Path) -> None:
-        """MetadataProcessor handles images without EXIF gracefully."""
-        from potluck.processing.metadata import MetadataProcessor
+        """MetadataStage handles images without EXIF gracefully."""
+        from potluck.pipeline.processing.metadata import MetadataStage
 
         media = _create_test_media(sample_jpeg_path)
-        processor = MetadataProcessor()
+        stage = MetadataStage()
 
-        result = processor.process(media)
+        result = stage.execute(media)
 
-        # Generated images don't have EXIF, but processor should complete
-        assert result.status == ProcessingStatus.COMPLETED
+        # Generated images don't have EXIF, but stage should complete
+        assert result.status == StageStatus.COMPLETED
         # has_exif should be False for generated images
         assert result.data.get("has_exif") is False or result.data.get("exif_data") is None
