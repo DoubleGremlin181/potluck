@@ -19,18 +19,18 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, select
 
-from potluck.ingesters import (
-    BaseIngester,
-    DetectionResult,
-    IngestionFilter,
-    IngestionPipeline,
-    clear_registry,
-    register,
-)
-from potluck.ingesters.utils.dedup import compute_content_hash, compute_file_hash
 from potluck.models.base import BaseEntity, EntityType, SourceType
 from potluck.models.media import Media
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
+from potluck.pipeline import (
+    BaseIngestionStage,
+    DetectionResult,
+    PipelineFilter,
+    PipelineOrchestrator,
+    clear_registry,
+    register,
+)
+from potluck.pipeline.utils.hashing import compute_content_hash, compute_file_hash
 
 
 @pytest.fixture
@@ -55,34 +55,35 @@ def db_session(
 
 @pytest.fixture(autouse=True)
 def clean_registry() -> Iterator[None]:
-    """Clear ingester registry before each test."""
+    """Clear ingestion stage registry before each test."""
     clear_registry()
     yield
     clear_registry()
 
 
 @pytest.fixture
-def mock_media_ingester() -> type[BaseIngester]:
+def mock_media_ingester() -> type[BaseIngestionStage]:
     """Create and register a mock ingester that yields Media entities."""
 
     @register
-    class MockMediaIngester(BaseIngester):
+    class MockMediaIngester(BaseIngestionStage):
         SOURCE_TYPE = SourceType.GENERIC
         FILENAME_PATTERNS = [r"test-media-.*\.zip"]
         SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
 
-        def detect_contents(self, path: Path) -> DetectionResult:
+        def detect(self, path: Path) -> DetectionResult:
             # Count files in the directory
             count = sum(1 for f in path.rglob("*") if f.is_file())
             return DetectionResult(entity_counts={EntityType.MEDIA: count})
 
-        def ingest(
+        def execute(
             self,
             path: Path,
-            entity_types: set[EntityType],
-            filters: IngestionFilter | None = None,
+            entity_types: set[EntityType] | None = None,
+            filters: PipelineFilter | None = None,
         ) -> Iterator[BaseEntity]:
-            if EntityType.MEDIA not in entity_types:
+            types = entity_types if entity_types is not None else self.SUPPORTED_ENTITY_TYPES
+            if EntityType.MEDIA not in types:
                 return
 
             for file_path in path.rglob("*"):
@@ -102,13 +103,13 @@ def mock_media_ingester() -> type[BaseIngester]:
 
 
 @pytest.mark.e2e
-class TestIngestionPipeline:
-    """Integration tests for IngestionPipeline."""
+class TestPipelineOrchestrator:
+    """Integration tests for PipelineOrchestrator."""
 
     def test_basic_ingestion(
         self,
         db_session: Session,
-        mock_media_ingester: type[BaseIngester],
+        mock_media_ingester: type[BaseIngestionStage],
     ) -> None:
         """Test basic ingestion creates entities in the database."""
         # Create test data
@@ -119,16 +120,17 @@ class TestIngestionPipeline:
                 zf.writestr("photo2.jpg", b"fake jpeg content 2")
 
             # Run ingestion
-            pipeline = IngestionPipeline(session=db_session)
+            pipeline = PipelineOrchestrator(session=db_session)
             result = pipeline.run(zip_path)
 
             # Verify result
             assert result.success
-            assert result.stats.created == 2
-            assert result.stats.skipped == 0
+            assert result.stats.entities_created == 2
+            assert result.stats.entities_skipped == 0
 
             # Verify entities in database
-            media_count = db_session.exec(select(Media)).all()
+            stmt = select(Media)
+            media_count = db_session.execute(stmt).scalars().all()
             assert len(media_count) >= 2
 
             # Verify ImportRun was created
@@ -138,7 +140,7 @@ class TestIngestionPipeline:
     def test_entity_deduplication(
         self,
         db_session: Session,
-        mock_media_ingester: type[BaseIngester],
+        mock_media_ingester: type[BaseIngestionStage],
     ) -> None:
         """Test that duplicate entities (same content_hash) are skipped."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -152,22 +154,22 @@ class TestIngestionPipeline:
             with zipfile.ZipFile(zip2_path, "w") as zf:
                 zf.writestr("photo_copy.jpg", b"same content")
 
-            pipeline = IngestionPipeline(session=db_session)
+            pipeline = PipelineOrchestrator(session=db_session)
 
             # First import
             result1 = pipeline.run(zip1_path)
-            assert result1.stats.created == 1
-            assert result1.stats.skipped == 0
+            assert result1.stats.entities_created == 1
+            assert result1.stats.entities_skipped == 0
 
             # Second import - same content should be skipped
             result2 = pipeline.run(zip2_path)
-            assert result2.stats.created == 0
-            assert result2.stats.skipped == 1
+            assert result2.stats.entities_created == 0
+            assert result2.stats.entities_skipped == 1
 
     def test_file_level_deduplication(
         self,
         db_session: Session,
-        mock_media_ingester: type[BaseIngester],
+        mock_media_ingester: type[BaseIngestionStage],
     ) -> None:
         """Test that re-importing the same file is skipped."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -175,23 +177,23 @@ class TestIngestionPipeline:
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr("photo.jpg", b"content")
 
-            pipeline = IngestionPipeline(session=db_session)
+            pipeline = PipelineOrchestrator(session=db_session)
 
             # First import
             result1 = pipeline.run(zip_path)
             assert result1.success
-            assert result1.stats.created == 1
+            assert result1.stats.entities_created == 1
 
             # Second import of same file - should skip entirely
             result2 = pipeline.run(zip_path)
             assert result2.success
             # File was already imported, so all entities are "skipped"
-            assert result2.stats.skipped >= 1
+            assert result2.stats.entities_skipped >= 1
 
     def test_resume_failed_forces_reprocessing(
         self,
         db_session: Session,
-        mock_media_ingester: type[BaseIngester],
+        mock_media_ingester: type[BaseIngestionStage],
     ) -> None:
         """Test that resume_failed=True forces reprocessing."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -199,7 +201,7 @@ class TestIngestionPipeline:
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr("photo.jpg", b"content for resume test")
 
-            pipeline = IngestionPipeline(session=db_session)
+            pipeline = PipelineOrchestrator(session=db_session)
 
             # First import
             result1 = pipeline.run(zip_path)
@@ -214,7 +216,7 @@ class TestIngestionPipeline:
     def test_progress_callback(
         self,
         db_session: Session,
-        mock_media_ingester: type[BaseIngester],
+        mock_media_ingester: type[BaseIngestionStage],
     ) -> None:
         """Test that progress callback is called during ingestion."""
         progress_updates: list[tuple[int, int, str | None]] = []
@@ -228,7 +230,7 @@ class TestIngestionPipeline:
                 for i in range(5):
                     zf.writestr(f"photo{i}.jpg", f"content {i}".encode())
 
-            pipeline = IngestionPipeline(session=db_session, on_progress=on_progress)
+            pipeline = PipelineOrchestrator(session=db_session, on_progress=on_progress)
             result = pipeline.run(zip_path)
 
             assert result.success
@@ -236,27 +238,27 @@ class TestIngestionPipeline:
             # Last update should show 5 items processed
             assert progress_updates[-1][0] == 5
 
-    def test_no_ingester_match_returns_empty_result(
+    def test_no_stage_match_returns_empty_result(
         self,
         db_session: Session,
     ) -> None:
-        """Test that paths with no matching ingester return empty result."""
+        """Test that paths with no matching stage return empty result."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a file that doesn't match any ingester pattern
             unknown_path = Path(tmpdir) / "unknown-file.xyz"
             unknown_path.write_bytes(b"some content")
 
-            pipeline = IngestionPipeline(session=db_session)
+            pipeline = PipelineOrchestrator(session=db_session)
             result = pipeline.run(unknown_path)
 
             # Should complete but with no entities
             assert result.success
-            assert result.stats.created == 0
+            assert result.stats.entities_created == 0
 
 
 @pytest.mark.e2e
-class TestDedupUtilities:
-    """Integration tests for deduplication utilities."""
+class TestHashingUtilities:
+    """Integration tests for hashing utilities."""
 
     def test_compute_file_hash_consistency(self) -> None:
         """Test that file hash is consistent across calls."""
@@ -326,7 +328,7 @@ class TestImportSourceAndRun:
 
         # Query by file_hash
         stmt = select(ImportRun).where(ImportRun.file_hash == "abc123def456")
-        found_run = db_session.exec(stmt).first()
+        found_run = db_session.execute(stmt).scalars().first()
         assert found_run is not None
         assert found_run.id == run.id
 
@@ -353,5 +355,5 @@ class TestImportSourceAndRun:
 
         # Query all runs for this source
         stmt = select(ImportRun).where(ImportRun.source_id == source.id)
-        runs = db_session.exec(stmt).all()
+        runs = db_session.execute(stmt).scalars().all()
         assert len(runs) == 3
