@@ -155,8 +155,8 @@ class FaceEncoding(SQLModel, table=True):
         description="The person this face belongs to",
     )
     embedding: list[float] = Field(
-        sa_column=Column(Vector(128)),  # FaceNet uses 128-d vectors
-        description="128-dimensional face embedding vector",
+        sa_column=Column(Vector(512)),  # facenet-pytorch uses 512-d vectors
+        description="512-dimensional face embedding vector",
     )
     source_media_id: UUID | None = Field(
         default=None,
@@ -204,7 +204,7 @@ class FaceCluster(SimpleEntity, table=True):
     __tablename__ = "face_clusters"
 
     representative_encoding: list[float] = Field(
-        sa_column=Column(Vector(128)),
+        sa_column=Column(Vector(512)),
         description="Centroid/representative face embedding for the cluster",
     )
     status: ClusterStatus = Field(

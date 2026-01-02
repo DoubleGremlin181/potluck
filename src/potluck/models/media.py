@@ -215,8 +215,8 @@ class MediaPersonLink(SimpleEntity, table=True):
     # Face embedding and bounding box (for detected faces)
     embedding: list[float] | None = Field(
         default=None,
-        sa_column=Column(Vector(128), nullable=True),
-        description="128-dimensional face embedding vector (None for manual tags)",
+        sa_column=Column(Vector(512), nullable=True),
+        description="512-dimensional face embedding vector (None for manual tags)",
     )
     bbox_x: int | None = Field(
         default=None,

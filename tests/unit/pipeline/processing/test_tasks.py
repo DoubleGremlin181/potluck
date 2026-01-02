@@ -130,7 +130,7 @@ class TestRunFacesStage:
             data={
                 "faces": [
                     {
-                        "embedding": [0.1] * 128,
+                        "embedding": [0.1] * 512,
                         "bbox_x": 10,
                         "bbox_y": 20,
                         "bbox_width": 100,
@@ -138,7 +138,7 @@ class TestRunFacesStage:
                         "confidence": 0.95,
                     },
                     {
-                        "embedding": [0.2] * 128,
+                        "embedding": [0.2] * 512,
                         "bbox_x": 200,
                         "bbox_y": 50,
                         "bbox_width": 80,

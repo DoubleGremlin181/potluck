@@ -18,7 +18,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--run-ml",
         action="store_true",
         default=False,
-        help="Run ML-dependent tests (requires torch, deepface, etc.)",
+        help="Run ML-dependent tests (requires torch, facenet-pytorch, etc.)",
     )
 
 
@@ -26,7 +26,7 @@ def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest with custom markers."""
     config.addinivalue_line("markers", "e2e: end-to-end tests requiring Docker")
     config.addinivalue_line(
-        "markers", "ml: tests requiring ML dependencies (torch, deepface, etc.)"
+        "markers", "ml: tests requiring ML dependencies (torch, facenet-pytorch, etc.)"
     )
 
     if config.getoption("--run-e2e"):
@@ -110,39 +110,35 @@ def identical_images_different_formats(
 
 
 @pytest.fixture(scope="session")
-def image_with_text(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create an image with text for OCR testing."""
-    from PIL import ImageDraw
+def image_with_text() -> Path:
+    """Return path to sample text image for OCR testing.
 
-    tmp_dir = tmp_path_factory.mktemp("ocr")
-    path = tmp_dir / "text_image.png"
-
-    img = Image.new("RGB", (400, 100), color=(255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    draw.text((10, 30), "Hello World 12345", fill=(0, 0, 0))
-
-    img.save(path, "PNG")
-    return path
+    Uses pre-generated fixture from tests/fixtures/.
+    """
+    fixture_path = Path(__file__).parent / "fixtures" / "sample_text.png"
+    if not fixture_path.exists():
+        raise FileNotFoundError(
+            f"Test fixture not found: {fixture_path}\n"
+            "Run: python tests/fixtures/generate_fixtures.py"
+        )
+    return fixture_path
 
 
 @pytest.fixture(scope="session")
-def image_with_face(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create a simple face-like image for testing."""
-    from PIL import ImageDraw
+def image_with_face() -> Path:
+    """Return path to sample face image for face detection testing.
 
-    tmp_dir = tmp_path_factory.mktemp("faces")
-    path = tmp_dir / "face_like.png"
-
-    img = Image.new("RGB", (200, 200), color=(200, 200, 200))
-    draw = ImageDraw.Draw(img)
-
-    draw.ellipse([50, 30, 150, 170], fill=(255, 220, 180))
-    draw.ellipse([70, 70, 90, 90], fill=(50, 50, 50))
-    draw.ellipse([110, 70, 130, 90], fill=(50, 50, 50))
-    draw.arc([80, 100, 120, 140], start=0, end=180, fill=(150, 50, 50), width=2)
-
-    img.save(path, "PNG")
-    return path
+    Uses pre-generated fixture from tests/fixtures/.
+    Note: This is a synthetic face - real face detectors may not detect it.
+    The test verifies the stage runs without error, not detection accuracy.
+    """
+    fixture_path = Path(__file__).parent / "fixtures" / "sample_face.jpg"
+    if not fixture_path.exists():
+        raise FileNotFoundError(
+            f"Test fixture not found: {fixture_path}\n"
+            "Run: python tests/fixtures/generate_fixtures.py"
+        )
+    return fixture_path
 
 
 @pytest.fixture

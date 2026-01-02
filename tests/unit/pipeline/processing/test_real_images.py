@@ -159,7 +159,7 @@ class TestFaceDetectionWithRealImages:
             faces = result.data.get("faces", [])
             for face in faces:
                 assert "embedding" in face
-                assert len(face["embedding"]) == 128  # FaceNet dimension
+                assert len(face["embedding"]) == 512  # ArcFace dimension
                 assert "bbox_x" in face
                 assert "bbox_y" in face
 

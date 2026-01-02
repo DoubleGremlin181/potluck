@@ -68,9 +68,9 @@ ml = [
     "torch>=2.0.0",
     # OCR
     "easyocr>=1.7.0",
-    # Face detection and recognition
-    "deepface>=0.0.90",
-    "tf-keras>=2.16.0",  # Required for deepface with TensorFlow 2.16+
+    # Face detection (MTCNN)
+    "facenet-pytorch>=2.5.3",
+    # Face recognition uses vendored ArcFace IResNet (no extra dependency)
     # Clustering
     "scikit-learn>=1.3.0",
     # Image captioning

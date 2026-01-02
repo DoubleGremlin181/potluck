@@ -3,9 +3,11 @@
 import pytest
 
 # Skip entire module if ML dependencies not installed
-pytest.importorskip("deepface")
+pytest.importorskip("facenet_pytorch")
 
 from uuid import uuid4
+
+import torch
 
 from potluck.core.exceptions import ProcessingError
 from potluck.models.media import Media, MediaType
@@ -71,22 +73,23 @@ class TestFaceStage:
         assert result.error_message is not None
         assert "not found" in result.error_message.lower()
 
-    def test_default_model_settings(self) -> None:
-        """FaceStage should use Facenet model by default."""
+    def test_default_device_selection(self) -> None:
+        """FaceStage should auto-select device."""
         stage = FaceStage()
-        assert stage._model_name == "Facenet"
-        assert stage._detector_backend == "retinaface"
+        expected_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        assert stage._device == expected_device
 
-    def test_custom_model_settings(self) -> None:
-        """FaceStage should accept custom model settings."""
+    def test_explicit_device_selection(self) -> None:
+        """FaceStage should accept explicit device selection."""
+        stage = FaceStage(device="cpu")
+        assert stage._device == torch.device("cpu")
+
+    def test_custom_clustering_settings(self) -> None:
+        """FaceStage should accept custom clustering settings."""
         stage = FaceStage(
-            model_name="VGG-Face",
-            detector_backend="mtcnn",
             clustering_eps=0.5,
             min_samples=3,
         )
-        assert stage._model_name == "VGG-Face"
-        assert stage._detector_backend == "mtcnn"
         assert stage._clustering_eps == 0.5
         assert stage._min_samples == 3
 
@@ -97,7 +100,7 @@ class TestFaceStageClustering:
     def test_cluster_embeddings_not_enough_samples(self) -> None:
         """cluster_embeddings should return all as noise with insufficient samples."""
         stage = FaceStage(min_samples=3)
-        embeddings = [[0.1] * 128, [0.2] * 128]
+        embeddings = [[0.1] * 512, [0.2] * 512]
         face_ids = [uuid4(), uuid4()]
 
         clusters = stage.cluster_embeddings(embeddings, face_ids)
@@ -149,7 +152,7 @@ class TestFaceStageClustering:
     def test_find_closest_cluster_empty(self) -> None:
         """find_closest_cluster should return None for empty clusters."""
         stage = FaceStage()
-        embedding = [0.5] * 128
+        embedding = [0.5] * 512
 
         closest_id, distance = stage.find_closest_cluster(embedding, {})
 
