@@ -1,8 +1,11 @@
 """Unit tests for FaceProcessor."""
 
-from uuid import uuid4
-
 import pytest
+
+# Skip entire module if ML dependencies not installed
+pytest.importorskip("deepface")
+
+from uuid import uuid4
 
 from potluck.core.exceptions import ProcessingError
 from potluck.models.media import Media, MediaType

@@ -1,5 +1,10 @@
 """Unit tests for OCRProcessor."""
 
+import pytest
+
+# Skip entire module if ML dependencies not installed
+pytest.importorskip("easyocr")
+
 from uuid import uuid4
 
 from potluck.models.media import Media, MediaType

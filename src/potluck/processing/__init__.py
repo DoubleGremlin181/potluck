@@ -4,11 +4,18 @@ This module provides processors for extracting information from entities.
 Current implementations focus on Media entities:
 - Hashing: SHA256 + perceptual hashing for deduplication
 - Metadata: EXIF extraction for GPS, timestamps, camera info
-- OCR: Text extraction from images
-- Faces: Face detection and clustering
-- Captioning: AI-generated image descriptions
+- OCR: Text extraction from images (requires ML dependencies)
+- Faces: Face detection and clustering (requires ML dependencies)
+- Captioning: AI-generated image descriptions (requires ML dependencies)
 
 The BaseProcessor pattern can be extended for processing other entity types.
+
+ML-dependent processors (OCR, Faces, Captioning) are not exported here
+to avoid import errors when ML dependencies are not installed.
+Import them directly from their submodules when needed:
+    from potluck.processing.ocr import OCRProcessor
+    from potluck.processing.faces import FaceProcessor
+    from potluck.processing.captioning import CaptioningProcessor
 """
 
 from potluck.processing.base import (
@@ -17,21 +24,8 @@ from potluck.processing.base import (
     ProcessingResult,
     ProcessingStatus,
 )
-from potluck.processing.captioning import CaptioningProcessor
-from potluck.processing.faces import FaceProcessor
 from potluck.processing.hashing import HashingProcessor, compute_phash_distance
 from potluck.processing.metadata import MetadataProcessor
-from potluck.processing.ocr import OCRProcessor
-from potluck.processing.tasks import (
-    cluster_unassigned_faces,
-    process_media_basic,
-    process_media_caption,
-    process_media_faces,
-    process_media_hashing,
-    process_media_metadata,
-    process_media_ocr,
-    process_media_pipeline,
-)
 
 __all__ = [
     # Base classes
@@ -39,21 +33,9 @@ __all__ = [
     "BatchProcessingResult",
     "ProcessingResult",
     "ProcessingStatus",
-    # Processors
-    "CaptioningProcessor",
-    "FaceProcessor",
+    # Processors (non-ML)
     "HashingProcessor",
     "MetadataProcessor",
-    "OCRProcessor",
     # Utilities
     "compute_phash_distance",
-    # Tasks
-    "cluster_unassigned_faces",
-    "process_media_basic",
-    "process_media_caption",
-    "process_media_faces",
-    "process_media_hashing",
-    "process_media_metadata",
-    "process_media_ocr",
-    "process_media_pipeline",
 ]

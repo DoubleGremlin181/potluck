@@ -1,5 +1,10 @@
 """Unit tests for CaptioningProcessor."""
 
+import pytest
+
+# Skip entire module if ML dependencies not installed
+pytest.importorskip("torch")
+
 from uuid import uuid4
 
 from potluck.models.media import Media, MediaType
