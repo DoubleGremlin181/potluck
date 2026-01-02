@@ -1,11 +1,14 @@
-"""Media processing module for Potluck.
+"""Processing module for Potluck.
 
-This module provides processors for extracting information from media files:
+This module provides processors for extracting information from entities.
+Current implementations focus on Media entities:
 - Hashing: SHA256 + perceptual hashing for deduplication
 - Metadata: EXIF extraction for GPS, timestamps, camera info
-- OCR: Text extraction from images (Phase 4B)
-- Faces: Face detection and clustering (Phase 4C)
-- Captioning: AI-generated image descriptions (Phase 4D)
+- OCR: Text extraction from images
+- Faces: Face detection and clustering
+- Captioning: AI-generated image descriptions
+
+The BaseProcessor pattern can be extended for processing other entity types.
 """
 
 from potluck.processing.base import (

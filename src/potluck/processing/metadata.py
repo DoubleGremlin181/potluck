@@ -5,8 +5,6 @@ This module extracts metadata from images including:
 - Timestamps (with handling for various date formats)
 - Camera make and model
 - Full EXIF data stored as JSON
-
-Issue #26: EXIF metadata extraction
 """
 
 import json
@@ -176,7 +174,7 @@ class MetadataProcessor(BaseProcessor):
             return latitude, longitude
 
         except Exception as e:
-            logger.debug(f"Failed to extract GPS: {e}")
+            logger.warning(f"Failed to extract GPS: {e}")
             return None, None
 
     def _dms_to_decimal(self, dms_values: list[Any]) -> float:

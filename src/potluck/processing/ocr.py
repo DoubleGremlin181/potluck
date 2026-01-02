@@ -2,18 +2,23 @@
 
 This module provides OCR (Optical Character Recognition) capabilities using EasyOCR
 to extract text from images. Supports multiple languages with auto-detection.
-
-Issue #24: EasyOCR integration
 """
 
 import time
 from pathlib import Path
 from typing import Any
 
+import easyocr
+
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
-from potluck.processing.base import BaseProcessor, ProcessingResult, ProcessingStatus
+from potluck.processing.base import (
+    BaseProcessor,
+    BatchProcessingResult,
+    ProcessingResult,
+    ProcessingStatus,
+)
 
 logger = get_logger(__name__)
 
@@ -60,20 +65,14 @@ class OCRProcessor(BaseProcessor):
             EasyOCR Reader instance.
 
         Raises:
-            ProcessingError: If EasyOCR cannot be imported or initialized.
+            ProcessingError: If EasyOCR cannot be initialized.
         """
         if self._reader is None:
             try:
-                import easyocr
-
                 logger.info(
                     f"Initializing EasyOCR with languages: {self._languages}, GPU: {self._gpu}"
                 )
                 self._reader = easyocr.Reader(self._languages, gpu=self._gpu)
-            except ImportError as e:
-                raise ProcessingError(
-                    "EasyOCR is not installed. Install with: pip install easyocr"
-                ) from e
             except Exception as e:
                 raise ProcessingError(f"Failed to initialize EasyOCR: {e}") from e
 
@@ -155,7 +154,7 @@ class OCRProcessor(BaseProcessor):
                 processing_time_ms=elapsed_ms,
             )
 
-    def process_batch(self, media_items: list[Media]) -> Any:
+    def process_batch(self, media_items: list[Media]) -> BatchProcessingResult:
         """Process a batch of images.
 
         EasyOCR supports batch processing for better GPU utilization.
@@ -167,8 +166,6 @@ class OCRProcessor(BaseProcessor):
         Returns:
             BatchProcessingResult with individual results.
         """
-        from potluck.processing.base import BatchProcessingResult
-
         # Filter to images only
         images = [m for m in media_items if self.should_process(m)]
         skipped = [m for m in media_items if not self.should_process(m)]

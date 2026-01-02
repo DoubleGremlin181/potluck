@@ -1,10 +1,13 @@
-"""Base classes and DTOs for media processing.
+"""Base classes and DTOs for entity processing.
 
-This module provides the foundation for all media processors including:
+This module provides the foundation for all processors including:
 - ProcessingStatus enum for tracking processor states
 - ProcessingResult DTO for individual processing results
 - BatchProcessingResult DTO for batch operations
 - BaseProcessor abstract base class for all processors
+
+Processors can work on any entity type. Current implementations focus on
+Media entities but the pattern can be extended for other entity types.
 """
 
 from abc import ABC, abstractmethod
@@ -57,9 +60,9 @@ class BatchProcessingResult(BaseModel):
 
 
 class BaseProcessor(ABC):
-    """Abstract base class for all media processors.
+    """Abstract base class for all processors.
 
-    Processors extract information from media files and return structured results.
+    Processors extract information from entities and return structured results.
     Each processor has a NAME that identifies it and implements process() for
     single item processing.
 

@@ -3,8 +3,6 @@
 This module provides:
 - SHA256 hashing for exact file matching (deduplication)
 - Perceptual hashing (pHash) for visual similarity detection
-
-Issue #23: SHA256 + perceptual hashing (imagehash)
 """
 
 import time

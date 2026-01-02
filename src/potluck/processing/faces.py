@@ -1,12 +1,19 @@
 """Face detection and clustering processor using DeepFace."""
 
+import time
 from pathlib import Path
-from typing import Any
 from uuid import UUID
 
+import numpy as np
+from deepface import DeepFace
+from sklearn.cluster import DBSCAN
+
 from potluck.core.exceptions import ProcessingError
+from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
 from potluck.processing.base import BaseProcessor, ProcessingResult, ProcessingStatus
+
+logger = get_logger(__name__)
 
 
 class FaceProcessor(BaseProcessor):
@@ -43,21 +50,6 @@ class FaceProcessor(BaseProcessor):
         self._detector_backend = detector_backend
         self._clustering_eps = clustering_eps
         self._min_samples = min_samples
-        self._deepface: Any = None
-
-    @property
-    def deepface(self) -> Any:
-        """Lazy initialization of DeepFace module."""
-        if self._deepface is None:
-            try:
-                from deepface import DeepFace
-
-                self._deepface = DeepFace
-            except ImportError as e:
-                raise ProcessingError(
-                    "DeepFace is not installed. Install with: pip install 'potluck[ml]'"
-                ) from e
-        return self._deepface
 
     def should_process(self, media: Media) -> bool:
         """Check if this media should be processed for face detection.
@@ -81,8 +73,6 @@ class FaceProcessor(BaseProcessor):
         Returns:
             ProcessingResult with face data including embeddings and bounding boxes.
         """
-        import time
-
         start_time = time.monotonic()
 
         if not self.should_process(media):
@@ -103,7 +93,7 @@ class FaceProcessor(BaseProcessor):
 
         try:
             # DeepFace.represent returns a list of dicts with embeddings and facial_area
-            results = self.deepface.represent(
+            results = DeepFace.represent(
                 img_path=str(file_path),
                 model_name=self._model_name,
                 detector_backend=self._detector_backend,
@@ -128,6 +118,11 @@ class FaceProcessor(BaseProcessor):
                             "confidence": confidence if confidence is not None else 1.0,
                         }
                     )
+                elif embedding:
+                    logger.warning(
+                        f"Skipping face with invalid embedding dimension: "
+                        f"expected 128, got {len(embedding)}"
+                    )
 
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -146,6 +141,7 @@ class FaceProcessor(BaseProcessor):
 
         except Exception as e:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
+            logger.exception(f"Face detection failed for {media.file_path}: {e}")
             return ProcessingResult(
                 media_id=media.id,
                 processor_name=self.NAME,
@@ -175,14 +171,6 @@ class FaceProcessor(BaseProcessor):
         if len(embeddings) < self._min_samples:
             # Not enough faces to form clusters
             return {-1: face_ids}
-
-        try:
-            import numpy as np
-            from sklearn.cluster import DBSCAN
-        except ImportError as e:
-            raise ProcessingError(
-                "scikit-learn is not installed. Install with: pip install 'potluck[ml]'"
-            ) from e
 
         # Convert to numpy array for DBSCAN
         embedding_matrix = np.array(embeddings)
@@ -218,13 +206,6 @@ class FaceProcessor(BaseProcessor):
         if not embeddings:
             raise ProcessingError("Cannot compute centroid of empty embedding list")
 
-        try:
-            import numpy as np
-        except ImportError as e:
-            raise ProcessingError(
-                "numpy is not installed. Install with: pip install 'potluck[ml]'"
-            ) from e
-
         embedding_matrix = np.array(embeddings)
         centroid = np.mean(embedding_matrix, axis=0)
         result: list[float] = centroid.tolist()
@@ -246,13 +227,6 @@ class FaceProcessor(BaseProcessor):
         Returns:
             Euclidean distance between the embeddings.
         """
-        try:
-            import numpy as np
-        except ImportError as e:
-            raise ProcessingError(
-                "numpy is not installed. Install with: pip install 'potluck[ml]'"
-            ) from e
-
         v1 = np.array(embedding1)
         v2 = np.array(embedding2)
         return float(np.linalg.norm(v1 - v2))

@@ -1,11 +1,18 @@
 """Image captioning processor using BLIP-2."""
 
+import time
 from pathlib import Path
 from typing import Any
 
-from potluck.core.exceptions import ProcessingError
+import torch
+from PIL import Image
+from transformers import Blip2ForConditionalGeneration, Blip2Processor
+
+from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
 from potluck.processing.base import BaseProcessor, ProcessingResult, ProcessingStatus
+
+logger = get_logger(__name__)
 
 
 class CaptioningProcessor(BaseProcessor):
@@ -44,14 +51,6 @@ class CaptioningProcessor(BaseProcessor):
         """Lazy load the BLIP-2 model and processor."""
         if self._processor is not None:
             return
-
-        try:
-            import torch
-            from transformers import Blip2ForConditionalGeneration, Blip2Processor
-        except ImportError as e:
-            raise ProcessingError(
-                "transformers is not installed. Install with: pip install 'potluck[ml]'"
-            ) from e
 
         # Determine device
         if self._device is None:
@@ -97,8 +96,6 @@ class CaptioningProcessor(BaseProcessor):
         Returns:
             ProcessingResult with the generated caption.
         """
-        import time
-
         start_time = time.monotonic()
 
         if not self.should_process(media):
@@ -115,16 +112,6 @@ class CaptioningProcessor(BaseProcessor):
                 processor_name=self.NAME,
                 status=ProcessingStatus.FAILED,
                 error_message=f"File not found: {media.file_path}",
-            )
-
-        try:
-            from PIL import Image
-        except ImportError as e:
-            return ProcessingResult(
-                media_id=media.id,
-                processor_name=self.NAME,
-                status=ProcessingStatus.FAILED,
-                error_message=f"PIL is not installed: {e}",
             )
 
         try:
@@ -168,6 +155,7 @@ class CaptioningProcessor(BaseProcessor):
 
         except Exception as e:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
+            logger.exception(f"Captioning failed for {media.file_path}: {e}")
             return ProcessingResult(
                 media_id=media.id,
                 processor_name=self.NAME,
