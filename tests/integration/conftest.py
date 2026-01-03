@@ -83,7 +83,24 @@ def project_root() -> str:
 
 @pytest.fixture(scope="session")
 def db_credentials(project_root: str) -> dict[str, str | int]:
-    """Database credentials from .env file or environment."""
+    """Database credentials from environment or .env file.
+
+    Checks actual environment variables first (for Docker/CI), then falls
+    back to .env file or .env.example for local development.
+    """
+    # First check actual environment variables (Docker/CI sets these)
+    env_host = os.environ.get("POSTGRES_HOST")
+    if env_host:
+        # Environment variables are set (Docker container or CI)
+        return {
+            "host": env_host,
+            "port": int(os.environ.get("POSTGRES_PORT", "5432")),
+            "user": os.environ.get("POSTGRES_USER", "potluck"),
+            "password": os.environ.get("POSTGRES_PASSWORD", "potluck"),
+            "dbname": os.environ.get("POSTGRES_DB", "potluck_test"),
+        }
+
+    # Fall back to .env file for local development
     env_file = os.path.join(project_root, ".env")
     env_example = os.path.join(project_root, ".env.example")
 
