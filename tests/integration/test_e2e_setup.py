@@ -80,8 +80,8 @@ class TestAlembicMigrations:
             result = cursor.fetchone()
             assert result is not None, "No migration version found"
             # Check for the latest migration (update when adding new migrations)
-            assert result[0] == "002_face_clustering", (
-                f"Expected migration 002_face_clustering, got {result[0]}"
+            assert result[0] == "003_face_embeddings_512", (
+                f"Expected migration 003_face_embeddings_512, got {result[0]}"
             )
 
 
@@ -98,7 +98,6 @@ class TestExpectedTables:
         "person_aliases",
         # Face detection
         "face_clusters",
-        "detected_faces",
         # Media
         "media",
         "media_embeddings",
