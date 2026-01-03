@@ -24,6 +24,8 @@ services:
     environment:
       # Test database connection
       DATABASE_URL: postgresql://potluck:potluck@db:5432/potluck_test
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
       POSTGRES_USER: potluck
       POSTGRES_PASSWORD: potluck
       POSTGRES_DB: potluck_test
