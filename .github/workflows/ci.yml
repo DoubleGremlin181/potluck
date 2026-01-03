@@ -101,7 +101,7 @@ jobs:
       - name: Run all tests
         run: |
           docker compose -f docker-compose.test.yml run --rm test \
-            uv run pytest tests/ -v --run-e2e --cov=potluck --cov-report=xml
+            uv run pytest tests/ -v --run-e2e --run-ml --cov=potluck --cov-report=xml
 
       - name: Copy coverage report
         if: always()
