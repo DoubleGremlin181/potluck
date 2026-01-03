@@ -175,3 +175,14 @@ class PipelineResult(BaseModel):
         from potluck.models.sources import ImportStatus
 
         return self.import_run.status == ImportStatus.COMPLETED
+
+
+# Rebuild PipelineResult to resolve forward reference to ImportRun
+def _rebuild_models() -> None:
+    """Rebuild models with forward references after all types are defined."""
+    from potluck.models.sources import ImportRun  # noqa: F401
+
+    PipelineResult.model_rebuild()
+
+
+_rebuild_models()
