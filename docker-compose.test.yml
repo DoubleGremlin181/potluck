@@ -31,6 +31,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       # Test mode
       TESTING: "true"
+      # CI environment detection (inherit from host)
+      CI: ${CI:-false}
     volumes:
       # Mount tests and src for live reload during development
       - ./tests:/app/tests:ro
