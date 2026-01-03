@@ -93,6 +93,11 @@ jobs:
             sleep 2
           done
 
+      - name: Run migrations
+        run: |
+          docker compose -f docker-compose.test.yml run --rm test \
+            uv run alembic upgrade head
+
       - name: Run all tests
         run: |
           docker compose -f docker-compose.test.yml run --rm test \
