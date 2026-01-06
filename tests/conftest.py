@@ -91,14 +91,16 @@ def sample_png_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def identical_images_different_formats(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> tuple[Path, Path]:
-    """Create identical images in PNG and JPEG formats."""
+    """Create identical images in PNG and JPEG formats.
+
+    Uses the real sample_face.jpg fixture as source, which produces
+    more realistic perceptual hash behavior than synthetic patterns.
+    """
     tmp_dir = tmp_path_factory.mktemp("identical")
 
-    img = Image.new("RGB", (200, 200), color=(100, 150, 200))
-    for x in range(200):
-        for y in range(200):
-            if (x + y) % 20 < 10:
-                img.putpixel((x, y), (255, 200, 100))
+    # Use real fixture image as source for realistic pHash behavior
+    source_path = Path(__file__).parent / "fixtures" / "sample_face.jpg"
+    img = Image.open(source_path)
 
     jpeg_path = tmp_dir / "image.jpg"
     png_path = tmp_dir / "image.png"
