@@ -15,7 +15,7 @@ Public API:
 
 ML-dependent stages (require 'pip install potluck[ml]'):
     - OCRStage: Text extraction using EasyOCR
-    - FaceStage: Face detection using DeepFace
+    - FaceStage: Face detection using MTCNN + ArcFace
     - CaptioningStage: Image captioning using BLIP-2
 """
 

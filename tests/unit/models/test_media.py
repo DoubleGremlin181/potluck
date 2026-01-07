@@ -3,7 +3,8 @@
 from uuid import UUID, uuid4
 
 from potluck.models.base import SourceType
-from potluck.models.media import EmbeddingType, Media, MediaEmbedding, MediaPersonLink, MediaType
+from potluck.models.faces import MediaPersonLink
+from potluck.models.media import EmbeddingType, Media, MediaEmbedding, MediaType
 
 
 class TestMediaModels:

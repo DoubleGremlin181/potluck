@@ -8,7 +8,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import SimpleEntity, SourceType
+from potluck.models.base import SourceType
 from potluck.models.utils import utc_now
 
 
@@ -180,55 +180,3 @@ class FaceEncoding(SQLModel, table=True):
 
     # Relationships
     person: Person = Relationship(back_populates="face_encodings")
-
-
-class ClusterStatus(str, Enum):
-    """Status of a face cluster."""
-
-    PENDING = "pending"  # Awaiting user review
-    CONFIRMED = "confirmed"  # Assigned to a Person
-    REJECTED = "rejected"  # User marked as not a real face/garbage
-
-
-class FaceCluster(SimpleEntity, table=True):
-    """Cluster of similar faces before Person assignment.
-
-    Groups detected faces by visual similarity using DBSCAN clustering.
-    Users can:
-    - Assign a cluster to an existing Person
-    - Create a new Person from a cluster
-    - Mark a cluster for review (low confidence)
-    - Reject garbage clusters (false positives)
-    """
-
-    __tablename__ = "face_clusters"
-
-    representative_encoding: list[float] = Field(
-        sa_column=Column(Vector(512)),
-        description="Centroid/representative face embedding for the cluster",
-    )
-    status: ClusterStatus = Field(
-        default=ClusterStatus.PENDING,
-        description="Current status of the cluster",
-    )
-    person_id: UUID | None = Field(
-        default=None,
-        foreign_key="people.id",
-        index=True,
-        description="Person this cluster was assigned to (when confirmed)",
-    )
-    needs_review: bool = Field(
-        default=False,
-        description="Flag for low-confidence matches needing user review",
-    )
-    face_count: int = Field(
-        default=0,
-        description="Number of faces in this cluster",
-    )
-
-    # Relationships
-    face_links: list["MediaPersonLink"] = Relationship(back_populates="cluster")
-
-
-# Forward reference for type hints
-from potluck.models.media import MediaPersonLink as MediaPersonLink  # noqa: E402, F401

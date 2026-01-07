@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from potluck.core.celery_utils import (
+from potluck.core.celery import (
     is_fatal_error,
     is_transient_error,
 )

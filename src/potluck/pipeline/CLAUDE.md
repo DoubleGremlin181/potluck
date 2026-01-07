@@ -37,7 +37,7 @@ All pipeline operations extend the abstract `Stage` base class:
 ```python
 from potluck.pipeline import Stage
 
-class Stage(ABC, Generic[InputT, OutputT]):
+class Stage[InputT, OutputT](ABC):
     NAME: ClassVar[str]  # Unique identifier
 
     @abstractmethod

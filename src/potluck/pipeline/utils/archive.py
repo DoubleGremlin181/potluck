@@ -216,8 +216,12 @@ def _extract_nested_archives(base_path: Path, max_depth: int = 2) -> None:
                 # Recurse into the extracted directory
                 _extract_nested_archives(nested_dest, max_depth - 1)
 
-            except Exception:
-                logger.warning(f"Failed to extract nested archive {file_path}", exc_info=True)
+            except Exception as e:
+                logger.error(
+                    f"Failed to extract nested archive {file_path}: {e}. "
+                    "Some data from this archive will not be processed.",
+                    exc_info=True,
+                )
 
 
 @contextmanager

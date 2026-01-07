@@ -29,6 +29,11 @@ from potluck.models.email import (
     EmailFolder,
     EmailThread,
 )
+from potluck.models.faces import (
+    ClusterStatus,
+    FaceCluster,
+    MediaPersonLink,
+)
 from potluck.models.financial import (
     Account,
     AccountType,
@@ -50,7 +55,6 @@ from potluck.models.media import (
     EmbeddingType,
     Media,
     MediaEmbedding,
-    MediaPersonLink,
     MediaType,
 )
 from potluck.models.messages import (
@@ -63,8 +67,6 @@ from potluck.models.messages import (
 from potluck.models.notes import KnowledgeNote
 from potluck.models.people import (
     AliasType,
-    ClusterStatus,
-    FaceCluster,
     FaceEncoding,
     Person,
     PersonAlias,

@@ -31,7 +31,7 @@ Potluck is a privacy-first personal knowledge management system that:
 - **sentence-transformers** for text embeddings
 - **CLIP** for multimodal embeddings
 - **EasyOCR** for image text extraction
-- **DeepFace** (FaceNet) for face detection and clustering
+- **MTCNN + ArcFace** for face detection and embedding
 - **BLIP-2** for AI image captioning
 - **Docker Compose** for easy deployment
 

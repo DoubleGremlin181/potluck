@@ -512,4 +512,8 @@ def _extract_attachment(part: Message, result: MboxMessage) -> None:
         )
         result.attachments.append(attachment)
     except Exception as e:
-        logger.warning(f"Failed to extract attachment: {e}")
+        filename = part.get_filename() or "<unknown>"
+        logger.warning(
+            f"Failed to extract attachment '{filename}' from email: {e}. "
+            "This attachment will not be available in the imported data."
+        )

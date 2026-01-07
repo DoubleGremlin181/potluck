@@ -11,7 +11,7 @@ from potluck.models.utils import IANATimezone, UTCDatetime, utc_now
 
 
 class SourceType(str, Enum):
-    """Enumeration of supported data sources."""
+    """Enumeration of supported data ingestion sources."""
 
     GOOGLE_TAKEOUT = "google_takeout"
     REDDIT = "reddit"
@@ -19,7 +19,6 @@ class SourceType(str, Enum):
     YNAB = "ynab"
     GENERIC = "generic"  # Bulk import of generic files (images, markdown, MBOX)
     MANUAL = "manual"  # User-created content within Potluck (notes, annotations)
-    FACE_DETECTION = "face_detection"  # Automatic face detection in media
 
 
 class EntityType(str, Enum):

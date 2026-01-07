@@ -1,8 +1,49 @@
-"""Celery application configuration."""
+"""Celery application configuration and task utilities."""
 
 from celery import Celery
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from potluck.core.config import get_settings
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_BACKOFF = 60  # seconds
+RETRY_BACKOFF_MAX = 600  # 10 minutes
+
+
+def is_transient_error(error: Exception) -> bool:
+    """Check if exception is transient and should be retried.
+
+    Transient errors include:
+    - Database connection issues (OperationalError, InterfaceError)
+    - Disk I/O errors (EIO, ENOSPC, EROFS)
+
+    Args:
+        error: The exception to check.
+
+    Returns:
+        True if the error is transient and the operation should be retried.
+    """
+    if isinstance(error, OperationalError | InterfaceError):
+        return True
+    # Disk I/O errors (EIO, ENOSPC, EROFS)
+    return isinstance(error, OSError) and error.errno in (5, 28, 30)
+
+
+def is_fatal_error(error: Exception) -> bool:
+    """Check if exception is fatal and should not be retried.
+
+    Fatal errors include:
+    - FileNotFoundError (file is missing, won't appear on retry)
+    - PermissionError (access denied, won't change on retry)
+
+    Args:
+        error: The exception to check.
+
+    Returns:
+        True if the error is fatal and the task should be rejected.
+    """
+    return isinstance(error, FileNotFoundError | PermissionError)
 
 
 def create_celery_app() -> Celery:

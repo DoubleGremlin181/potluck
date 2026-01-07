@@ -109,14 +109,30 @@ class FaceStage(BaseProcessingStage):
                     self._recognizer.load_state_dict(state_dict, strict=True)
                     logger.info(f"Loaded ArcFace weights from {weights_path}")
                 except RuntimeError as e:
-                    logger.warning(f"Could not load weights strictly: {e}")
-                    # Try non-strict loading
-                    self._recognizer.load_state_dict(state_dict, strict=False)
-                    logger.info(f"Loaded ArcFace weights (non-strict) from {weights_path}")
+                    logger.error(
+                        f"Strict weight loading failed: {e}. "
+                        "Attempting non-strict loading - face recognition quality may be degraded."
+                    )
+                    try:
+                        incompatible = self._recognizer.load_state_dict(state_dict, strict=False)
+                        if incompatible.missing_keys:
+                            logger.error(
+                                f"Missing weight keys (may affect accuracy): {incompatible.missing_keys}"
+                            )
+                        if incompatible.unexpected_keys:
+                            logger.warning(
+                                f"Unexpected weight keys (ignored): {incompatible.unexpected_keys}"
+                            )
+                        logger.info(f"Loaded ArcFace weights (non-strict) from {weights_path}")
+                    except RuntimeError as e2:
+                        raise ProcessingError(
+                            f"Failed to load ArcFace weights even in non-strict mode: {e2}"
+                        ) from e2
             else:
-                logger.warning(
-                    f"ArcFace weights not found at {weights_path}, "
-                    "using randomly initialized model (embeddings will not be meaningful)"
+                raise ProcessingError(
+                    f"ArcFace weights not found at {weights_path}. "
+                    "Face detection cannot produce meaningful results without pretrained weights. "
+                    "Run: python -c 'from potluck.pipeline.processing._arcface import download_weights; download_weights()'"
                 )
 
             self._recognizer.to(self._device)

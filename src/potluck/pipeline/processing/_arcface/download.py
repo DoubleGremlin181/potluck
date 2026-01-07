@@ -19,7 +19,9 @@ WEIGHTS_CONFIG: dict[str, dict[str, str]] = {
     "arcface_r50": {
         # ArcFace IResNet50 trained on CASIA-FaceV5 - hosted on HuggingFace
         "url": "https://huggingface.co/JustinLeee/FaceMind_ArcFace_iResNet50_CASIA_FaceV5/resolve/main/ArcFace_iResNet50_CASIA_FaceV5.pth?download=true",
-        "sha256": "",  # Will validate after first download
+        # Empty sha256: HuggingFace model weights are versioned by commit, not by hash.
+        # We log the computed hash on download for manual verification if needed.
+        "sha256": "",
         "filename": "arcface_iresnet50.pth",
     },
 }

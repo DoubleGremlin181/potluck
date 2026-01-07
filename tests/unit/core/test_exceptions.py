@@ -7,6 +7,7 @@ from potluck.core.exceptions import (
     DatabaseError,
     IngestionError,
     PotluckError,
+    ProcessingError,
 )
 
 
@@ -35,12 +36,19 @@ class TestExceptions:
         error = IngestionError("import failed")
         assert isinstance(error, PotluckError)
 
+    def test_processing_error(self) -> None:
+        """ProcessingError inherits from PotluckError."""
+        error = ProcessingError("processing failed")
+        assert isinstance(error, PotluckError)
+        assert error.message == "processing failed"
+
     def test_exceptions_catchable_as_potluck_error(self) -> None:
         """All custom exceptions can be caught as PotluckError."""
         exceptions = [
             ConfigurationError("msg"),
             DatabaseError("msg"),
             IngestionError("msg"),
+            ProcessingError("msg"),
         ]
         for exc in exceptions:
             with pytest.raises(PotluckError):

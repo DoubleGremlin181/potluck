@@ -51,7 +51,6 @@ class TestSourceType:
             "ynab",
             "generic",
             "manual",
-            "face_detection",
         }
         actual = {s.value for s in SourceType}
         assert actual == expected

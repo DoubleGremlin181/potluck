@@ -8,7 +8,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import GeolocatedEntity, SimpleEntity, SourceType
+from potluck.models.base import GeolocatedEntity
 from potluck.models.utils import utc_now
 
 
@@ -51,6 +51,7 @@ class Media(GeolocatedEntity, table=True):
     )
     file_size: int | None = Field(
         default=None,
+        ge=0,
         description="File size in bytes",
     )
     mime_type: str | None = Field(
@@ -77,14 +78,17 @@ class Media(GeolocatedEntity, table=True):
     # Image/video dimensions
     width: int | None = Field(
         default=None,
+        ge=1,
         description="Width in pixels",
     )
     height: int | None = Field(
         default=None,
+        ge=1,
         description="Height in pixels",
     )
     duration_seconds: float | None = Field(
         default=None,
+        ge=0.0,
         description="Duration in seconds (for video/audio)",
     )
 
@@ -170,74 +174,3 @@ class MediaEmbedding(SQLModel, table=True):
 
     # Relationships
     media: Media = Relationship(back_populates="embeddings")
-
-
-class MediaPersonLink(SimpleEntity, table=True):
-    """Face detection and person-media association.
-
-    Stores detected faces in media items with their embeddings and bounding boxes.
-    Can be linked to a Person (when identified) or to a FaceCluster (for grouping
-    unidentified faces). Supports both automatic face detection and manual tagging.
-    """
-
-    __tablename__ = "media_person_links"
-
-    media_id: UUID = Field(
-        foreign_key="media.id",
-        index=True,
-        description="The media item containing this face",
-    )
-    person_id: UUID | None = Field(
-        default=None,
-        foreign_key="people.id",
-        index=True,
-        description="The person this face belongs to (None if unidentified)",
-    )
-    cluster_id: UUID | None = Field(
-        default=None,
-        foreign_key="face_clusters.id",
-        index=True,
-        description="The cluster this face belongs to (for grouping before identification)",
-    )
-    source_type: SourceType = Field(
-        description="How this link was established (e.g., google_takeout, manual, face_detection)",
-    )
-    confidence: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score for automatic detection",
-    )
-    is_confirmed: bool = Field(
-        default=False,
-        description="Whether the identification is user-confirmed",
-    )
-    # Face embedding and bounding box (for detected faces)
-    embedding: list[float] | None = Field(
-        default=None,
-        sa_column=Column(Vector(512), nullable=True),
-        description="512-dimensional face embedding vector (None for manual tags)",
-    )
-    bbox_x: int | None = Field(
-        default=None,
-        description="Bounding box top-left X coordinate",
-    )
-    bbox_y: int | None = Field(
-        default=None,
-        description="Bounding box top-left Y coordinate",
-    )
-    bbox_width: int | None = Field(
-        default=None,
-        description="Bounding box width in pixels",
-    )
-    bbox_height: int | None = Field(
-        default=None,
-        description="Bounding box height in pixels",
-    )
-
-    # Relationships (cluster is optional since cluster_id is nullable)
-    cluster: "FaceCluster" = Relationship(back_populates="face_links")
-
-
-# Forward reference for type hints
-from potluck.models.people import FaceCluster as FaceCluster  # noqa: E402, F401

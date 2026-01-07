@@ -221,6 +221,7 @@ class MetadataStage(BaseProcessingStage):
             try:
                 exif_dict[key] = str(value)
             except Exception:
+                logger.debug(f"Could not serialize EXIF field '{key}': {type(value).__name__}")
                 exif_dict[key] = "<unserializable>"
 
         return json.dumps(exif_dict, ensure_ascii=False)

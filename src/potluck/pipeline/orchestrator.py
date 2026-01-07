@@ -351,8 +351,11 @@ class PipelineOrchestrator:
         try:
             run_processing_pipeline(str(media.id))
             logger.debug(f"Queued processing for media {media.id}")
-        except Exception as e:
-            logger.warning(f"Failed to queue processing for media {media.id}: {e}")
+        except Exception:
+            logger.exception(
+                f"Failed to queue processing for media {media.id}. "
+                "This media will need to be manually reprocessed."
+            )
 
     def _update_progress(
         self,
@@ -369,8 +372,11 @@ class PipelineOrchestrator:
         if self.on_progress:
             try:
                 self.on_progress(current, total, message)
-            except Exception as e:
-                logger.warning(f"Progress callback failed at {current}/{total}: {e}")
+            except Exception:
+                logger.exception(
+                    f"Progress callback failed at {current}/{total}. "
+                    "Progress updates may be delayed or missing."
+                )
 
 
 def discover(path: Path) -> DiscoveryResult:

@@ -1,7 +1,13 @@
-"""Celery tasks for background media processing."""
+"""Celery tasks for background media processing.
+
+This module provides Celery tasks for running processing stages on media items.
+Tasks use a factory pattern to reduce code duplication while maintaining
+stage-specific result handling.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
@@ -9,20 +15,25 @@ from celery import Task, chain
 from celery.exceptions import Reject, Retry
 from sqlmodel import Session, select
 
-from potluck.core.celery import celery_app
-from potluck.core.celery_utils import (
+from potluck.core.celery import (
     MAX_RETRIES,
     RETRY_BACKOFF,
     RETRY_BACKOFF_MAX,
+    celery_app,
     is_fatal_error,
     is_transient_error,
 )
 from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
 from potluck.models.media import Media
-from potluck.pipeline.dtos import StageStatus
+from potluck.pipeline.dtos import StageResult, StageStatus
+from potluck.pipeline.processing.base import BaseProcessingStage
 
 logger = get_logger(__name__)
+
+
+# Type alias for result handler functions
+ResultHandler = Callable[[Session, str, StageResult], dict[str, Any]]
 
 
 def _get_media(session: Session, media_id: str) -> Media | None:
@@ -43,6 +54,173 @@ def _update_media_fields(session: Session, media_id: str, **fields: Any) -> None
         session.commit()
 
 
+def _run_stage_task(
+    task: Task[..., dict[str, Any]],
+    media_id: str,
+    stage_factory: Callable[[], BaseProcessingStage],
+    stage_name: str,
+    result_handler: ResultHandler,
+) -> dict[str, Any]:
+    """Execute a processing stage with standard error handling.
+
+    This is the core implementation shared by all stage tasks. It handles:
+    - Media lookup and validation
+    - Stage execution
+    - Error classification (transient vs fatal)
+    - Retry/reject logic
+
+    Args:
+        task: The Celery task instance (for retry support).
+        media_id: ID of the media item to process.
+        stage_factory: Callable that creates the stage instance.
+        stage_name: Human-readable name for logging.
+        result_handler: Function to handle stage result and return task output.
+
+    Returns:
+        Dict with task results (structure depends on result_handler).
+
+    Raises:
+        Reject: For fatal errors or unknown errors.
+        Retry: For transient errors (via task.retry).
+    """
+    logger.info(f"Starting {stage_name} for media {media_id}")
+
+    try:
+        engine = get_engine()
+        with Session(engine) as session:
+            media = _get_media(session, media_id)
+            if media is None:
+                raise Reject(f"Media not found: {media_id}", requeue=False)
+
+            stage = stage_factory()
+            result = stage.execute(media)
+            return result_handler(session, media_id, result)
+
+    except Reject:
+        raise
+    except Exception as err:
+        logger.exception(f"{stage_name} task failed for {media_id}: {err}")
+        if is_fatal_error(err):
+            raise Reject(str(err), requeue=False) from err
+        elif is_transient_error(err):
+            raise task.retry(exc=err) from err
+        else:
+            raise Reject(str(err), requeue=False) from err
+
+
+# -----------------------------------------------------------------------------
+# Result Handlers - Stage-specific logic for processing results
+# -----------------------------------------------------------------------------
+
+
+def _handle_hashing_result(session: Session, media_id: str, result: StageResult) -> dict[str, Any]:
+    """Handle hashing stage result: update file_hash and perceptual_hash."""
+    if result.status == StageStatus.COMPLETED:
+        _update_media_fields(
+            session,
+            media_id,
+            file_hash=result.data.get("file_hash"),
+            perceptual_hash=result.data.get("perceptual_hash"),
+        )
+    return {
+        "media_id": media_id,
+        "status": result.status.value,
+        "file_hash": result.data.get("file_hash"),
+        "perceptual_hash": result.data.get("perceptual_hash"),
+        "processing_time_ms": result.processing_time_ms,
+    }
+
+
+def _handle_metadata_result(session: Session, media_id: str, result: StageResult) -> dict[str, Any]:
+    """Handle metadata stage result: update EXIF fields."""
+    if result.status == StageStatus.COMPLETED and result.data.get("has_exif"):
+        _update_media_fields(
+            session,
+            media_id,
+            latitude=result.data.get("latitude"),
+            longitude=result.data.get("longitude"),
+            camera_make=result.data.get("camera_make"),
+            camera_model=result.data.get("camera_model"),
+            exif_data=result.data.get("exif_data"),
+        )
+    return {
+        "media_id": media_id,
+        "status": result.status.value,
+        "has_exif": result.data.get("has_exif", False),
+        "latitude": result.data.get("latitude"),
+        "longitude": result.data.get("longitude"),
+        "processing_time_ms": result.processing_time_ms,
+    }
+
+
+def _handle_ocr_result(session: Session, media_id: str, result: StageResult) -> dict[str, Any]:
+    """Handle OCR stage result: update ocr_text field."""
+    if result.status == StageStatus.COMPLETED:
+        ocr_text = result.data.get("ocr_text")
+        if ocr_text:
+            _update_media_fields(session, media_id, ocr_text=ocr_text)
+    return {
+        "media_id": media_id,
+        "status": result.status.value,
+        "ocr_text_length": len(result.data.get("ocr_text", "")),
+        "processing_time_ms": result.processing_time_ms,
+    }
+
+
+def _handle_captioning_result(
+    session: Session, media_id: str, result: StageResult
+) -> dict[str, Any]:
+    """Handle captioning stage result: update caption field."""
+    if result.status == StageStatus.COMPLETED:
+        caption = result.data.get("caption")
+        if caption:
+            _update_media_fields(session, media_id, caption=caption)
+    return {
+        "media_id": media_id,
+        "status": result.status.value,
+        "caption": result.data.get("caption"),
+        "processing_time_ms": result.processing_time_ms,
+    }
+
+
+def _handle_faces_result(session: Session, media_id: str, result: StageResult) -> dict[str, Any]:
+    """Handle faces stage result: persist detected faces to MediaPersonLink."""
+    from potluck.models.faces import MediaPersonLink
+
+    faces = result.data.get("faces", [])
+
+    for face_data in faces:
+        face_link = MediaPersonLink(
+            media_id=UUID(media_id),
+            person_id=None,
+            cluster_id=None,
+            confidence=face_data.get("confidence", 1.0),
+            is_confirmed=False,
+            embedding=face_data.get("embedding"),
+            bbox_x=face_data.get("bbox_x"),
+            bbox_y=face_data.get("bbox_y"),
+            bbox_width=face_data.get("bbox_width"),
+            bbox_height=face_data.get("bbox_height"),
+        )
+        session.add(face_link)
+
+    if faces:
+        session.commit()
+        logger.info(f"Persisted {len(faces)} faces for media {media_id}")
+
+    return {
+        "media_id": media_id,
+        "status": result.status.value,
+        "faces_detected": len(faces),
+        "processing_time_ms": result.processing_time_ms,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Celery Tasks
+# -----------------------------------------------------------------------------
+
+
 @celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
     queue="process",
@@ -56,44 +234,7 @@ def run_hashing_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[st
     """Compute SHA256 and perceptual hash for a media item."""
     from potluck.pipeline.processing.hashing import HashingStage
 
-    logger.info(f"Starting hashing for media {media_id}")
-
-    try:
-        engine = get_engine()
-        with Session(engine) as session:
-            media = _get_media(session, media_id)
-            if media is None:
-                raise Reject(f"Media not found: {media_id}", requeue=False)
-
-            stage = HashingStage()
-            result = stage.execute(media)
-
-            if result.status == StageStatus.COMPLETED:
-                _update_media_fields(
-                    session,
-                    media_id,
-                    file_hash=result.data.get("file_hash"),
-                    perceptual_hash=result.data.get("perceptual_hash"),
-                )
-
-            return {
-                "media_id": media_id,
-                "status": result.status.value,
-                "file_hash": result.data.get("file_hash"),
-                "perceptual_hash": result.data.get("perceptual_hash"),
-                "processing_time_ms": result.processing_time_ms,
-            }
-
-    except Reject:
-        raise
-    except Exception as err:
-        logger.exception(f"Hashing task failed for {media_id}: {err}")
-        if is_fatal_error(err):
-            raise Reject(str(err), requeue=False) from err
-        elif is_transient_error(err):
-            raise self.retry(exc=err) from err
-        else:
-            raise Reject(str(err), requeue=False) from err
+    return _run_stage_task(self, media_id, HashingStage, "hashing", _handle_hashing_result)
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
@@ -109,48 +250,7 @@ def run_metadata_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[s
     """Extract EXIF metadata from a media item."""
     from potluck.pipeline.processing.metadata import MetadataStage
 
-    logger.info(f"Starting metadata extraction for media {media_id}")
-
-    try:
-        engine = get_engine()
-        with Session(engine) as session:
-            media = _get_media(session, media_id)
-            if media is None:
-                raise Reject(f"Media not found: {media_id}", requeue=False)
-
-            stage = MetadataStage()
-            result = stage.execute(media)
-
-            if result.status == StageStatus.COMPLETED and result.data.get("has_exif"):
-                _update_media_fields(
-                    session,
-                    media_id,
-                    latitude=result.data.get("latitude"),
-                    longitude=result.data.get("longitude"),
-                    camera_make=result.data.get("camera_make"),
-                    camera_model=result.data.get("camera_model"),
-                    exif_data=result.data.get("exif_data"),
-                )
-
-            return {
-                "media_id": media_id,
-                "status": result.status.value,
-                "has_exif": result.data.get("has_exif", False),
-                "latitude": result.data.get("latitude"),
-                "longitude": result.data.get("longitude"),
-                "processing_time_ms": result.processing_time_ms,
-            }
-
-    except Reject:
-        raise
-    except Exception as err:
-        logger.exception(f"Metadata task failed for {media_id}: {err}")
-        if is_fatal_error(err):
-            raise Reject(str(err), requeue=False) from err
-        elif is_transient_error(err):
-            raise self.retry(exc=err) from err
-        else:
-            raise Reject(str(err), requeue=False) from err
+    return _run_stage_task(self, media_id, MetadataStage, "metadata", _handle_metadata_result)
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
@@ -166,40 +266,7 @@ def run_ocr_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, A
     """Run OCR on a media item."""
     from potluck.pipeline.processing.ocr import OCRStage
 
-    logger.info(f"Starting OCR for media {media_id}")
-
-    try:
-        engine = get_engine()
-        with Session(engine) as session:
-            media = _get_media(session, media_id)
-            if media is None:
-                raise Reject(f"Media not found: {media_id}", requeue=False)
-
-            stage = OCRStage()
-            result = stage.execute(media)
-
-            if result.status == StageStatus.COMPLETED:
-                ocr_text = result.data.get("ocr_text")
-                if ocr_text:
-                    _update_media_fields(session, media_id, ocr_text=ocr_text)
-
-            return {
-                "media_id": media_id,
-                "status": result.status.value,
-                "ocr_text_length": len(result.data.get("ocr_text", "")),
-                "processing_time_ms": result.processing_time_ms,
-            }
-
-    except Reject:
-        raise
-    except Exception as err:
-        logger.exception(f"OCR task failed for {media_id}: {err}")
-        if is_fatal_error(err):
-            raise Reject(str(err), requeue=False) from err
-        elif is_transient_error(err):
-            raise self.retry(exc=err) from err
-        else:
-            raise Reject(str(err), requeue=False) from err
+    return _run_stage_task(self, media_id, OCRStage, "OCR", _handle_ocr_result)
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
@@ -213,61 +280,9 @@ def run_ocr_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, A
 )
 def run_faces_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict[str, Any]:
     """Detect faces in a media item."""
-    from potluck.models.base import SourceType
-    from potluck.models.media import MediaPersonLink
     from potluck.pipeline.processing.faces import FaceStage
 
-    logger.info(f"Starting face detection for media {media_id}")
-
-    try:
-        engine = get_engine()
-        with Session(engine) as session:
-            media = _get_media(session, media_id)
-            if media is None:
-                raise Reject(f"Media not found: {media_id}", requeue=False)
-
-            stage = FaceStage()
-            result = stage.execute(media)
-
-            # Persist detected faces to MediaPersonLink table
-            faces = result.data.get("faces", [])
-            for face_data in faces:
-                face_link = MediaPersonLink(
-                    media_id=media.id,
-                    person_id=None,
-                    cluster_id=None,
-                    source_type=SourceType.FACE_DETECTION,
-                    confidence=face_data.get("confidence", 1.0),
-                    is_confirmed=False,
-                    embedding=face_data.get("embedding"),
-                    bbox_x=face_data.get("bbox_x"),
-                    bbox_y=face_data.get("bbox_y"),
-                    bbox_width=face_data.get("bbox_width"),
-                    bbox_height=face_data.get("bbox_height"),
-                )
-                session.add(face_link)
-
-            if faces:
-                session.commit()
-                logger.info(f"Persisted {len(faces)} faces for media {media_id}")
-
-            return {
-                "media_id": media_id,
-                "status": result.status.value,
-                "faces_detected": len(faces),
-                "processing_time_ms": result.processing_time_ms,
-            }
-
-    except Reject:
-        raise
-    except Exception as err:
-        logger.exception(f"Face detection task failed for {media_id}: {err}")
-        if is_fatal_error(err):
-            raise Reject(str(err), requeue=False) from err
-        elif is_transient_error(err):
-            raise self.retry(exc=err) from err
-        else:
-            raise Reject(str(err), requeue=False) from err
+    return _run_stage_task(self, media_id, FaceStage, "face detection", _handle_faces_result)
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
@@ -283,40 +298,7 @@ def run_captioning_stage(self: Task[..., dict[str, Any]], media_id: str) -> dict
     """Generate AI caption for a media item."""
     from potluck.pipeline.processing.captioning import CaptioningStage
 
-    logger.info(f"Starting captioning for media {media_id}")
-
-    try:
-        engine = get_engine()
-        with Session(engine) as session:
-            media = _get_media(session, media_id)
-            if media is None:
-                raise Reject(f"Media not found: {media_id}", requeue=False)
-
-            stage = CaptioningStage()
-            result = stage.execute(media)
-
-            if result.status == StageStatus.COMPLETED:
-                caption = result.data.get("caption")
-                if caption:
-                    _update_media_fields(session, media_id, caption=caption)
-
-            return {
-                "media_id": media_id,
-                "status": result.status.value,
-                "caption": result.data.get("caption"),
-                "processing_time_ms": result.processing_time_ms,
-            }
-
-    except Reject:
-        raise
-    except Exception as err:
-        logger.exception(f"Captioning task failed for {media_id}: {err}")
-        if is_fatal_error(err):
-            raise Reject(str(err), requeue=False) from err
-        elif is_transient_error(err):
-            raise self.retry(exc=err) from err
-        else:
-            raise Reject(str(err), requeue=False) from err
+    return _run_stage_task(self, media_id, CaptioningStage, "captioning", _handle_captioning_result)
 
 
 def run_processing_pipeline(media_id: str) -> None:
@@ -355,8 +337,7 @@ def run_basic_processing(media_id: str) -> None:
 )
 def cluster_unassigned_faces(self: Task[..., dict[str, Any]]) -> dict[str, Any]:
     """Run DBSCAN clustering on unclustered detected faces."""
-    from potluck.models.media import MediaPersonLink
-    from potluck.models.people import ClusterStatus, FaceCluster
+    from potluck.models.faces import ClusterStatus, FaceCluster, MediaPersonLink
     from potluck.pipeline.processing.faces import FaceStage
 
     logger.info("Starting face clustering task")

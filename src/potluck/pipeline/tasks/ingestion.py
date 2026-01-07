@@ -8,11 +8,11 @@ from celery import Task
 from celery.exceptions import Reject, Retry
 from sqlmodel import Session, select
 
-from potluck.core.celery import celery_app
-from potluck.core.celery_utils import (
+from potluck.core.celery import (
     MAX_RETRIES,
     RETRY_BACKOFF,
     RETRY_BACKOFF_MAX,
+    celery_app,
     is_fatal_error,
     is_transient_error,
 )
