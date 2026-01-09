@@ -46,6 +46,11 @@ if [ ! -f .env ]; then
     echo "   Edit .env to change password/ports before production use."
 fi
 
+# Set development profile (builds images locally)
+if ! grep -q "COMPOSE_PROFILES" .env; then
+    echo "COMPOSE_PROFILES=dev" >> .env
+fi
+
 # Load environment
 set -a
 source .env
@@ -54,11 +59,12 @@ set +a
 # Start services
 echo "🐳 Starting Docker services..."
 if [ "$DB_ONLY" = true ]; then
+    # For db-only, we need the dev profile's db service
     docker compose up -d db redis
 else
     if [ "$GPU" = true ]; then
         echo "🎮 GPU support enabled (CUDA PyTorch, ~4.5GB image)"
-        GPU=true docker compose build
+        GPU=true docker compose build app
     fi
     docker compose up -d
 fi

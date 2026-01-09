@@ -117,7 +117,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.base
+          file: docker/Dockerfile
+          target: deps
           push: true
           tags: ${{ steps.base-tag.outputs.image }}
           build-args: |
@@ -145,7 +146,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.app
+          file: docker/Dockerfile
           load: true
           tags: potluck:latest
           build-args: |
@@ -156,6 +157,7 @@ jobs:
       - name: Create .env file
         run: |
           cat > .env << EOF
+          COMPOSE_PROFILES=dev
           POSTGRES_USER=potluck
           POSTGRES_PASSWORD=testpassword
           POSTGRES_DB=potluck_test

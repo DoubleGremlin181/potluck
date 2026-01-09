@@ -1,13 +1,22 @@
 # syntax=docker/dockerfile:1
 
-# Base image for Potluck - contains all dependencies
-# Rebuild only when pyproject.toml or uv.lock changes
-# Tags: cpu-<hash> or gpu-<hash> based on dependency hash
+# Potluck Unified Dockerfile
+# Multi-stage build supporting CPU/GPU variants with CI caching
+#
+# Usage:
+#   Local (CPU):     docker build -f docker/Dockerfile -t potluck .
+#   Local (GPU):     docker build -f docker/Dockerfile -t potluck --build-arg GPU=true .
+#   CI base cache:   docker build -f docker/Dockerfile --target deps -t potluck-base:cpu-<hash> .
+#   CI with base:    docker build -f docker/Dockerfile -t potluck --build-arg BASE_IMAGE=ghcr.io/... .
+#
+# The 'deps' target can be cached in GHCR and reused across CI runs.
+# Hash is computed from pyproject.toml + uv.lock.
 
 ARG GPU=false
+ARG BASE_IMAGE=""
 
 # ============================================================================
-# Base stage - system dependencies
+# Stage 1: System dependencies
 # ============================================================================
 FROM python:3.12-slim AS base
 
@@ -32,13 +41,13 @@ COPY pyproject.toml uv.lock README.md ./
 RUN mkdir -p src/potluck && touch src/potluck/__init__.py
 
 # ============================================================================
-# CPU stage - install torch from CPU index to avoid CUDA bloat (~1.5GB vs ~4.5GB)
+# Stage 2a: CPU dependencies (~1.5GB)
+# Install torch from CPU index to avoid CUDA bloat
 # ============================================================================
 FROM base AS cpu-deps
+
 # 1. Create venv and install CPU torch first
-# 2. Use --frozen to use lockfile, but skip all nvidia/triton packages (CUDA-only deps)
-# 3. torch+cpu doesn't need these packages - they're only in lockfile because it was
-#    generated with default torch (which includes CUDA)
+# 2. Sync remaining deps, skipping nvidia/triton packages (CUDA-only, not needed for CPU torch)
 RUN uv venv && \
     uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     uv sync --all-extras --frozen \
@@ -61,9 +70,10 @@ RUN uv venv && \
     rm -rf /root/.cache/uv /root/.cache/pip
 
 # ============================================================================
-# GPU stage - install torch with CUDA 12.4 support (~4.5GB)
+# Stage 2b: GPU dependencies (~4.5GB, CUDA 12.4)
 # ============================================================================
 FROM base AS gpu-deps
+
 # Create venv, install CUDA torch first, then sync remaining deps
 RUN uv venv && \
     uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 && \
@@ -78,10 +88,30 @@ FROM cpu-deps AS deps-false
 FROM gpu-deps AS deps-true
 
 # ============================================================================
-# Final stage - select based on GPU build arg
+# Deps target: Final dependencies stage (used for CI base image caching)
+# CI builds this target with --target deps and pushes to GHCR
 # ============================================================================
 ARG GPU=false
-FROM deps-${GPU} AS final
+FROM deps-${GPU} AS deps
 
-# Verify installation
+# Verify PyTorch installation
 RUN uv run python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA available: {torch.cuda.is_available()}')"
+
+# ============================================================================
+# App target: Select base and add application code
+# When BASE_IMAGE is provided (CI): use cached deps from GHCR
+# When BASE_IMAGE is empty (local): use freshly built deps-${GPU}
+# ============================================================================
+ARG GPU=false
+ARG BASE_IMAGE=""
+FROM ${BASE_IMAGE:-deps-${GPU}} AS app
+
+WORKDIR /app
+
+# Copy application code (this is the fast part - only code changes)
+COPY src/ src/
+COPY alembic/ alembic/
+COPY alembic.ini .
+
+# Run migrations and start web server
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run potluck web"]

@@ -30,12 +30,13 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
    ```
 4. GitHub Actions will automatically:
    - Build and push `ghcr.io/doublegremlin181/potluck:<version>` (CPU app image)
+   - Build and push `ghcr.io/doublegremlin181/potluck:<version>-gpu` (GPU app image)
    - Build and push `ghcr.io/doublegremlin181/potluck-db:<version>` (database image)
    - Create GitHub release with changelog
 
 **CI Base Image Caching**:
 
-- CI uses `Dockerfile.base` to cache dependencies in GHCR
+- CI uses `docker/Dockerfile` with `--target deps` to cache dependencies in GHCR
 - Base image tag: `ghcr.io/doublegremlin181/potluck-base:cpu-<hash>` (hash of pyproject.toml + uv.lock)
 - Rebuilds only when dependencies change, not on code changes
 - If dependencies change, CI builds new base image (~8-10 min); otherwise uses cached (~2-3 min)

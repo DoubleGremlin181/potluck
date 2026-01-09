@@ -7,7 +7,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/DoubleGremlin181/potluck/main/scripts/install.sh | bash -s -- --gpu
 #
 # Options:
-#   --gpu    Enable GPU support (requires NVIDIA GPU + nvidia-container-toolkit)
+#   --gpu    Enable GPU support (uses pre-built GPU image from GHCR, requires NVIDIA GPU + nvidia-container-toolkit)
 
 set -e
 
@@ -47,7 +47,7 @@ cd "$POTLUCK_DIR"
 
 # Download required files
 echo "📥 Downloading configuration files..."
-curl -fsSL "$REPO_URL/docker-compose.prod.yml" -o docker-compose.yml
+curl -fsSL "$REPO_URL/docker-compose.yml" -o docker-compose.yml
 curl -fsSL "$REPO_URL/scripts/init-db.sql" -o init-db.sql
 curl -fsSL "$REPO_URL/.env.example" -o .env
 
@@ -57,9 +57,15 @@ DB_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 sed -i "s/POSTGRES_PASSWORD=changeme_in_production/POSTGRES_PASSWORD=$DB_PASSWORD/" .env
 sed -i "s/:changeme_in_production@/:$DB_PASSWORD@/g" .env
 
-# Set GPU mode if requested
+# Set production profile (uses pre-built GHCR images)
+echo "COMPOSE_PROFILES=prod" >> .env
+
+# Set GPU mode if requested (use GPU image tag from GHCR)
 if [ "$GPU" = true ]; then
+    echo "🎮 GPU support enabled (using pre-built GPU image from GHCR)"
     sed -i "s/GPU=false/GPU=true/" .env
+    # Use GPU image tag instead of 'latest'
+    echo "POTLUCK_VERSION=gpu" >> .env
 fi
 
 # Pull images
@@ -74,11 +80,11 @@ docker compose up -d
 echo "⏳ Waiting for database to be ready..."
 timeout=60
 counter=0
-until docker compose exec -T db pg_isready -U potluck -d potluck &> /dev/null; do
+until docker compose exec -T db-prod pg_isready -U potluck -d potluck &> /dev/null; do
     counter=$((counter + 1))
     if [ $counter -ge $timeout ]; then
         echo "❌ Database did not become ready in time"
-        docker compose logs db
+        docker compose logs db-prod
         exit 1
     fi
     sleep 1
@@ -90,7 +96,7 @@ sleep 5  # Give pg_tde time to initialize
 
 # Run migrations
 echo "🔄 Running database migrations..."
-docker compose exec -T app uv run alembic upgrade head
+docker compose exec -T app-prod uv run alembic upgrade head
 
 echo ""
 echo "✅ Potluck is ready!"

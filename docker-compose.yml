@@ -1,21 +1,32 @@
 # Potluck Docker Compose
 #
-# Usage:
-#   Development: docker compose up -d
-#   Testing:     docker compose --profile test run --rm test
-#   DB only:     docker compose up -d db redis
+# Unified configuration with profiles for development and production.
+# Set COMPOSE_PROFILES in .env to control which services start:
+#   - dev:  Build images locally (for contributors)
+#   - prod: Use pre-built GHCR images (for end-users)
 #
-# For end-users (install without git clone), use install.sh which downloads
-# docker-compose.prod.yml with pre-built GHCR images.
+# Usage:
+#   Development:  COMPOSE_PROFILES=dev docker compose up -d
+#   Production:   COMPOSE_PROFILES=prod docker compose up -d
+#   Testing:      docker compose --profile test run --rm test
+#   DB only:      docker compose up -d db redis
+#
+# GPU Support (production only - requires nvidia-container-toolkit):
+#   Set POTLUCK_VERSION=gpu in .env to use GPU image from GHCR
+#
+# Scripts automatically set COMPOSE_PROFILES:
+#   - setup.sh sets COMPOSE_PROFILES=dev
+#   - install.sh sets COMPOSE_PROFILES=prod
 
 services:
   # ==========================================================================
-  # Application service (development - builds locally)
+  # Application - Development (builds locally)
   # ==========================================================================
   app:
+    profiles: ["dev"]
     build:
       context: .
-      dockerfile: docker/Dockerfile.app
+      dockerfile: docker/Dockerfile
       args:
         GPU: ${GPU:-false}
     container_name: potluck-app
@@ -31,21 +42,46 @@ services:
     restart: unless-stopped
 
   # ==========================================================================
-  # Test service (testing - mounts tests/src for live reload)
-  # Uses the same image as app service (potluck:latest in CI)
+  # Application - Production (uses GHCR images)
+  # For GPU: set POTLUCK_VERSION=gpu in .env
+  # ==========================================================================
+  app-prod:
+    profiles: ["prod"]
+    image: ghcr.io/doublegremlin181/potluck:${POTLUCK_VERSION:-latest}
+    container_name: potluck-app
+    env_file:
+      - .env
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    depends_on:
+      db-prod:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # GPU support - uncomment when using POTLUCK_VERSION=gpu:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ==========================================================================
+  # Test runner
   # ==========================================================================
   test:
     profiles: ["test"]
     image: potluck:latest
     build:
       context: .
-      dockerfile: docker/Dockerfile.app
+      dockerfile: docker/Dockerfile
       args:
         GPU: ${GPU:-false}
     container_name: potluck-test
     command: ["uv", "run", "pytest", "-v", "--tb=short"]
     environment:
-      # Use same credentials as db service (from .env or defaults)
       DATABASE_URL: postgresql://${POSTGRES_USER:-potluck}:${POSTGRES_PASSWORD:-potluck}@db:5432/${POSTGRES_DB:-potluck}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
@@ -65,9 +101,10 @@ services:
         condition: service_healthy
 
   # ==========================================================================
-  # Database (Percona PostgreSQL 17 with pgvector + pg_tde)
+  # Database - Development (builds locally)
   # ==========================================================================
   db:
+    profiles: ["dev", "test"]
     build:
       context: .
       dockerfile: docker/Dockerfile.db
@@ -90,7 +127,31 @@ services:
     restart: unless-stopped
 
   # ==========================================================================
-  # Redis (for Celery task queue)
+  # Database - Production (uses GHCR images)
+  # ==========================================================================
+  db-prod:
+    profiles: ["prod"]
+    image: ghcr.io/doublegremlin181/potluck-db:${POTLUCK_VERSION:-latest}
+    container_name: potluck-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-potluck}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-potluck}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - potluck-pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-potluck} -d ${POSTGRES_DB:-potluck}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ==========================================================================
+  # Redis (shared - no profile, always available)
   # ==========================================================================
   redis:
     image: redis:7-alpine

@@ -204,13 +204,14 @@ FastAPI + HTMX server-side rendered interface.
 **Docker Images (GHCR):**
 
 - `ghcr.io/doublegremlin181/potluck:latest` - Application image (CPU-only, ~1.5GB)
+- `ghcr.io/doublegremlin181/potluck:gpu` - Application image (GPU/CUDA 12.4, ~4.5GB)
 - `ghcr.io/doublegremlin181/potluck-db:latest` - Database image (Percona PG17)
 - Images are built and pushed automatically on tagged releases
 
 **GPU Support:**
 
-- Optional CUDA support available via `--gpu` flag
-- GPU builds use CUDA 12.4 PyTorch (~4.5GB image)
+- Optional CUDA support available via `--gpu` flag (uses pre-built GPU image from GHCR)
+- GPU image uses CUDA 12.4 PyTorch (~4.5GB)
 - Requires NVIDIA GPU + nvidia-container-toolkit
 
 **Key Components:**
