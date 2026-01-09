@@ -39,8 +39,24 @@ RUN mkdir -p src/potluck && touch src/potluck/__init__.py
 FROM local-base AS local-cpu-deps
 # Install torch from CPU index first (before uv sync downloads default CUDA version)
 RUN uv venv && uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-# Now sync remaining deps - torch is already satisfied, won't re-download
-RUN uv sync --all-extras --frozen
+# Now sync remaining deps, skipping nvidia/triton packages (CUDA-only, not needed for CPU torch)
+RUN uv sync --all-extras --frozen \
+    --no-install-package nvidia-cublas-cu12 \
+    --no-install-package nvidia-cuda-cupti-cu12 \
+    --no-install-package nvidia-cuda-nvrtc-cu12 \
+    --no-install-package nvidia-cuda-runtime-cu12 \
+    --no-install-package nvidia-cudnn-cu12 \
+    --no-install-package nvidia-cufft-cu12 \
+    --no-install-package nvidia-curand-cu12 \
+    --no-install-package nvidia-cusolver-cu12 \
+    --no-install-package nvidia-cusparse-cu12 \
+    --no-install-package nvidia-cusparselt-cu12 \
+    --no-install-package nvidia-nccl-cu12 \
+    --no-install-package nvidia-nvjitlink-cu12 \
+    --no-install-package nvidia-nvtx-cu12 \
+    --no-install-package nvidia-cufile-cu12 \
+    --no-install-package nvidia-nvshmem-cu12 \
+    --no-install-package triton
 # Clean up cache to minimize image size
 RUN rm -rf /root/.cache/uv /root/.cache/pip
 
