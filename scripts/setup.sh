@@ -1,16 +1,19 @@
 #!/bin/bash
-# Potluck Setup Script
-# Usage: ./scripts/setup.sh [--db-only] [--non-interactive] [--gpu]
+# Potluck Development Setup Script
+# For contributors who have cloned the repository
+#
+# Usage: ./scripts/setup.sh [--db-only] [--gpu]
 #
 # Options:
-#   --db-only          Only start the database (for testing/development)
-#   --non-interactive  Skip all prompts and use defaults
-#   --gpu              Enable GPU support (requires NVIDIA GPU + nvidia-container-toolkit)
+#   --db-only  Only start the database (for local development with uv run)
+#   --gpu      Enable GPU support (requires NVIDIA GPU + nvidia-container-toolkit)
+#
+# For end-users (without git clone), use install.sh instead:
+#   curl -fsSL https://raw.githubusercontent.com/DoubleGremlin181/potluck/main/scripts/install.sh | bash
 
 set -e
 
 DB_ONLY=false
-INTERACTIVE=true
 GPU=false
 
 for arg in "$@"; do
@@ -18,69 +21,32 @@ for arg in "$@"; do
         --db-only)
             DB_ONLY=true
             ;;
-        --non-interactive)
-            INTERACTIVE=false
-            ;;
         --gpu)
             GPU=true
             ;;
     esac
 done
 
-# Disable interactive mode if stdin is not a terminal
-if [ ! -t 0 ]; then
-    INTERACTIVE=false
-fi
+echo "🍲 Setting up Potluck for development..."
 
-echo "🍲 Setting up Potluck..."
-
-# Setup git hooks
+# Setup git hooks (contributors only)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/setup-hooks.sh" ]; then
     "$SCRIPT_DIR/setup-hooks.sh"
 fi
 
 # Check for required tools
-command -v docker >/dev/null 2>&1 || { echo "❌ Docker is required but not installed. Aborting."; exit 1; }
-command -v docker compose >/dev/null 2>&1 || { echo "❌ Docker Compose is required but not installed. Aborting."; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo "❌ Docker is required. Install: https://docs.docker.com/get-docker/"; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "❌ Docker Compose is required."; exit 1; }
 
-# Create .env file if it doesn't exist
+# Create .env if missing
 if [ ! -f .env ]; then
-    echo "📝 Creating .env file..."
+    echo "📝 Creating .env from .env.example..."
     cp .env.example .env
-
-    # Interactive configuration
-    if [ "$INTERACTIVE" = true ]; then
-        echo ""
-        echo "Configure your Potluck instance (press Enter to use defaults):"
-        echo ""
-
-        # Database password
-        read -p "PostgreSQL password [changeme_in_production]: " DB_PASSWORD
-        if [ -n "$DB_PASSWORD" ]; then
-            sed -i "s/POSTGRES_PASSWORD=changeme_in_production/POSTGRES_PASSWORD=$DB_PASSWORD/" .env
-            sed -i "s/:changeme_in_production@/:$DB_PASSWORD@/g" .env
-        fi
-
-        # Web port
-        read -p "Web UI port [8000]: " WEB_PORT
-        if [ -n "$WEB_PORT" ]; then
-            sed -i "s/WEB_PORT=8000/WEB_PORT=$WEB_PORT/" .env
-        fi
-
-        # Database port
-        read -p "PostgreSQL port [5432]: " DB_PORT
-        if [ -n "$DB_PORT" ]; then
-            sed -i "s/POSTGRES_PORT=5432/POSTGRES_PORT=$DB_PORT/" .env
-        fi
-
-        echo ""
-    else
-        echo "⚠️  Using default configuration. Review .env for production use."
-    fi
+    echo "   Edit .env to change password/ports before production use."
 fi
 
-# Load environment variables
+# Load environment
 set -a
 source .env
 set +a
@@ -90,72 +56,52 @@ echo "🐳 Starting Docker services..."
 if [ "$DB_ONLY" = true ]; then
     docker compose up -d db redis
 else
-    # Build with GPU support if requested
     if [ "$GPU" = true ]; then
-        echo "🎮 GPU support enabled - using CUDA PyTorch (image will be ~4.5GB)"
+        echo "🎮 GPU support enabled (CUDA PyTorch, ~4.5GB image)"
         GPU=true docker compose build
     fi
     docker compose up -d
 fi
 
-# Wait for database to be healthy (including init scripts)
-echo "⏳ Waiting for database to be ready..."
-timeout=120
+# Wait for database
+echo "⏳ Waiting for database..."
+timeout=60
 counter=0
-
-# First wait for pg_isready
 until docker compose exec -T db pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; do
     counter=$((counter + 1))
     if [ $counter -ge $timeout ]; then
-        echo "❌ Database did not become ready in time"
-        docker compose logs db
-        exit 1
+        echo "❌ Database timeout"; docker compose logs db; exit 1
     fi
     sleep 1
 done
 
-# Then wait for init scripts to complete by checking if pg_tde key is set
-echo "⏳ Waiting for encryption setup to complete..."
-until docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT pg_tde_is_encrypted('pg_catalog.pg_class');" >/dev/null 2>&1; do
-    counter=$((counter + 1))
-    if [ $counter -ge $timeout ]; then
-        echo "❌ Database encryption setup did not complete in time"
-        docker compose logs db
-        exit 1
-    fi
+# Wait for encryption setup
+until docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do
     sleep 1
 done
-echo "✅ Database is ready"
+echo "✅ Database ready"
 
 # Run migrations
-echo "🔄 Running database migrations..."
+echo "🔄 Running migrations..."
 if [ "$DB_ONLY" = true ]; then
-    # For db-only mode, run migrations locally with uv
     if command -v uv >/dev/null 2>&1; then
-        export SYNC_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB}"
-        uv run alembic upgrade head
+        SYNC_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB}" \
+            uv run alembic upgrade head
     else
-        echo "⚠️  uv not installed, skipping migrations. Run manually: alembic upgrade head"
+        echo "⚠️  uv not installed. Run: uv run alembic upgrade head"
     fi
 else
-    # For full mode, run via app container
-    docker compose exec -T app alembic upgrade head
+    docker compose exec -T app uv run alembic upgrade head
 fi
 
 echo ""
 echo "✅ Potluck is ready!"
-echo ""
 if [ "$DB_ONLY" = true ]; then
-    echo "🗄️  Database running at localhost:${POSTGRES_PORT:-5432}"
-    echo "🔧 To view logs: docker compose logs -f db"
+    echo "🗄️  Database: localhost:${POSTGRES_PORT:-5432}"
+    echo "🚀 Start app: uv run potluck web"
 else
     echo "📊 Web UI: http://localhost:${WEB_PORT:-8000}"
-    echo "🔧 To view logs: docker compose logs -f"
 fi
-echo "🛑 To stop: docker compose down"
-
-# Warn about file-based encryption keys
+echo "🛑 Stop: docker compose down"
 echo ""
-echo "⚠️  NOTE: Using file-based encryption keys (development mode)"
-echo "   For production, configure HashiCorp Vault. See README.md"
-echo ""
+echo "⚠️  File-based encryption (dev only). Use Vault for production."

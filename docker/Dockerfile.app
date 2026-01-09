@@ -38,7 +38,7 @@ RUN mkdir -p src/potluck && touch src/potluck/__init__.py
 # ============================================================================
 FROM local-base AS local-cpu-deps
 # Install torch from CPU index first (before uv sync downloads default CUDA version)
-RUN uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN uv venv && uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 # Now sync remaining deps - torch is already satisfied, won't re-download
 RUN uv sync --all-extras --frozen
 # Clean up cache to minimize image size
@@ -49,7 +49,7 @@ RUN rm -rf /root/.cache/uv /root/.cache/pip
 # ============================================================================
 FROM local-base AS local-gpu-deps
 # Install torch with CUDA 12.4 support first
-RUN uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+RUN uv venv && uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 # Now sync remaining deps - torch is already satisfied
 RUN uv sync --all-extras --frozen
 # Clean up cache

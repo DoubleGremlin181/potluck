@@ -32,27 +32,24 @@ COPY pyproject.toml uv.lock README.md ./
 RUN mkdir -p src/potluck && touch src/potluck/__init__.py
 
 # ============================================================================
-# CPU stage - install torch FIRST from CPU index, then sync remaining deps
-# This avoids downloading CUDA torch (which bloats the image)
+# CPU stage - install torch from CPU index to avoid CUDA bloat (~1.5GB vs ~4.5GB)
 # ============================================================================
 FROM base AS cpu-deps
-# Install torch from CPU index first (before uv sync downloads default CUDA version)
-RUN uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-# Now sync remaining deps - torch is already satisfied, won't re-download
-RUN uv sync --all-extras --frozen
-# Clean up cache to minimize image size
-RUN rm -rf /root/.cache/uv /root/.cache/pip
+# Create venv, install CPU torch first, then sync remaining deps
+RUN uv venv && \
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    uv sync --all-extras --frozen && \
+    rm -rf /root/.cache/uv /root/.cache/pip
 
 # ============================================================================
-# GPU stage - install torch FIRST from CUDA index, then sync remaining deps
+# GPU stage - install torch with CUDA 12.4 support (~4.5GB)
 # ============================================================================
 FROM base AS gpu-deps
-# Install torch with CUDA 12.4 support first
-RUN uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-# Now sync remaining deps - torch is already satisfied
-RUN uv sync --all-extras --frozen
-# Clean up cache
-RUN rm -rf /root/.cache/uv /root/.cache/pip
+# Create venv, install CUDA torch first, then sync remaining deps
+RUN uv venv && \
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 && \
+    uv sync --all-extras --frozen && \
+    rm -rf /root/.cache/uv /root/.cache/pip
 
 # ============================================================================
 # Stage aliases for GPU selection
