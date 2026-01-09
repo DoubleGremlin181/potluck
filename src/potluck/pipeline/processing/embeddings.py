@@ -323,7 +323,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
             logger.info(f"Loading CLIP model: {self._clip_model_name} on {device}")
             self._clip_processor = CLIPProcessor.from_pretrained(self._clip_model_name)
             self._clip_model = CLIPModel.from_pretrained(self._clip_model_name)
-            self._clip_model.to(self._torch_device)  # type: ignore[arg-type]
+            self._clip_model.to(self._torch_device)  # type: ignore[arg-type, unused-ignore]
             # Set model to inference mode
             self._clip_model.requires_grad_(False)
 
