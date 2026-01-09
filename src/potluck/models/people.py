@@ -155,8 +155,8 @@ class FaceEncoding(SQLModel, table=True):
         description="The person this face belongs to",
     )
     embedding: list[float] = Field(
-        sa_column=Column(Vector(128)),  # dlib face_recognition uses 128-d vectors
-        description="128-dimensional face embedding vector",
+        sa_column=Column(Vector(512)),  # facenet-pytorch uses 512-d vectors
+        description="512-dimensional face embedding vector",
     )
     source_media_id: UUID | None = Field(
         default=None,

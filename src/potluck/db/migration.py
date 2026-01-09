@@ -2,6 +2,7 @@
 
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
 from potluck.core.config import get_settings
@@ -39,8 +40,6 @@ def get_head_revision() -> str | None:
     Returns:
         Head revision hash, or None if no migrations exist.
     """
-    from alembic.script import ScriptDirectory
-
     config = get_alembic_config()
     script = ScriptDirectory.from_config(config)
     return script.get_current_head()

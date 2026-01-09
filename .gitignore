@@ -92,6 +92,3 @@ Thumbs.db
 
 # Claude Code
 .claude/settings.local.json
-
-# uv
-uv.lock

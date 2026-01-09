@@ -8,7 +8,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import GeolocatedEntity, SourceType
+from potluck.models.base import GeolocatedEntity
 from potluck.models.utils import utc_now
 
 
@@ -51,6 +51,7 @@ class Media(GeolocatedEntity, table=True):
     )
     file_size: int | None = Field(
         default=None,
+        ge=0,
         description="File size in bytes",
     )
     mime_type: str | None = Field(
@@ -77,14 +78,17 @@ class Media(GeolocatedEntity, table=True):
     # Image/video dimensions
     width: int | None = Field(
         default=None,
+        ge=1,
         description="Width in pixels",
     )
     height: int | None = Field(
         default=None,
+        ge=1,
         description="Height in pixels",
     )
     duration_seconds: float | None = Field(
         default=None,
+        ge=0.0,
         description="Duration in seconds (for video/audio)",
     )
 
@@ -170,41 +174,3 @@ class MediaEmbedding(SQLModel, table=True):
 
     # Relationships
     media: Media = Relationship(back_populates="embeddings")
-
-
-class MediaPersonLink(SQLModel, table=True):
-    """Link table for many-to-many relationship between Media and Person.
-
-    Tracks which people appear in which media items (from Google Photos API,
-    manual tagging, or face recognition).
-    """
-
-    __tablename__ = "media_person_links"
-
-    media_id: UUID = Field(
-        foreign_key="media.id",
-        primary_key=True,
-        description="The media item",
-    )
-    person_id: UUID = Field(
-        foreign_key="people.id",
-        primary_key=True,
-        description="The person appearing in the media",
-    )
-    source_type: SourceType = Field(
-        description="How this link was established (e.g., google_takeout, manual)",
-    )
-    confidence: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score for automatic detection",
-    )
-    is_confirmed: bool = Field(
-        default=False,
-        description="Whether the link is user-confirmed",
-    )
-    created_at: datetime = Field(
-        default_factory=utc_now,
-        description="When the link was created",
-    )

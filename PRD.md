@@ -81,8 +81,10 @@ All entities are generic and not tied to a specific source. A `source_type` fiel
 
 - **Hashing**: SHA256 for content dedup + perceptual hashing (pHash) for visual similarity
 - **OCR**: Text extraction from images using EasyOCR
-- **Face Detection**: Face encoding using `face_recognition` library for person linking
+- **Face Detection**: Face encoding using DeepFace library (FaceNet backend, 128-d vectors) with auto-clustering via DBSCAN
+- **Face Clustering**: Google Photos-style auto-clustering of detected faces into groups, with user review UI for person assignment
 - **EXIF Extraction**: Location, timestamp, camera info from photo metadata
+- **Image Captioning**: AI-generated image descriptions (alt-text) using BLIP-2 model
 - **Embeddings**: CLIP multimodal embeddings for image+text similarity
 
 ### Search
@@ -161,7 +163,8 @@ FastAPI + HTMX server-side rendered interface.
 | Text Embeddings | sentence-transformers (configurable) |
 | Multimodal Embeddings | CLIP |
 | OCR | EasyOCR |
-| Face Recognition | face_recognition library |
+| Face Recognition | DeepFace (FaceNet backend) |
+| Image Captioning | BLIP-2 (transformers) |
 | MCP Protocol | mcp library |
 | Data Processing | Polars |
 | Package Manager | uv |
@@ -191,9 +194,31 @@ FastAPI + HTMX server-side rendered interface.
 └───────────────┴───────────────┴───────────────┘
 ```
 
+**Installation Methods:**
+
+| Method | Audience | Command |
+|--------|----------|---------|
+| One-liner install | End-users | `curl ... \| bash` downloads pre-built images from GHCR |
+| Development setup | Contributors | `./scripts/setup.sh` builds locally |
+
+**Docker Images (GHCR):**
+
+- `ghcr.io/doublegremlin181/potluck:latest` - Application image (CPU-only, ~1.5GB)
+- `ghcr.io/doublegremlin181/potluck:gpu` - Application image (GPU/CUDA 12.4, ~4.5GB)
+- `ghcr.io/doublegremlin181/potluck-db:latest` - Database image (Percona PG17)
+- Images are built and pushed automatically on tagged releases
+
+**GPU Support:**
+
+- Optional CUDA support available via `--gpu` flag (uses pre-built GPU image from GHCR)
+- GPU image uses CUDA 12.4 PyTorch (~4.5GB)
+- Requires NVIDIA GPU + nvidia-container-toolkit
+
+**Key Components:**
+
 - Single `potluck` command with subcommands: `mcp`, `web`
 - Alembic migrations run automatically on container start
-- Configuration via `.env` file (ports, credentials)
+- Configuration via `.env` file (ports, credentials, GPU mode)
 - Health checks on all services for reliable startup ordering
 - Redis for Celery task queue (internal network only)
 

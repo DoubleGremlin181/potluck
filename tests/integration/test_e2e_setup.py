@@ -79,6 +79,7 @@ class TestAlembicMigrations:
             cursor.execute("SELECT version_num FROM alembic_version")
             result = cursor.fetchone()
             assert result is not None, "No migration version found"
+            # Check for the latest migration (update when adding new migrations)
             assert result[0] == "001_initial_schema", (
                 f"Expected migration 001_initial_schema, got {result[0]}"
             )
@@ -95,6 +96,8 @@ class TestExpectedTables:
         # People
         "people",
         "person_aliases",
+        # Face detection
+        "face_clusters",
         # Media
         "media",
         "media_embeddings",

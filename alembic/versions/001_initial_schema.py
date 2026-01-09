@@ -185,18 +185,17 @@ def upgrade() -> None:
         "face_encodings",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("person_id", sa.Uuid(), nullable=False),
-        sa.Column("media_id", sa.Uuid(), nullable=False),
-        sa.Column("embedding", Vector(128), nullable=False),
-        sa.Column("bounding_box", sa.String(), nullable=True),
+        sa.Column("embedding", Vector(512), nullable=False),
         sa.Column("confidence", sa.Float(), nullable=False, server_default="1.0"),
-        sa.Column("is_confirmed", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("source_media_id", sa.Uuid(), nullable=True),
+        sa.Column("is_primary", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
-        sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
+        sa.ForeignKeyConstraint(["source_media_id"], ["media.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_face_encodings_person_id", "face_encodings", ["person_id"])
-    op.create_index("ix_face_encodings_media_id", "face_encodings", ["media_id"])
+    op.create_index("ix_face_encodings_source_media_id", "face_encodings", ["source_media_id"])
     # HNSW index for face vector similarity search
     op.execute(
         """
@@ -206,17 +205,61 @@ def upgrade() -> None:
         """
     )
 
+    # === Face Clusters table ===
+
+    op.create_table(
+        "face_clusters",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("representative_encoding", Vector(512), nullable=False),
+        sa.Column("status", sa.String(), nullable=False, server_default="pending"),
+        sa.Column("person_id", sa.Uuid(), nullable=True),
+        sa.Column("needs_review", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("face_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_face_clusters_person_id", "face_clusters", ["person_id"])
+    op.create_index("ix_face_clusters_status", "face_clusters", ["status"])
+    op.execute(
+        """
+        CREATE INDEX ix_face_clusters_encoding_hnsw
+        ON face_clusters
+        USING hnsw (representative_encoding vector_cosine_ops)
+        """
+    )
+
     op.create_table(
         "media_person_links",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("media_id", sa.Uuid(), nullable=False),
-        sa.Column("person_id", sa.Uuid(), nullable=False),
-        sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("person_id", sa.Uuid(), nullable=True),
+        sa.Column("cluster_id", sa.Uuid(), nullable=True),
         sa.Column("confidence", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column("is_confirmed", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("embedding", Vector(512), nullable=True),
+        sa.Column("bbox_x", sa.Integer(), nullable=True),
+        sa.Column("bbox_y", sa.Integer(), nullable=True),
+        sa.Column("bbox_width", sa.Integer(), nullable=True),
+        sa.Column("bbox_height", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
         sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
-        sa.PrimaryKeyConstraint("media_id", "person_id"),
+        sa.ForeignKeyConstraint(["cluster_id"], ["face_clusters.id"]),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_media_person_links_media_id", "media_person_links", ["media_id"])
+    op.create_index("ix_media_person_links_person_id", "media_person_links", ["person_id"])
+    op.create_index("ix_media_person_links_cluster_id", "media_person_links", ["cluster_id"])
+    op.execute(
+        """
+        CREATE INDEX ix_media_person_links_embedding_hnsw
+        ON media_person_links
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
     )
 
     # === Messages tables ===
@@ -1001,6 +1044,7 @@ def downgrade() -> None:
     op.drop_table("chat_messages")
     op.drop_table("chat_threads")
     op.drop_table("media_person_links")
+    op.drop_table("face_clusters")
     op.drop_table("face_encodings")
     op.drop_table("media_embeddings")
     op.drop_table("media")

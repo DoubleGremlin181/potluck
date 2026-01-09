@@ -19,7 +19,8 @@ Potluck is a privacy-first personal knowledge management system that:
 
 - **Source-agnostic entities**: A chat message model works for WhatsApp, Telegram, SMS, etc.
 - **Hybrid search**: Combines PostgreSQL full-text search with pgvector similarity
-- **Face recognition**: Link photos to people automatically
+- **Face recognition**: Link photos to people via auto-clustering (Google Photos-style)
+- **Image captioning**: AI-generated alt-text descriptions for images
 - **Multiple embeddings**: Support different embedding types (text, multimodal) per entity
 - **Web UI**: View, search, and manage your data via FastAPI + HTMX interface
 
@@ -30,64 +31,48 @@ Potluck is a privacy-first personal knowledge management system that:
 - **sentence-transformers** for text embeddings
 - **CLIP** for multimodal embeddings
 - **EasyOCR** for image text extraction
+- **MTCNN + ArcFace** for face detection and embedding
+- **BLIP-2** for AI image captioning
 - **Docker Compose** for easy deployment
 
 ## Installation
 
-### Quick Start (Docker)
+### Quick Install (Recommended)
+
+Install and run Potluck with a single command:
 
 ```bash
-# Clone the repository
+curl -fsSL https://raw.githubusercontent.com/DoubleGremlin181/potluck/main/scripts/install.sh | bash
+```
+
+This will:
+- Create `~/.potluck/` with all configuration files
+- Generate secure database credentials
+- Pull and start all Docker containers
+- Run database migrations
+- Print MCP config for Claude Desktop
+
+**With GPU support** (requires NVIDIA GPU + nvidia-container-toolkit):
+```bash
+curl -fsSL https://raw.githubusercontent.com/DoubleGremlin181/potluck/main/scripts/install.sh | bash -s -- --gpu
+```
+
+After installation:
+- **Web UI**: http://localhost:8000
+- **Logs**: `cd ~/.potluck && docker compose logs -f`
+- **Stop**: `cd ~/.potluck && docker compose down`
+
+### Development Setup
+
+For contributors who want to modify the code:
+
+```bash
 git clone https://github.com/DoubleGremlin181/potluck.git
 cd potluck
-
-# Run the setup script (creates .env, starts services, runs migrations)
-./scripts/setup.sh
+./scripts/setup.sh        # Start all services
+# or
+./scripts/setup.sh --db-only  # Start only DB, run app locally with: uv run potluck web
 ```
-
-The setup script will:
-
-1. Prompt for configuration (password, ports) or use defaults if skipped
-2. Create `.env` from `.env.example`
-3. Start PostgreSQL (with pgvector and pg_tde encryption), Redis, and the app via Docker Compose
-4. Wait for the database to be ready
-5. Run Alembic migrations to create all tables with encryption enabled
-
-Options:
-- `--db-only` - Only start the database (useful for development/testing)
-- `--non-interactive` - Skip prompts and use default values
-
-### Manual Setup
-
-```bash
-# 1. Copy environment file and configure
-cp .env.example .env
-# Edit .env to set POSTGRES_PASSWORD
-
-# 2. Start services
-docker compose up -d
-
-# 3. Run migrations (after db is healthy)
-docker compose exec app alembic upgrade head
-```
-
-### Local Development (without Docker)
-
-```bash
-# Install dependencies with uv
-uv sync
-
-# Setup git hooks (runs lint/tests on commit and push)
-./scripts/setup-hooks.sh
-
-# Start database only (requires Docker)
-./scripts/setup.sh --db-only
-
-# Run migrations against local database
-alembic upgrade head
-```
-
-> **Note**: The `setup.sh` script automatically configures git hooks. If you only need hooks without Docker, run `./scripts/setup-hooks.sh` directly.
 
 ## Encryption Key Management
 
@@ -141,46 +126,50 @@ pg_tde also supports KMIP-compatible KMS providers (AWS KMS, Azure Key Vault, et
 
 ## Testing
 
+All tests run in Docker to ensure consistency between local development and CI.
+
 ```bash
-# Install dev dependencies
-uv sync
+# Run all tests
+docker compose --profile test run --rm test
 
-# Run unit tests (no Docker required)
-uv run pytest tests/ -v
+# Run specific test file
+docker compose --profile test run --rm test uv run pytest tests/unit/models/ -v
 
-# Run end-to-end tests (requires Docker)
-uv run pytest tests/integration/ -v --run-e2e
+# Run with e2e tests (database integration)
+docker compose --profile test run --rm test uv run pytest tests/ -v --run-e2e
 ```
 
-The E2E tests verify:
+GitHub Actions uses the same configuration with the `test` profile.
+
+The tests verify:
 - Docker containers start correctly (Percona PostgreSQL 17 with pgvector + pg_tde)
 - PostgreSQL extensions are installed (vector, pg_tde, uuid-ossp)
 - All tables are created with pg_tde encryption enabled
 - Alembic migrations run successfully
+- ML processing (OCR, face detection, captioning) works correctly
 
 ## Usage
 
 ### MCP Server (for Claude Desktop)
 
-Add to your Claude Desktop config:
+Add to your Claude Desktop config (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "potluck": {
-      "command": "potluck",
-      "args": ["mcp"]
+      "command": "docker",
+      "args": ["exec", "-i", "potluck-app", "potluck", "mcp"]
     }
   }
 }
 ```
 
+The install script prints this config automatically.
+
 ### Web UI
 
-```bash
-potluck web
-# Visit http://localhost:8000
-```
+Visit http://localhost:8000 after installation.
 
 ## Project Structure
 
@@ -189,9 +178,12 @@ potluck/
 ├── src/potluck/
 │   ├── core/          # Config, logging, Celery, exceptions
 │   ├── models/        # SQLModel entities
-│   ├── ingesters/     # Source-specific data importers
+│   ├── pipeline/      # Ingestion + processing pipeline
+│   │   ├── ingestion/ # Source-specific data importers
+│   │   ├── processing/# OCR, hashing, faces, captioning
+│   │   ├── tasks/     # Celery background tasks
+│   │   └── utils/     # Archive extraction, parsers
 │   ├── embeddings/    # Embedding providers
-│   ├── processing/    # OCR, hashing, face detection
 │   ├── search/        # Hybrid search implementation
 │   ├── linkers/       # Entity relationship detection
 │   ├── mcp/           # MCP server and tools

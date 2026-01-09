@@ -5,7 +5,7 @@ set -e
 
 echo "Running pre-push checks..."
 
-# Run linting
+# Run linting (fast, no Docker needed)
 echo "→ Running ruff check..."
 uv run ruff check src/ tests/
 
@@ -15,9 +15,12 @@ uv run ruff format --check src/ tests/
 echo "→ Running mypy..."
 uv run mypy src/potluck/
 
-# Run tests
-echo "→ Running tests..."
-uv run pytest tests/ -q
+# Run tests in Docker (same environment as CI)
+echo "→ Running tests in Docker..."
+docker compose --profile test run --rm test uv run pytest tests/ -q
+
+# Clean up
+docker compose --profile test down -v >/dev/null 2>&1 || true
 
 echo "✓ All checks passed!"
 echo ""

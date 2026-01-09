@@ -7,10 +7,108 @@ on:
 
 permissions:
   contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
+  # Build and push Docker app images (CPU and GPU variants)
+  publish-app-images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [cpu, gpu]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Get lowercase repo name
+        id: repo
+        run: |
+          echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
+          sudo apt-get clean
+          docker system prune -af
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tags and GPU flag
+        id: config
+        run: |
+          if [ "${{ matrix.variant }}" = "cpu" ]; then
+            echo "tags=${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.version }},${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:latest" >> $GITHUB_OUTPUT
+            echo "gpu=false" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.version }}-gpu,${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:gpu" >> $GITHUB_OUTPUT
+            echo "gpu=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push app image (${{ matrix.variant }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.config.outputs.tags }}
+          build-args: |
+            GPU=${{ steps.config.outputs.gpu }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+
+  # Build and push database image (separate job for clarity)
+  publish-db-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Get lowercase repo name
+        id: repo
+        run: |
+          echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push db image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.db
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}-db:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}-db:latest
+
+  # Create GitHub release with changelog
   release:
     runs-on: ubuntu-latest
+    needs: [publish-app-images, publish-db-image]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

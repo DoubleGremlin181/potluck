@@ -11,7 +11,7 @@ from potluck.models.utils import IANATimezone, UTCDatetime, utc_now
 
 
 class SourceType(str, Enum):
-    """Enumeration of supported data sources."""
+    """Enumeration of supported data ingestion sources."""
 
     GOOGLE_TAKEOUT = "google_takeout"
     REDDIT = "reddit"
