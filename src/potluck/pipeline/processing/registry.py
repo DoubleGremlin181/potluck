@@ -11,16 +11,13 @@ The registry builds processing pipelines dynamically at runtime.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from potluck.pipeline.processing.base import BaseProcessor
+from potluck.pipeline.processing.base import BaseProcessor
 
 logger = get_logger(__name__)
 

@@ -4,12 +4,10 @@ import time
 from pathlib import Path
 from typing import Any, ClassVar
 
-import torch
 from celery import Task
 from celery.exceptions import Retry
 from PIL import Image
 from sqlmodel import SQLModel
-from transformers import Blip2ForConditionalGeneration, Blip2Processor
 
 from potluck.core.celery import (
     MAX_RETRIES,
@@ -22,6 +20,7 @@ from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.ml import DEFAULT_CAPTIONING_MODEL, MLModels
 from potluck.pipeline.processing.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
@@ -32,19 +31,17 @@ class CaptioningProcessor(BaseProcessor):
     """Processor for generating AI image captions using BLIP-2.
 
     Generates human-readable alt-text descriptions for images using the
-    BLIP-2 model from Salesforce.
+    BLIP-2 model from Salesforce. Uses MLModels for centralized model loading.
     """
 
     NAME: ClassVar[str] = "captioning"
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {EntityType.MEDIA}
     PERSIST_FIELDS: ClassVar[list[str]] = ["caption"]
 
-    DEFAULT_MODEL = "Salesforce/blip2-opt-2.7b"
-
     def __init__(
         self,
         *,
-        model_name: str = DEFAULT_MODEL,
+        model_name: str = DEFAULT_CAPTIONING_MODEL,
         max_length: int = 50,
         device: str | None = None,
     ) -> None:
@@ -53,37 +50,20 @@ class CaptioningProcessor(BaseProcessor):
         Args:
             model_name: HuggingFace model identifier for BLIP-2.
             max_length: Maximum length of generated captions.
-            device: Device to run model on ('cuda', 'cpu', or None for auto).
+            device: Device to run model on ('cuda', 'cpu', or None for auto based on GPU env var).
         """
         self._model_name = model_name
         self._max_length = max_length
-        self._device = device
+        self._models = MLModels(device=device)
         self._processor: Any = None
         self._model: Any = None
 
     def _load_model(self) -> None:
-        """Lazy load the BLIP-2 model and processor."""
+        """Lazy load the BLIP-2 model and processor from MLModels."""
         if self._processor is not None:
             return
 
-        if self._device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            device = self._device
-
-        self._processor = Blip2Processor.from_pretrained(self._model_name)
-
-        if device == "cuda":
-            self._model = Blip2ForConditionalGeneration.from_pretrained(
-                self._model_name,
-                torch_dtype=torch.float16,
-                device_map="auto",
-            )
-        else:
-            self._model = Blip2ForConditionalGeneration.from_pretrained(
-                self._model_name,
-            )
-            self._model.to(device)
+        self._model, self._processor = self._models.get_blip2_model(self._model_name)
 
     def should_execute(self, entity: SQLModel) -> bool:
         """Only process images."""

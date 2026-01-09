@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from typing import Any, ClassVar
 
-import easyocr
 from celery import Task
 from celery.exceptions import Retry
 from sqlmodel import SQLModel
@@ -25,6 +24,7 @@ from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
 from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.ml import MLModels
 from potluck.pipeline.processing.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
@@ -43,8 +43,7 @@ class OCRProcessor(BaseProcessor):
     - Document images (scanned documents, screenshots)
     - Handwritten text (limited support)
 
-    The processor uses lazy initialization to avoid loading the heavy
-    model until it's actually needed.
+    Uses MLModels for centralized model loading and GPU configuration.
     """
 
     NAME: ClassVar[str] = "ocr"
@@ -54,32 +53,22 @@ class OCRProcessor(BaseProcessor):
     def __init__(
         self,
         languages: list[str] | None = None,
-        gpu: bool = True,
+        device: str | None = None,
     ) -> None:
         """Initialize the OCR processor.
 
         Args:
             languages: List of language codes to recognize (e.g., ['en', 'es']).
                        Defaults to English only.
-            gpu: Whether to use GPU acceleration if available. Defaults to True.
+            device: Device to use ('cuda', 'cpu', or None for auto based on GPU env var).
         """
         self._languages = languages or DEFAULT_LANGUAGES
-        self._gpu = gpu
-        self._reader: Any = None  # Lazy initialization
+        self._models = MLModels(device=device)
 
     @property
     def reader(self) -> Any:
-        """Get the EasyOCR reader, initializing if necessary."""
-        if self._reader is None:
-            try:
-                logger.info(
-                    f"Initializing EasyOCR with languages: {self._languages}, GPU: {self._gpu}"
-                )
-                self._reader = easyocr.Reader(self._languages, gpu=self._gpu)
-            except Exception as e:
-                raise ProcessingError(f"Failed to initialize EasyOCR: {e}") from e
-
-        return self._reader
+        """Get the EasyOCR reader from MLModels."""
+        return self._models.get_easyocr_reader(self._languages)
 
     def should_execute(self, entity: SQLModel) -> bool:
         """Only process images which may contain text."""

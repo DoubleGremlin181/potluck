@@ -4,6 +4,8 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.models.base import TimestampedEntity
@@ -209,6 +211,18 @@ class ChatMessage(TimestampedEntity, table=True):
     reactions: str | None = Field(
         default=None,
         description="JSON-encoded reactions {emoji: [person_ids]}",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(384)),
+        description="Text embedding (e5) for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(768)),
+        description="Multimodal embedding (SigLIP) for text-to-image cross-modal search",
     )
 
     # Relationships

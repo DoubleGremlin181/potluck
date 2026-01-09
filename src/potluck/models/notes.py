@@ -42,11 +42,16 @@ class KnowledgeNote(SimpleEntity, table=True):
         description="SHA256 hash of content for deduplication",
     )
 
-    # Embedding for semantic search
+    # Embeddings for semantic search
     embedding: list[float] | None = Field(
         default=None,
+        sa_column=Column(Vector(384)),
+        description="Text embedding (e5) for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
         sa_column=Column(Vector(768)),
-        description="Text embedding vector for semantic search",
+        description="Multimodal embedding (SigLIP) for text-to-image cross-modal search",
     )
 
     # Creation context

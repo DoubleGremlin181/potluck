@@ -4,6 +4,8 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.models.base import SourceType, TimestampedEntity
@@ -227,6 +229,18 @@ class SocialPost(TimestampedEntity, table=True):
         description="ID of original post if crossposted",
     )
 
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(384)),
+        description="Text embedding (e5) for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(768)),
+        description="Multimodal embedding (SigLIP) for text-to-image cross-modal search",
+    )
+
     # Relationships
     comments: list["SocialComment"] = Relationship(back_populates="post")
 
@@ -345,6 +359,18 @@ class SocialComment(TimestampedEntity, table=True):
     is_liked: bool = Field(
         default=False,
         description="Whether liked by data owner",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(384)),
+        description="Text embedding (e5) for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(768)),
+        description="Multimodal embedding (SigLIP) for text-to-image cross-modal search",
     )
 
     # Relationships

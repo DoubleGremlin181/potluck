@@ -9,9 +9,10 @@ This module provides the foundation for all processing stages including:
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 from uuid import UUID
 
+from celery import Task
 from celery.exceptions import Reject
 from sqlmodel import Session, SQLModel, select
 
@@ -23,9 +24,6 @@ from potluck.models.base import EntityType
 from potluck.models.media import Media
 from potluck.pipeline.base import Stage
 from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
-
-if TYPE_CHECKING:
-    from celery import Task
 
 logger = get_logger(__name__)
 
@@ -305,6 +303,115 @@ def run_processor_task(
         raise
     except Exception as err:
         logger.exception(f"{processor.NAME} task failed for {entity_type.value} {entity_id}: {err}")
+        if is_fatal_error(err):
+            raise Reject(str(err), requeue=False) from err
+        elif is_transient_error(err):
+            raise task.retry(exc=err) from err
+        else:
+            raise Reject(str(err), requeue=False) from err
+
+
+def run_batch_processor_task(
+    task: Task[..., dict[str, Any]],
+    entity_type: EntityType,
+    entity_ids: list[str],
+    processor_class: type[BaseProcessor],
+) -> dict[str, Any]:
+    """Execute a processor on a batch of entities with standard error handling.
+
+    This is the batch variant of run_processor_task(). It provides:
+    - Single database round-trip for fetching all entities
+    - Batch execution via processor.execute_batch() (can be optimized per processor)
+    - Bulk persistence of results
+    - Aggregated statistics
+
+    Processors can override execute_batch() for vectorized operations (e.g., batched
+    model inference) while still benefiting from this shared task infrastructure.
+
+    Args:
+        task: The Celery task instance (for retry support).
+        entity_type: The type of entities to process.
+        entity_ids: List of entity IDs to process.
+        processor_class: The processor class to instantiate and run.
+
+    Returns:
+        Dict with batch task results including counts and timing.
+
+    Raises:
+        Reject: For fatal errors or unsupported entity type.
+        Retry: For transient errors (via task.retry).
+    """
+    processor = processor_class()
+    logger.info(
+        f"Starting batch {processor.NAME} for {len(entity_ids)} {entity_type.value} entities"
+    )
+
+    # Validate processor supports this entity type
+    if not processor.supports_entity_type(entity_type):
+        raise Reject(
+            f"Processor {processor.NAME} does not support entity type {entity_type.value}",
+            requeue=False,
+        )
+
+    try:
+        engine = get_engine()
+        with Session(engine) as session:
+            # Fetch all entities in one query
+            entities: list[SQLModel] = []
+            missing_ids: list[str] = []
+
+            for entity_id in entity_ids:
+                entity = _get_entity(session, entity_type, entity_id)
+                if entity is not None:
+                    entities.append(entity)
+                else:
+                    missing_ids.append(entity_id)
+
+            if missing_ids:
+                logger.warning(
+                    f"Batch {processor.NAME}: {len(missing_ids)} entities not found: "
+                    f"{missing_ids[:5]}{'...' if len(missing_ids) > 5 else ''}"
+                )
+
+            if not entities:
+                return {
+                    "entity_type": entity_type.value,
+                    "total": len(entity_ids),
+                    "completed": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "missing": len(missing_ids),
+                }
+
+            # Execute batch (processor can optimize this)
+            batch_result = processor.execute_batch(entities)
+
+            # Persist all successful results
+            persisted = 0
+            for result in batch_result.results:
+                if result.status == StageStatus.COMPLETED and result.item_id:
+                    processor.persist_result(session, entity_type, str(result.item_id), result)
+                    persisted += 1
+
+            logger.info(
+                f"Batch {processor.NAME} complete: "
+                f"{batch_result.completed} completed, {batch_result.failed} failed, "
+                f"{batch_result.skipped} skipped, {persisted} persisted"
+            )
+
+            return {
+                "entity_type": entity_type.value,
+                "total": batch_result.total,
+                "completed": batch_result.completed,
+                "failed": batch_result.failed,
+                "skipped": batch_result.skipped,
+                "missing": len(missing_ids),
+            }
+
+    except Reject:
+        raise
+    except Exception as err:
+        logger.exception(f"Batch {processor.NAME} task failed: {err}")
         if is_fatal_error(err):
             raise Reject(str(err), requeue=False) from err
         elif is_transient_error(err):

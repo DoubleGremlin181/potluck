@@ -92,4 +92,7 @@ class TestCaptioningProcessor:
         )
         assert stage._model_name == "custom/model"
         assert stage._max_length == 100
-        assert stage._device == "cpu"
+        # Device is now accessed through MLModels
+        import torch
+
+        assert stage._models.device == torch.device("cpu")

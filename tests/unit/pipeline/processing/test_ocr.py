@@ -80,12 +80,17 @@ class TestOCRProcessor:
         stage = OCRProcessor(languages=["en", "es", "fr"])
         assert stage._languages == ["en", "es", "fr"]
 
-    def test_gpu_default_enabled(self) -> None:
-        """OCRProcessor should enable GPU by default."""
-        stage = OCRProcessor()
-        assert stage._gpu is True
+    def test_device_default(self) -> None:
+        """OCRProcessor should auto-select device based on GPU env var."""
+        import torch
 
-    def test_gpu_can_be_disabled(self) -> None:
-        """OCRProcessor should allow disabling GPU."""
-        stage = OCRProcessor(gpu=False)
-        assert stage._gpu is False
+        stage = OCRProcessor()
+        # Device is now accessed through MLModels and respects GPU env var
+        assert stage._models.device in [torch.device("cpu"), torch.device("cuda")]
+
+    def test_device_can_be_explicit(self) -> None:
+        """OCRProcessor should allow explicit device selection."""
+        import torch
+
+        stage = OCRProcessor(device="cpu")
+        assert stage._models.device == torch.device("cpu")
