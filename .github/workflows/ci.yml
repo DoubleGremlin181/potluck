@@ -29,7 +29,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: |
+          # Install torch CPU-only first (needed for mypy to type-check torch code)
+          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          # Then install dev dependencies (ruff, mypy, pytest)
+          uv sync --extra dev
 
       - name: Run ruff check
         run: uv run ruff check src/ tests/ alembic/
