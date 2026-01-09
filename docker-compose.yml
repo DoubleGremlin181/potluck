@@ -32,9 +32,11 @@ services:
 
   # ==========================================================================
   # Test service (testing - mounts tests/src for live reload)
+  # Uses the same image as app service (potluck:latest in CI)
   # ==========================================================================
   test:
     profiles: ["test"]
+    image: potluck:latest
     build:
       context: .
       dockerfile: docker/Dockerfile.app
