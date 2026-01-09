@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.app
+      args:
+        GPU: ${GPU:-false}
     container_name: potluck-app
     env_file:
       - .env

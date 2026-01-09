@@ -1,24 +1,19 @@
 # syntax=docker/dockerfile:1
 
-# Potluck Application Image
-# Uses pre-built base image from GHCR for fast CI builds
-# Falls back to building dependencies locally if base image unavailable
-#
-# Usage:
-#   Local (CPU):     docker build -f docker/Dockerfile.app -t potluck .
-#   Local (GPU):     docker build -f docker/Dockerfile.app -t potluck --build-arg GPU=true .
-#   CI (with base):  docker build -f docker/Dockerfile.app -t potluck --build-arg BASE_IMAGE=ghcr.io/... .
+# Base image for Potluck - contains all dependencies
+# Rebuild only when pyproject.toml or uv.lock changes
+# Tags: cpu-<hash> or gpu-<hash> based on dependency hash
 
 ARG GPU=false
-ARG BASE_IMAGE=""
 
 # ============================================================================
-# Fallback: Build base locally if no BASE_IMAGE provided
+# Base stage - system dependencies
 # ============================================================================
-FROM python:3.12-slim AS local-base
+FROM python:3.12-slim AS base
 
 WORKDIR /app
 
+# Install system dependencies including OpenCV requirements
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
@@ -27,16 +22,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv for fast package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Copy only dependency files (changes trigger rebuild)
 COPY pyproject.toml uv.lock README.md ./
 
+# Create empty src structure for uv sync (needed for editable install)
 RUN mkdir -p src/potluck && touch src/potluck/__init__.py
 
 # ============================================================================
-# Local CPU build - install torch FIRST from CPU index, then sync remaining deps
+# CPU stage - install torch FIRST from CPU index, then sync remaining deps
+# This avoids downloading CUDA torch (which bloats the image)
 # ============================================================================
-FROM local-base AS local-cpu-deps
+FROM base AS cpu-deps
 # Install torch from CPU index first (before uv sync downloads default CUDA version)
 RUN uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 # Now sync remaining deps - torch is already satisfied, won't re-download
@@ -45,9 +44,9 @@ RUN uv sync --all-extras --frozen
 RUN rm -rf /root/.cache/uv /root/.cache/pip
 
 # ============================================================================
-# Local GPU build - install torch FIRST from CUDA index, then sync remaining deps
+# GPU stage - install torch FIRST from CUDA index, then sync remaining deps
 # ============================================================================
-FROM local-base AS local-gpu-deps
+FROM base AS gpu-deps
 # Install torch with CUDA 12.4 support first
 RUN uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 # Now sync remaining deps - torch is already satisfied
@@ -59,29 +58,14 @@ RUN rm -rf /root/.cache/uv /root/.cache/pip
 # Stage aliases for GPU selection
 # Maps GPU=false -> cpu-deps, GPU=true -> gpu-deps
 # ============================================================================
-FROM local-cpu-deps AS local-deps-false
-FROM local-gpu-deps AS local-deps-true
+FROM cpu-deps AS deps-false
+FROM gpu-deps AS deps-true
 
 # ============================================================================
-# Select base: Use provided BASE_IMAGE or fall back to local build
-# When BASE_IMAGE is provided (CI), use it directly
-# When BASE_IMAGE is empty (local), use local-deps-{false,true} based on GPU arg
+# Final stage - select based on GPU build arg
 # ============================================================================
 ARG GPU=false
-ARG BASE_IMAGE=""
-FROM ${BASE_IMAGE:-local-deps-${GPU}} AS deps
+FROM deps-${GPU} AS final
 
-# ============================================================================
-# Final application stage
-# ============================================================================
-FROM deps AS app
-
-WORKDIR /app
-
-# Copy application code (this is the fast part - only code changes)
-COPY src/ src/
-COPY alembic/ alembic/
-COPY alembic.ini .
-
-# Run migrations and start web server
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run potluck web"]
+# Verify installation
+RUN uv run python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA available: {torch.cuda.is_available()}')"

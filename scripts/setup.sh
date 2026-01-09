@@ -1,15 +1,17 @@
 #!/bin/bash
 # Potluck Setup Script
-# Usage: ./scripts/setup.sh [--db-only] [--non-interactive]
+# Usage: ./scripts/setup.sh [--db-only] [--non-interactive] [--gpu]
 #
 # Options:
 #   --db-only          Only start the database (for testing/development)
 #   --non-interactive  Skip all prompts and use defaults
+#   --gpu              Enable GPU support (requires NVIDIA GPU + nvidia-container-toolkit)
 
 set -e
 
 DB_ONLY=false
 INTERACTIVE=true
+GPU=false
 
 for arg in "$@"; do
     case $arg in
@@ -18,6 +20,9 @@ for arg in "$@"; do
             ;;
         --non-interactive)
             INTERACTIVE=false
+            ;;
+        --gpu)
+            GPU=true
             ;;
     esac
 done
@@ -85,6 +90,11 @@ echo "🐳 Starting Docker services..."
 if [ "$DB_ONLY" = true ]; then
     docker compose up -d db redis
 else
+    # Build with GPU support if requested
+    if [ "$GPU" = true ]; then
+        echo "🎮 GPU support enabled - using CUDA PyTorch (image will be ~4.5GB)"
+        GPU=true docker compose build
+    fi
     docker compose up -d
 fi
 

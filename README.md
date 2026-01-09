@@ -59,6 +59,7 @@ The setup script will:
 Options:
 - `--db-only` - Only start the database (useful for development/testing)
 - `--non-interactive` - Skip prompts and use default values
+- `--gpu` - Enable GPU support (requires NVIDIA GPU + nvidia-container-toolkit)
 
 ### Manual Setup
 
@@ -72,6 +73,56 @@ docker compose up -d
 
 # 3. Run migrations (after db is healthy)
 docker compose exec app alembic upgrade head
+```
+
+### GPU Support
+
+Potluck supports GPU acceleration for ML tasks (embeddings, face detection, OCR, captioning). GPU support is **disabled by default** to keep the Docker image small (~1.5GB vs ~4.5GB).
+
+#### Enable GPU with Setup Script
+
+```bash
+# Build with GPU support (requires NVIDIA GPU + drivers)
+./scripts/setup.sh --gpu
+```
+
+#### Enable GPU with Docker Compose
+
+```bash
+# Option 1: Build with build argument
+docker compose build --build-arg GPU=true
+docker compose up -d
+
+# Option 2: Set in .env for persistence
+echo "GPU=true" >> .env
+docker compose build
+docker compose up -d
+```
+
+#### NVIDIA Container Toolkit
+
+For GPU support in Docker, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html):
+
+```bash
+# Ubuntu/Debian
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+```
+
+Then add GPU access to docker-compose.yml (under the `app` service):
+
+```yaml
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: 1
+          capabilities: [gpu]
 ```
 
 ### Local Development
@@ -213,6 +264,20 @@ potluck/
 ├── scripts/           # Setup and utility scripts
 └── docker/            # Dockerfiles for app and database
 ```
+
+## For Contributors
+
+### CI Base Image Caching
+
+CI uses pre-built base images from GitHub Container Registry to dramatically speed up builds:
+
+- **Location**: `ghcr.io/doublegremlin181/potluck-base`
+- **Tags**: `cpu-<hash>` where `<hash>` is derived from `pyproject.toml` + `uv.lock`
+- **Rebuild triggers**: Changes to `pyproject.toml` or `uv.lock`
+- **Cache hit**: ~2-3 min CI builds (just code copy + tests)
+- **Cache miss**: ~10 min CI builds (full dependency install)
+
+Local builds automatically fall back to building dependencies from scratch if GHCR is unavailable.
 
 ## License
 

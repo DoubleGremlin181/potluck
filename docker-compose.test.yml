@@ -18,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.app  # Same as production!
+      args:
+        GPU: ${GPU:-false}
     container_name: potluck-test
     # Override the default CMD to run tests instead of the web server
     command: ["uv", "run", "pytest", "-v", "--tb=short"]
