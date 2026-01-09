@@ -13,7 +13,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  BASE_IMAGE_NAME: ${{ github.repository_owner }}/potluck-base
 
 jobs:
   lint:
@@ -59,8 +58,10 @@ jobs:
       - name: Determine base image tag
         id: base-tag
         run: |
+          # Lowercase the repository owner for Docker image name
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           TAG="cpu-${{ steps.deps-hash.outputs.hash }}"
-          IMAGE="${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}:$TAG"
+          IMAGE="${{ env.REGISTRY }}/${OWNER}/potluck-base:$TAG"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
