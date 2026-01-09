@@ -214,8 +214,8 @@ class PipelineOrchestrator:
             .order_by(ImportRun.completed_at.desc())  # type: ignore[union-attr]
             .limit(1)
         )
-        result = self.session.execute(stmt)
-        return result.scalars().first()
+        result = self.session.exec(stmt)
+        return result.first()
 
     def _create_import_source(self, discovery: DiscoveryResult) -> ImportSource:
         """Create an ImportSource record."""
@@ -330,8 +330,8 @@ class PipelineOrchestrator:
             .limit(1)
         )
 
-        result = self.session.execute(stmt)
-        existing = result.scalars().first()
+        result = self.session.exec(stmt)
+        existing = result.first()
         if existing is not None:
             self._seen_hashes.add(entity.content_hash)
             return True

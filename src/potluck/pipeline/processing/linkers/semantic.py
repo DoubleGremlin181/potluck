@@ -124,8 +124,8 @@ class SemanticLinker(BaseLinker):
             .where(MediaEmbedding.media_id.in_(entity_ids))  # type: ignore[attr-defined]
             .where(MediaEmbedding.embedding_type == self._embedding_type)
         )
-        result = session.execute(stmt)
-        embeddings = list(result.scalars().all())
+        result = session.exec(stmt)
+        embeddings = list(result.all())
 
         if len(embeddings) < 2:
             return []
@@ -179,8 +179,8 @@ class SemanticLinker(BaseLinker):
             .where(KnowledgeNote.id.in_(entity_ids))  # type: ignore[attr-defined]
             .where(KnowledgeNote.embedding.isnot(None))  # type: ignore[union-attr]
         )
-        result = session.execute(stmt)
-        notes = list(result.scalars().all())
+        result = session.exec(stmt)
+        notes = list(result.all())
 
         if len(notes) < 2:
             return []

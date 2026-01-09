@@ -33,8 +33,8 @@ def _mark_import_failed(import_run_id: str, error_message: str) -> None:
         engine = get_engine()
         with Session(engine) as session:
             stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
-            result = session.execute(stmt)
-            import_run = result.scalars().first()
+            result = session.exec(stmt)
+            import_run = result.first()
             if import_run:
                 import_run.status = ImportStatus.FAILED
                 import_run.error_message = error_message
@@ -107,8 +107,8 @@ def run_ingestion(
         with Session(engine) as session:
             # Verify ImportRun exists
             stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
-            result = session.execute(stmt)
-            import_run = result.scalars().first()
+            result = session.exec(stmt)
+            import_run = result.first()
             if import_run is None:
                 raise Reject(f"ImportRun not found: {import_run_id}", requeue=False)
 
@@ -160,8 +160,8 @@ def cancel_ingestion(import_run_id: str) -> dict[str, Any]:
         engine = get_engine()
         with Session(engine) as session:
             stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
-            result = session.execute(stmt)
-            import_run = result.scalars().first()
+            result = session.exec(stmt)
+            import_run = result.first()
 
             if import_run is None:
                 return {"success": False, "error": "ImportRun not found"}

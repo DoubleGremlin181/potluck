@@ -56,8 +56,8 @@ def cluster_unassigned_faces(self: "Task[..., dict[str, Any]]") -> dict[str, Any
                 MediaPersonLink.cluster_id == None,  # noqa: E711
                 MediaPersonLink.embedding != None,  # noqa: E711
             )
-            result = session.execute(stmt)
-            unclustered_faces = list(result.scalars().all())
+            result = session.exec(stmt)
+            unclustered_faces = list(result.all())
 
             if not unclustered_faces:
                 logger.info("No unclustered faces to process")
@@ -68,8 +68,10 @@ def cluster_unassigned_faces(self: "Task[..., dict[str, Any]]") -> dict[str, Any
                     "faces_assigned": 0,
                 }
 
-            embeddings = [list(face.embedding) for face in unclustered_faces]
-            face_ids = [face.id for face in unclustered_faces]
+            embeddings = [
+                list(face.embedding) for face in unclustered_faces if face.embedding is not None
+            ]
+            face_ids = [face.id for face in unclustered_faces if face.embedding is not None]
 
             processor = FaceProcessor()
             clusters = processor.cluster_embeddings(embeddings, face_ids)

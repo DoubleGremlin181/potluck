@@ -80,8 +80,8 @@ class TestAlembicMigrations:
             result = cursor.fetchone()
             assert result is not None, "No migration version found"
             # Check for the latest migration (update when adding new migrations)
-            assert result[0] == "004_remove_source_type", (
-                f"Expected migration 004_remove_source_type, got {result[0]}"
+            assert result[0] == "001_initial_schema", (
+                f"Expected migration 001_initial_schema, got {result[0]}"
             )
 
 

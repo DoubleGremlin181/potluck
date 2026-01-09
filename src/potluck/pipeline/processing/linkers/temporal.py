@@ -90,22 +90,22 @@ class TemporalLinker(BaseLinker):
             .where(model_class.id.in_(entity_ids))  # type: ignore[attr-defined]
             .where(model_class.occurred_at.isnot(None))  # type: ignore[attr-defined]
         )
-        result = session.execute(stmt)
-        entities = list(result.scalars().all())
+        result = session.exec(stmt)
+        entities = list(result.all())
 
         if len(entities) < 2:
             return []
 
         # Sort by timestamp
-        entities.sort(key=lambda e: e.occurred_at)
+        entities.sort(key=lambda e: e.occurred_at)  # type: ignore[attr-defined]
 
         # Find pairs within the time window
         links: list[EntityLink] = []
 
         for i, entity_a in enumerate(entities):
             for entity_b in entities[i + 1 :]:
-                time_a = entity_a.occurred_at
-                time_b = entity_b.occurred_at
+                time_a = entity_a.occurred_at  # type: ignore[attr-defined]
+                time_b = entity_b.occurred_at  # type: ignore[attr-defined]
                 time_diff = abs((time_b - time_a).total_seconds())
 
                 if time_diff > self._time_window_seconds:
@@ -119,9 +119,9 @@ class TemporalLinker(BaseLinker):
                     links.append(
                         EntityLink(
                             source_type=entity_type,
-                            source_id=entity_a.id,
+                            source_id=entity_a.id,  # type: ignore[attr-defined]
                             target_type=entity_type,
-                            target_id=entity_b.id,
+                            target_id=entity_b.id,  # type: ignore[attr-defined]
                             link_type=LinkType.SAME_TIME,
                             confidence=confidence,
                         )

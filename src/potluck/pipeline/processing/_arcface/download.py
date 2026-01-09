@@ -4,7 +4,6 @@ The pretrained models are from InsightFace's model zoo and are for
 non-commercial research purposes only.
 """
 
-import hashlib
 from pathlib import Path
 
 import httpx
@@ -19,9 +18,6 @@ WEIGHTS_CONFIG: dict[str, dict[str, str]] = {
     "arcface_r50": {
         # ArcFace IResNet50 trained on CASIA-FaceV5 - hosted on HuggingFace
         "url": "https://huggingface.co/JustinLeee/FaceMind_ArcFace_iResNet50_CASIA_FaceV5/resolve/main/ArcFace_iResNet50_CASIA_FaceV5.pth?download=true",
-        # Empty sha256: HuggingFace model weights are versioned by commit, not by hash.
-        # We log the computed hash on download for manual verification if needed.
-        "sha256": "",
         "filename": "arcface_iresnet50.pth",
     },
 }
@@ -51,15 +47,6 @@ def get_weights_path(model_name: str = DEFAULT_MODEL) -> Path:
 
     config = WEIGHTS_CONFIG[model_name]
     return get_cache_dir() / config["filename"]
-
-
-def _compute_sha256(file_path: Path) -> str:
-    """Compute SHA256 hash of a file."""
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            sha256_hash.update(chunk)
-    return sha256_hash.hexdigest()
 
 
 def download_weights(model_name: str = DEFAULT_MODEL, force: bool = False) -> Path:
@@ -112,10 +99,6 @@ def download_weights(model_name: str = DEFAULT_MODEL, force: bool = False) -> Pa
             # Move to final location
             temp_path.rename(weights_path)
             logger.info(f"Downloaded weights to: {weights_path}")
-
-            # Log hash for future verification
-            file_hash = _compute_sha256(weights_path)
-            logger.debug(f"SHA256: {file_hash}")
 
             return weights_path
 

@@ -123,8 +123,8 @@ class SpatialLinker(BaseLinker):
             .where(model_class.latitude.isnot(None))  # type: ignore[attr-defined]
             .where(model_class.longitude.isnot(None))  # type: ignore[attr-defined]
         )
-        result = session.execute(stmt)
-        entities = list(result.scalars().all())
+        result = session.exec(stmt)
+        entities = list(result.all())
 
         if len(entities) < 2:
             return []
@@ -133,12 +133,12 @@ class SpatialLinker(BaseLinker):
         links: list[EntityLink] = []
 
         for i, entity_a in enumerate(entities):
-            lat_a = entity_a.latitude
-            lon_a = entity_a.longitude
+            lat_a = entity_a.latitude  # type: ignore[attr-defined]
+            lon_a = entity_a.longitude  # type: ignore[attr-defined]
 
             for entity_b in entities[i + 1 :]:
-                lat_b = entity_b.latitude
-                lon_b = entity_b.longitude
+                lat_b = entity_b.latitude  # type: ignore[attr-defined]
+                lon_b = entity_b.longitude  # type: ignore[attr-defined]
 
                 distance = haversine_distance(lat_a, lon_a, lat_b, lon_b)
 
@@ -149,9 +149,9 @@ class SpatialLinker(BaseLinker):
                     links.append(
                         EntityLink(
                             source_type=entity_type,
-                            source_id=entity_a.id,
+                            source_id=entity_a.id,  # type: ignore[attr-defined]
                             target_type=entity_type,
-                            target_id=entity_b.id,
+                            target_id=entity_b.id,  # type: ignore[attr-defined]
                             link_type=LinkType.SAME_LOCATION,
                             confidence=max(0.5, confidence),  # Minimum 0.5 for same location
                         )
@@ -165,9 +165,9 @@ class SpatialLinker(BaseLinker):
                     links.append(
                         EntityLink(
                             source_type=entity_type,
-                            source_id=entity_a.id,
+                            source_id=entity_a.id,  # type: ignore[attr-defined]
                             target_type=entity_type,
-                            target_id=entity_b.id,
+                            target_id=entity_b.id,  # type: ignore[attr-defined]
                             link_type=LinkType.NEAR,
                             confidence=max(0.3, confidence),  # Minimum 0.3 for near
                         )

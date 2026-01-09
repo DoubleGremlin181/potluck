@@ -53,8 +53,8 @@ def _get_entity(session: Session, entity_type: EntityType, entity_id: str) -> SQ
         return None
 
     stmt = select(model_class).where(model_class.id == UUID(entity_id))  # type: ignore[attr-defined]
-    result = session.execute(stmt)
-    return result.scalar_one_or_none()
+    result = session.exec(stmt)
+    return result.one_or_none()
 
 
 def _get_media(session: Session, media_id: str) -> Media | None:
