@@ -37,111 +37,42 @@ Potluck is a privacy-first personal knowledge management system that:
 
 ## Installation
 
-### Quick Start (Docker)
+### Quick Install (Recommended)
+
+Install and run Potluck with a single command:
 
 ```bash
-# Clone the repository
+curl -fsSL https://raw.githubusercontent.com/DoubleGremlin181/potluck/main/scripts/install.sh | bash
+```
+
+This will:
+- Create `~/.potluck/` with all configuration files
+- Generate secure database credentials
+- Pull and start all Docker containers
+- Run database migrations
+- Print MCP config for Claude Desktop
+
+**With GPU support** (requires NVIDIA GPU + nvidia-container-toolkit):
+```bash
+curl -fsSL https://raw.githubusercontent.com/DoubleGremlin181/potluck/main/scripts/install.sh | bash -s -- --gpu
+```
+
+After installation:
+- **Web UI**: http://localhost:8000
+- **Logs**: `cd ~/.potluck && docker compose logs -f`
+- **Stop**: `cd ~/.potluck && docker compose down`
+
+### Development Setup
+
+For contributors who want to modify the code:
+
+```bash
 git clone https://github.com/DoubleGremlin181/potluck.git
 cd potluck
-
-# Run the setup script (creates .env, starts services, runs migrations)
-./scripts/setup.sh
+./scripts/setup.sh        # Start all services
+# or
+./scripts/setup.sh --db-only  # Start only DB, run app locally with: uv run potluck web
 ```
-
-The setup script will:
-
-1. Prompt for configuration (password, ports) or use defaults if skipped
-2. Create `.env` from `.env.example`
-3. Start PostgreSQL (with pgvector and pg_tde encryption), Redis, and the app via Docker Compose
-4. Wait for the database to be ready
-5. Run Alembic migrations to create all tables with encryption enabled
-
-Options:
-- `--db-only` - Only start the database (useful for development/testing)
-- `--non-interactive` - Skip prompts and use default values
-- `--gpu` - Enable GPU support (requires NVIDIA GPU + nvidia-container-toolkit)
-
-### Manual Setup
-
-```bash
-# 1. Copy environment file and configure
-cp .env.example .env
-# Edit .env to set POSTGRES_PASSWORD
-
-# 2. Start services
-docker compose up -d
-
-# 3. Run migrations (after db is healthy)
-docker compose exec app alembic upgrade head
-```
-
-### GPU Support
-
-Potluck supports GPU acceleration for ML tasks (embeddings, face detection, OCR, captioning). GPU support is **disabled by default** to keep the Docker image small (~1.5GB vs ~4.5GB).
-
-#### Enable GPU with Setup Script
-
-```bash
-# Build with GPU support (requires NVIDIA GPU + drivers)
-./scripts/setup.sh --gpu
-```
-
-#### Enable GPU with Docker Compose
-
-```bash
-# Option 1: Build with build argument
-docker compose build --build-arg GPU=true
-docker compose up -d
-
-# Option 2: Set in .env for persistence
-echo "GPU=true" >> .env
-docker compose build
-docker compose up -d
-```
-
-#### NVIDIA Container Toolkit
-
-For GPU support in Docker, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html):
-
-```bash
-# Ubuntu/Debian
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-sudo systemctl restart docker
-```
-
-Then add GPU access to docker-compose.yml (under the `app` service):
-
-```yaml
-deploy:
-  resources:
-    reservations:
-      devices:
-        - driver: nvidia
-          count: 1
-          capabilities: [gpu]
-```
-
-### Local Development
-
-```bash
-# Install all dependencies with uv
-uv sync --all-extras
-
-# Setup git hooks (runs lint/tests on commit and push)
-./scripts/setup-hooks.sh
-
-# Start database only (requires Docker)
-./scripts/setup.sh --db-only
-
-# Run the app locally
-uv run potluck web
-```
-
-> **Note**: The `setup.sh` script automatically configures git hooks. If you only need hooks without Docker, run `./scripts/setup-hooks.sh` directly.
 
 ## Encryption Key Management
 
@@ -221,25 +152,24 @@ The tests verify:
 
 ### MCP Server (for Claude Desktop)
 
-Add to your Claude Desktop config:
+Add to your Claude Desktop config (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "potluck": {
-      "command": "potluck",
-      "args": ["mcp"]
+      "command": "docker",
+      "args": ["exec", "-i", "potluck-app", "potluck", "mcp"]
     }
   }
 }
 ```
 
+The install script prints this config automatically.
+
 ### Web UI
 
-```bash
-potluck web
-# Visit http://localhost:8000
-```
+Visit http://localhost:8000 after installation.
 
 ## Project Structure
 
@@ -264,20 +194,6 @@ potluck/
 ├── scripts/           # Setup and utility scripts
 └── docker/            # Dockerfiles for app and database
 ```
-
-## For Contributors
-
-### CI Base Image Caching
-
-CI uses pre-built base images from GitHub Container Registry to dramatically speed up builds:
-
-- **Location**: `ghcr.io/doublegremlin181/potluck-base`
-- **Tags**: `cpu-<hash>` where `<hash>` is derived from `pyproject.toml` + `uv.lock`
-- **Rebuild triggers**: Changes to `pyproject.toml` or `uv.lock`
-- **Cache hit**: ~2-3 min CI builds (just code copy + tests)
-- **Cache miss**: ~10 min CI builds (full dependency install)
-
-Local builds automatically fall back to building dependencies from scratch if GHCR is unavailable.
 
 ## License
 
