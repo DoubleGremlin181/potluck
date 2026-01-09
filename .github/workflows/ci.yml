@@ -181,12 +181,12 @@ jobs:
 
       - name: Run migrations
         run: |
-          docker compose --profile test run --no-build --rm test \
+          docker compose --profile test run --rm test \
             uv run alembic upgrade head
 
       - name: Run all tests
         run: |
-          docker compose --profile test run --no-build --rm test \
+          docker compose --profile test run --rm test \
             uv run pytest tests/ -v --run-e2e --run-ml --cov=potluck --cov-report=xml
 
       - name: Copy coverage report
