@@ -1,9 +1,7 @@
-"""OCR text extraction stage for images.
+"""OCR text extraction processor for images.
 
 This module provides OCR (Optical Character Recognition) capabilities using EasyOCR
 to extract text from images. Supports multiple languages with auto-detection.
-
-Requires ML dependencies: pip install potluck[ml]
 """
 
 import time
@@ -11,12 +9,20 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import easyocr
+from celery import Task
+from celery.exceptions import Retry
 
+from potluck.core.celery import (
+    MAX_RETRIES,
+    RETRY_BACKOFF,
+    RETRY_BACKOFF_MAX,
+    celery_app,
+)
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
-from potluck.pipeline.processing.base import BaseProcessingStage
+from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
 
 logger = get_logger(__name__)
 
@@ -25,26 +31,27 @@ logger = get_logger(__name__)
 DEFAULT_LANGUAGES = ["en"]
 
 
-class OCRStage(BaseProcessingStage):
-    """Stage for extracting text from images using EasyOCR.
+class OCRProcessor(BaseProcessor):
+    """Processor for extracting text from images using EasyOCR.
 
     EasyOCR supports 80+ languages and can detect text in:
     - Natural scene images (signs, labels, etc.)
     - Document images (scanned documents, screenshots)
     - Handwritten text (limited support)
 
-    The stage uses lazy initialization to avoid loading the heavy
+    The processor uses lazy initialization to avoid loading the heavy
     model until it's actually needed.
     """
 
     NAME: ClassVar[str] = "ocr"
+    PERSIST_FIELDS: ClassVar[list[str]] = ["ocr_text"]
 
     def __init__(
         self,
         languages: list[str] | None = None,
         gpu: bool = True,
     ) -> None:
-        """Initialize the OCR stage.
+        """Initialize the OCR processor.
 
         Args:
             languages: List of language codes to recognize (e.g., ['en', 'es']).
@@ -172,3 +179,22 @@ class OCRStage(BaseProcessingStage):
             skipped=sum(1 for r in results if r.status == StageStatus.SKIPPED),
             results=results,
         )
+
+
+# -----------------------------------------------------------------------------
+# Celery Task
+# -----------------------------------------------------------------------------
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    queue="process",
+    autoretry_for=(Retry,),
+    retry_backoff=RETRY_BACKOFF,
+    retry_backoff_max=RETRY_BACKOFF_MAX,
+    max_retries=MAX_RETRIES,
+    acks_late=True,
+)
+def run_ocr_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
+    """Run OCR on a media item."""
+    return run_processor_task(self, media_id, OCRProcessor)

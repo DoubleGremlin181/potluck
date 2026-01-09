@@ -1,32 +1,38 @@
-"""Image captioning stage using BLIP-2.
-
-Requires ML dependencies: pip install potluck[ml]
-"""
+"""Image captioning processor using BLIP-2."""
 
 import time
 from pathlib import Path
 from typing import Any, ClassVar
 
 import torch
+from celery import Task
+from celery.exceptions import Retry
 from PIL import Image
 from transformers import Blip2ForConditionalGeneration, Blip2Processor
 
+from potluck.core.celery import (
+    MAX_RETRIES,
+    RETRY_BACKOFF,
+    RETRY_BACKOFF_MAX,
+    celery_app,
+)
 from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.base import BaseProcessingStage
+from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
 
 logger = get_logger(__name__)
 
 
-class CaptioningStage(BaseProcessingStage):
-    """Stage for generating AI image captions using BLIP-2.
+class CaptioningProcessor(BaseProcessor):
+    """Processor for generating AI image captions using BLIP-2.
 
     Generates human-readable alt-text descriptions for images using the
     BLIP-2 model from Salesforce.
     """
 
     NAME: ClassVar[str] = "captioning"
+    PERSIST_FIELDS: ClassVar[list[str]] = ["caption"]
 
     DEFAULT_MODEL = "Salesforce/blip2-opt-2.7b"
 
@@ -37,7 +43,7 @@ class CaptioningStage(BaseProcessingStage):
         max_length: int = 50,
         device: str | None = None,
     ) -> None:
-        """Initialize the captioning stage.
+        """Initialize the captioning processor.
 
         Args:
             model_name: HuggingFace model identifier for BLIP-2.
@@ -148,3 +154,22 @@ class CaptioningStage(BaseProcessingStage):
                 processing_time_ms=elapsed_ms,
                 error_message=f"Captioning failed: {e}",
             )
+
+
+# -----------------------------------------------------------------------------
+# Celery Task
+# -----------------------------------------------------------------------------
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    queue="process",
+    autoretry_for=(Retry,),
+    retry_backoff=RETRY_BACKOFF,
+    retry_backoff_max=RETRY_BACKOFF_MAX,
+    max_retries=MAX_RETRIES,
+    acks_late=True,
+)
+def run_captioning_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
+    """Generate AI caption for a media item."""
+    return run_processor_task(self, media_id, CaptioningProcessor)

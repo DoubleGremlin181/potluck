@@ -1,4 +1,4 @@
-"""Unit tests for HashingStage."""
+"""Unit tests for HashingProcessor."""
 
 import tempfile
 from pathlib import Path
@@ -8,11 +8,11 @@ from PIL import Image
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.hashing import HashingStage, compute_phash_distance
+from potluck.pipeline.processing.hashing import HashingProcessor, compute_phash_distance
 
 
-class TestHashingStage:
-    """Tests for HashingStage."""
+class TestHashingProcessor:
+    """Tests for HashingProcessor."""
 
     @staticmethod
     def _create_test_image() -> Path:
@@ -30,14 +30,14 @@ class TestHashingStage:
             return Path(f.name)
 
     def test_stage_has_name(self) -> None:
-        """HashingStage should have a NAME attribute."""
-        stage = HashingStage()
+        """HashingProcessor should have a NAME attribute."""
+        stage = HashingProcessor()
         assert stage.NAME == "hashing"
 
     def test_hash_image_computes_both_hashes(self) -> None:
-        """HashingStage should compute both SHA256 and pHash for images."""
+        """HashingProcessor should compute both SHA256 and pHash for images."""
         sample_image = self._create_test_image()
-        stage = HashingStage()
+        stage = HashingProcessor()
         media = Media(
             id=uuid4(),
             file_path=str(sample_image),
@@ -53,9 +53,9 @@ class TestHashingStage:
         assert result.data["perceptual_hash"] is not None
 
     def test_hash_non_image_only_file_hash(self) -> None:
-        """HashingStage should only compute SHA256 for non-images."""
+        """HashingProcessor should only compute SHA256 for non-images."""
         sample_text_file = self._create_test_text_file()
-        stage = HashingStage()
+        stage = HashingProcessor()
         media = Media(
             id=uuid4(),
             file_path=str(sample_text_file),
@@ -70,8 +70,8 @@ class TestHashingStage:
         assert result.data["perceptual_hash"] is None
 
     def test_hash_missing_file_fails(self) -> None:
-        """HashingStage should fail for missing files."""
-        stage = HashingStage()
+        """HashingProcessor should fail for missing files."""
+        stage = HashingProcessor()
         media = Media(
             id=uuid4(),
             file_path="/nonexistent/file.png",
@@ -86,9 +86,9 @@ class TestHashingStage:
         assert "not found" in result.error_message.lower()
 
     def test_hash_deterministic(self) -> None:
-        """HashingStage should produce deterministic hashes."""
+        """HashingProcessor should produce deterministic hashes."""
         sample_image = self._create_test_image()
-        stage = HashingStage()
+        stage = HashingProcessor()
         media = Media(
             id=uuid4(),
             file_path=str(sample_image),

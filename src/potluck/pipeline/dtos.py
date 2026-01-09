@@ -7,15 +7,13 @@ providing a unified set of data models for pipeline operations.
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Self
+from typing import Any, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from potluck.models.base import EntityType
-
-if TYPE_CHECKING:
-    from potluck.models.sources import ImportRun
+from potluck.models.base import EntityType, SourceType
+from potluck.models.sources import ImportRun, ImportStatus
 
 
 class StageStatus(str, Enum):
@@ -141,12 +139,11 @@ class DiscoveryResult(BaseModel):
         return bool(self.available_entities)
 
     @property
-    def source_type(self) -> Any:
+    def source_type(self) -> SourceType:
         """Get source type from stage or default to GENERIC."""
-        from potluck.models.base import SourceType
-
         if self.stage is not None:
-            return self.stage.SOURCE_TYPE
+            source: SourceType = self.stage.SOURCE_TYPE
+            return source
         return SourceType.GENERIC
 
 
@@ -172,7 +169,7 @@ class PipelineStats(BaseModel):
 class PipelineResult(BaseModel):
     """Result of a complete pipeline run."""
 
-    import_run: "ImportRun"
+    import_run: ImportRun
     """The ImportRun record with statistics."""
 
     stats: PipelineStats
@@ -183,17 +180,8 @@ class PipelineResult(BaseModel):
     @property
     def success(self) -> bool:
         """Check if the pipeline completed successfully."""
-        from potluck.models.sources import ImportStatus
-
         return self.import_run.status == ImportStatus.COMPLETED
 
 
 # Rebuild PipelineResult to resolve forward reference to ImportRun
-def _rebuild_models() -> None:
-    """Rebuild models with forward references after all types are defined."""
-    from potluck.models.sources import ImportRun  # noqa: F401
-
-    PipelineResult.model_rebuild()
-
-
-_rebuild_models()
+PipelineResult.model_rebuild()

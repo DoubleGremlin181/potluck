@@ -1,4 +1,4 @@
-"""Unit tests for CaptioningStage."""
+"""Unit tests for CaptioningProcessor."""
 
 import pytest
 
@@ -9,20 +9,20 @@ from uuid import uuid4
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.captioning import CaptioningStage
+from potluck.pipeline.processing.captioning import CaptioningProcessor
 
 
-class TestCaptioningStage:
-    """Tests for CaptioningStage."""
+class TestCaptioningProcessor:
+    """Tests for CaptioningProcessor."""
 
     def test_stage_has_name(self) -> None:
-        """CaptioningStage should have a NAME attribute."""
-        stage = CaptioningStage()
+        """CaptioningProcessor should have a NAME attribute."""
+        stage = CaptioningProcessor()
         assert stage.NAME == "captioning"
 
     def test_should_execute_only_images(self) -> None:
-        """CaptioningStage should only process images."""
-        stage = CaptioningStage()
+        """CaptioningProcessor should only process images."""
+        stage = CaptioningProcessor()
 
         image_media = Media(
             id=uuid4(),
@@ -48,8 +48,8 @@ class TestCaptioningStage:
         assert stage.should_execute(audio_media) is False
 
     def test_skip_non_image(self) -> None:
-        """CaptioningStage should skip non-image media."""
-        stage = CaptioningStage()
+        """CaptioningProcessor should skip non-image media."""
+        stage = CaptioningProcessor()
         media = Media(
             id=uuid4(),
             file_path="/test.mp4",
@@ -62,8 +62,8 @@ class TestCaptioningStage:
         assert result.status == StageStatus.SKIPPED
 
     def test_missing_file_fails(self) -> None:
-        """CaptioningStage should fail for missing files."""
-        stage = CaptioningStage()
+        """CaptioningProcessor should fail for missing files."""
+        stage = CaptioningProcessor()
         media = Media(
             id=uuid4(),
             file_path="/nonexistent/file.jpg",
@@ -78,14 +78,14 @@ class TestCaptioningStage:
         assert "not found" in result.error_message.lower()
 
     def test_default_model_settings(self) -> None:
-        """CaptioningStage should use BLIP-2 model by default."""
-        stage = CaptioningStage()
+        """CaptioningProcessor should use BLIP-2 model by default."""
+        stage = CaptioningProcessor()
         assert stage._model_name == "Salesforce/blip2-opt-2.7b"
         assert stage._max_length == 50
 
     def test_custom_model_settings(self) -> None:
-        """CaptioningStage should accept custom model settings."""
-        stage = CaptioningStage(
+        """CaptioningProcessor should accept custom model settings."""
+        stage = CaptioningProcessor(
             model_name="custom/model",
             max_length=100,
             device="cpu",

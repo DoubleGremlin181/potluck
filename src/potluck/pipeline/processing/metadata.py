@@ -1,10 +1,11 @@
-"""EXIF metadata extraction stage for media files.
+"""EXIF metadata extraction processor for media files.
 
 This module extracts metadata from images including:
 - GPS coordinates (converted from DMS to decimal degrees)
 - Timestamps (with handling for various date formats)
 - Camera make and model
 - Full EXIF data stored as JSON
+- Celery task for async processing
 """
 
 import json
@@ -14,12 +15,20 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import exifread
+from celery import Task
+from celery.exceptions import Retry
 
+from potluck.core.celery import (
+    MAX_RETRIES,
+    RETRY_BACKOFF,
+    RETRY_BACKOFF_MAX,
+    celery_app,
+)
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.base import BaseProcessingStage
+from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
 
 logger = get_logger(__name__)
 
@@ -35,8 +44,8 @@ EXIF_DATE_FORMATS = [
 ]
 
 
-class MetadataStage(BaseProcessingStage):
-    """Stage for extracting EXIF metadata from images.
+class MetadataProcessor(BaseProcessor):
+    """Processor for extracting EXIF metadata from images.
 
     Extracts:
     - GPS coordinates (latitude, longitude converted to decimal)
@@ -46,6 +55,13 @@ class MetadataStage(BaseProcessingStage):
     """
 
     NAME: ClassVar[str] = "metadata"
+    PERSIST_FIELDS: ClassVar[list[str]] = [
+        "latitude",
+        "longitude",
+        "camera_make",
+        "camera_model",
+        "exif_data",
+    ]
 
     def should_execute(self, media: Media) -> bool:
         """Only process images which typically have EXIF data."""
@@ -225,3 +241,22 @@ class MetadataStage(BaseProcessingStage):
                 exif_dict[key] = "<unserializable>"
 
         return json.dumps(exif_dict, ensure_ascii=False)
+
+
+# -----------------------------------------------------------------------------
+# Celery Task
+# -----------------------------------------------------------------------------
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    queue="process",
+    autoretry_for=(Retry,),
+    retry_backoff=RETRY_BACKOFF,
+    retry_backoff_max=RETRY_BACKOFF_MAX,
+    max_retries=MAX_RETRIES,
+    acks_late=True,
+)
+def run_metadata_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
+    """Extract EXIF metadata from a media item."""
+    return run_processor_task(self, media_id, MetadataProcessor)

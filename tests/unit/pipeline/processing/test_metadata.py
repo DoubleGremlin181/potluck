@@ -1,4 +1,4 @@
-"""Unit tests for MetadataStage."""
+"""Unit tests for MetadataProcessor."""
 
 import tempfile
 from pathlib import Path
@@ -8,11 +8,11 @@ from PIL import Image
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.metadata import MetadataStage
+from potluck.pipeline.processing.metadata import MetadataProcessor
 
 
-class TestMetadataStage:
-    """Tests for MetadataStage."""
+class TestMetadataProcessor:
+    """Tests for MetadataProcessor."""
 
     @staticmethod
     def _create_test_image() -> Path:
@@ -23,13 +23,13 @@ class TestMetadataStage:
             return Path(f.name)
 
     def test_stage_has_name(self) -> None:
-        """MetadataStage should have a NAME attribute."""
-        stage = MetadataStage()
+        """MetadataProcessor should have a NAME attribute."""
+        stage = MetadataProcessor()
         assert stage.NAME == "metadata"
 
     def test_should_execute_only_images(self) -> None:
-        """MetadataStage should only process images."""
-        stage = MetadataStage()
+        """MetadataProcessor should only process images."""
+        stage = MetadataProcessor()
 
         image_media = Media(
             id=uuid4(),
@@ -55,8 +55,8 @@ class TestMetadataStage:
         assert stage.should_execute(audio_media) is False
 
     def test_skip_non_image(self) -> None:
-        """MetadataStage should skip non-image media."""
-        stage = MetadataStage()
+        """MetadataProcessor should skip non-image media."""
+        stage = MetadataProcessor()
         media = Media(
             id=uuid4(),
             file_path="/test.mp4",
@@ -69,8 +69,8 @@ class TestMetadataStage:
         assert result.status == StageStatus.SKIPPED
 
     def test_missing_file_fails(self) -> None:
-        """MetadataStage should fail for missing files."""
-        stage = MetadataStage()
+        """MetadataProcessor should fail for missing files."""
+        stage = MetadataProcessor()
         media = Media(
             id=uuid4(),
             file_path="/nonexistent/file.jpg",
@@ -85,9 +85,9 @@ class TestMetadataStage:
         assert "not found" in result.error_message.lower()
 
     def test_image_without_exif(self) -> None:
-        """MetadataStage should handle images without EXIF data."""
+        """MetadataProcessor should handle images without EXIF data."""
         sample_image = self._create_test_image()
-        stage = MetadataStage()
+        stage = MetadataProcessor()
         media = Media(
             id=uuid4(),
             file_path=str(sample_image),

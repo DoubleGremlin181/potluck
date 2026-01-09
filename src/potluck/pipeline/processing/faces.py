@@ -1,34 +1,42 @@
-"""Face detection and clustering stage using MTCNN + ArcFace (PyTorch native).
+"""Face detection and clustering processor using MTCNN + ArcFace (PyTorch native).
 
 Uses MTCNN for detection (from facenet-pytorch) and ArcFace IResNet for recognition.
 All inference runs on native PyTorch.
-
-Requires ML dependencies: pip install potluck[ml]
 """
 
 import time
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 from uuid import UUID
 
 import numpy as np
 import torch
+from celery import Task
+from celery.exceptions import Retry
 from facenet_pytorch import MTCNN
 from PIL import Image
 from sklearn.cluster import DBSCAN
+from sqlmodel import Session
 
+from potluck.core.celery import (
+    MAX_RETRIES,
+    RETRY_BACKOFF,
+    RETRY_BACKOFF_MAX,
+    celery_app,
+)
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
+from potluck.models.faces import MediaPersonLink
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing._arcface import download_weights, get_weights_path, iresnet50
-from potluck.pipeline.processing.base import BaseProcessingStage
+from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
 
 logger = get_logger(__name__)
 
 
-class FaceStage(BaseProcessingStage):
-    """Stage for face detection using MTCNN + ArcFace (PyTorch native).
+class FaceProcessor(BaseProcessor):
+    """Processor for face detection using MTCNN + ArcFace (PyTorch native).
 
     Uses MTCNN for face detection and ArcFace IResNet50 for 512-dimensional
     face embeddings. The embeddings can later be clustered to group similar
@@ -38,6 +46,8 @@ class FaceStage(BaseProcessingStage):
     """
 
     NAME: ClassVar[str] = "faces"
+    # FaceProcessor does NOT use PERSIST_FIELDS - it overrides persist_result()
+    # to create MediaPersonLink records instead of updating Media fields
 
     # DBSCAN clustering parameters
     DEFAULT_CLUSTERING_EPS = 0.6
@@ -54,7 +64,7 @@ class FaceStage(BaseProcessingStage):
         min_samples: int = DEFAULT_MIN_SAMPLES,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
     ) -> None:
-        """Initialize the face stage.
+        """Initialize the face processor.
 
         Args:
             device: Device to use for inference ('cuda', 'cpu', or None for auto).
@@ -293,6 +303,50 @@ class FaceStage(BaseProcessingStage):
                 error_message=f"Face detection failed: {e}",
             )
 
+    def persist_result(
+        self, session: Session, media_id: str, result: StageResult
+    ) -> dict[str, Any]:
+        """Persist detected faces to MediaPersonLink records.
+
+        Unlike other processors that update Media fields, FaceProcessor creates
+        new MediaPersonLink records for each detected face.
+
+        Args:
+            session: Database session for persistence.
+            media_id: ID of the media item being processed.
+            result: The StageResult from execute().
+
+        Returns:
+            Dict with task result summary.
+        """
+        faces = result.data.get("faces", [])
+
+        for face_data in faces:
+            face_link = MediaPersonLink(
+                media_id=UUID(media_id),
+                person_id=None,
+                cluster_id=None,
+                confidence=face_data.get("confidence", 1.0),
+                is_confirmed=False,
+                embedding=face_data.get("embedding"),
+                bbox_x=face_data.get("bbox_x"),
+                bbox_y=face_data.get("bbox_y"),
+                bbox_width=face_data.get("bbox_width"),
+                bbox_height=face_data.get("bbox_height"),
+            )
+            session.add(face_link)
+
+        if faces:
+            session.commit()
+            logger.info(f"Persisted {len(faces)} faces for media {media_id}")
+
+        return {
+            "media_id": media_id,
+            "status": result.status.value,
+            "faces_detected": len(faces),
+            "processing_time_ms": result.processing_time_ms,
+        }
+
     def cluster_embeddings(
         self,
         embeddings: list[list[float]],
@@ -383,3 +437,22 @@ class FaceStage(BaseProcessingStage):
             return None, closest_distance
 
         return closest_id, closest_distance
+
+
+# -----------------------------------------------------------------------------
+# Celery Task
+# -----------------------------------------------------------------------------
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    queue="process",
+    autoretry_for=(Retry,),
+    retry_backoff=RETRY_BACKOFF,
+    retry_backoff_max=RETRY_BACKOFF_MAX,
+    max_retries=MAX_RETRIES,
+    acks_late=True,
+)
+def run_faces_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
+    """Detect faces in a media item."""
+    return run_processor_task(self, media_id, FaceProcessor)

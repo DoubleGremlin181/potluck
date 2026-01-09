@@ -12,11 +12,11 @@ from potluck.pipeline.tasks.ingestion import (
 from potluck.pipeline.tasks.processing import (
     cluster_unassigned_faces,
     run_basic_processing,
-    run_captioning_stage,
-    run_faces_stage,
-    run_hashing_stage,
-    run_metadata_stage,
-    run_ocr_stage,
+    run_captioning_processor,
+    run_faces_processor,
+    run_hashing_processor,
+    run_metadata_processor,
+    run_ocr_processor,
     run_processing_pipeline,
 )
 
@@ -26,11 +26,11 @@ __all__ = [
     "cancel_ingestion",
     "start_ingestion",
     # Processing tasks
-    "run_hashing_stage",
-    "run_metadata_stage",
-    "run_ocr_stage",
-    "run_faces_stage",
-    "run_captioning_stage",
+    "run_hashing_processor",
+    "run_metadata_processor",
+    "run_ocr_processor",
+    "run_faces_processor",
+    "run_captioning_processor",
     "run_processing_pipeline",
     "run_basic_processing",
     "cluster_unassigned_faces",

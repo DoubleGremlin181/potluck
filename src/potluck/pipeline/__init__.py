@@ -9,7 +9,7 @@ Public API
 Core Classes:
     Stage: Abstract base class for all pipeline stages
     BaseIngestionStage: Base class for ingestion stages
-    BaseProcessingStage: Base class for processing stages
+    BaseProcessor: Base class for processing stages
     PipelineOrchestrator: Main orchestrator for running ingestion pipelines
 
 DTOs:
@@ -39,15 +39,12 @@ Registry:
     get_stage: Get a registered stage by name
     list_stages: List all registered stages
 
-Processing Stages (non-ML):
-    HashingStage: Compute file hashes
-    MetadataStage: Extract EXIF metadata
-
-ML-Dependent Stages:
-    These require `pip install potluck[ml]` and must be imported directly:
-    - potluck.pipeline.processing.ocr.OCRStage
-    - potluck.pipeline.processing.faces.FaceStage
-    - potluck.pipeline.processing.captioning.CaptioningStage
+Processors:
+    HashingProcessor: Compute file hashes
+    MetadataProcessor: Extract EXIF metadata
+    OCRProcessor: Text extraction from images
+    FaceProcessor: Face detection using MTCNN + ArcFace
+    CaptioningProcessor: Image captioning using BLIP-2
 
 Example Usage
 -------------
@@ -69,9 +66,9 @@ Async ingestion via Celery:
 
 Custom processing:
 
-    from potluck.pipeline import HashingStage, MetadataStage
+    from potluck.pipeline.processing import HashingProcessor, MetadataProcessor
 
-    hashing = HashingStage()
+    hashing = HashingProcessor()
     result = hashing.execute(media)
 """
 
@@ -107,12 +104,15 @@ from potluck.pipeline.orchestrator import (
     ingest,
 )
 
-# Processing base
-from potluck.pipeline.processing import BaseProcessingStage
-
-# Non-ML processing stages (safe to import without ML deps)
-from potluck.pipeline.processing.hashing import HashingStage
-from potluck.pipeline.processing.metadata import MetadataStage
+# Processing base and processors
+from potluck.pipeline.processing import (
+    BaseProcessor,
+    CaptioningProcessor,
+    FaceProcessor,
+    HashingProcessor,
+    MetadataProcessor,
+    OCRProcessor,
+)
 
 # Tasks
 from potluck.pipeline.tasks.ingestion import (
@@ -129,7 +129,7 @@ __all__ = [
     # Base classes
     "Stage",
     "BaseIngestionStage",
-    "BaseProcessingStage",
+    "BaseProcessor",
     # DTOs
     "StageStatus",
     "StageResult",
@@ -149,9 +149,12 @@ __all__ = [
     "get_stage",
     "list_stages",
     "clear_registry",
-    # Processing stages (non-ML)
-    "HashingStage",
-    "MetadataStage",
+    # Processors
+    "HashingProcessor",
+    "MetadataProcessor",
+    "OCRProcessor",
+    "FaceProcessor",
+    "CaptioningProcessor",
     # Tasks
     "run_ingestion",
     "cancel_ingestion",

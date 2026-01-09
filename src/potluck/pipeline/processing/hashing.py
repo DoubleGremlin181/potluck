@@ -1,29 +1,38 @@
-"""Hashing stage for media file deduplication and similarity detection.
+"""Hashing processor for media file deduplication and similarity detection.
 
 This module provides:
 - SHA256 hashing for exact file matching (deduplication)
 - Perceptual hashing (pHash) for visual similarity detection
+- Celery task for async processing
 """
 
 import time
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import imagehash
+from celery import Task
+from celery.exceptions import Retry
 from PIL import Image
 
+from potluck.core.celery import (
+    MAX_RETRIES,
+    RETRY_BACKOFF,
+    RETRY_BACKOFF_MAX,
+    celery_app,
+)
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.base import BaseProcessingStage
+from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
 from potluck.pipeline.utils.hashing import compute_file_hash
 
 logger = get_logger(__name__)
 
 
-class HashingStage(BaseProcessingStage):
-    """Stage for computing file and perceptual hashes.
+class HashingProcessor(BaseProcessor):
+    """Processor for computing file and perceptual hashes.
 
     Computes:
     - SHA256 hash for all media files (exact matching)
@@ -35,6 +44,7 @@ class HashingStage(BaseProcessingStage):
     """
 
     NAME: ClassVar[str] = "hashing"
+    PERSIST_FIELDS: ClassVar[list[str]] = ["file_hash", "perceptual_hash"]
 
     def execute(self, media: Media) -> StageResult:
         """Compute hashes for a media file.
@@ -143,3 +153,22 @@ def compute_phash_distance(hash1: str, hash2: str) -> int:
     h1 = imagehash.hex_to_hash(hash1)
     h2 = imagehash.hex_to_hash(hash2)
     return h1 - h2
+
+
+# -----------------------------------------------------------------------------
+# Celery Task
+# -----------------------------------------------------------------------------
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    queue="process",
+    autoretry_for=(Retry,),
+    retry_backoff=RETRY_BACKOFF,
+    retry_backoff_max=RETRY_BACKOFF_MAX,
+    max_retries=MAX_RETRIES,
+    acks_late=True,
+)
+def run_hashing_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
+    """Compute SHA256 and perceptual hash for a media item."""
+    return run_processor_task(self, media_id, HashingProcessor)

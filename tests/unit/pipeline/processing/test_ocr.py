@@ -1,4 +1,4 @@
-"""Unit tests for OCRStage."""
+"""Unit tests for OCRProcessor."""
 
 import pytest
 
@@ -9,20 +9,20 @@ from uuid import uuid4
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.ocr import OCRStage
+from potluck.pipeline.processing.ocr import OCRProcessor
 
 
-class TestOCRStage:
-    """Tests for OCRStage."""
+class TestOCRProcessor:
+    """Tests for OCRProcessor."""
 
     def test_stage_has_name(self) -> None:
-        """OCRStage should have a NAME attribute."""
-        stage = OCRStage()
+        """OCRProcessor should have a NAME attribute."""
+        stage = OCRProcessor()
         assert stage.NAME == "ocr"
 
     def test_should_execute_only_images(self) -> None:
-        """OCRStage should only process images."""
-        stage = OCRStage()
+        """OCRProcessor should only process images."""
+        stage = OCRProcessor()
 
         image_media = Media(
             id=uuid4(),
@@ -41,8 +41,8 @@ class TestOCRStage:
         assert stage.should_execute(video_media) is False
 
     def test_skip_non_image(self) -> None:
-        """OCRStage should skip non-image media."""
-        stage = OCRStage()
+        """OCRProcessor should skip non-image media."""
+        stage = OCRProcessor()
         media = Media(
             id=uuid4(),
             file_path="/test.mp4",
@@ -55,8 +55,8 @@ class TestOCRStage:
         assert result.status == StageStatus.SKIPPED
 
     def test_missing_file_fails(self) -> None:
-        """OCRStage should fail for missing files."""
-        stage = OCRStage()
+        """OCRProcessor should fail for missing files."""
+        stage = OCRProcessor()
         media = Media(
             id=uuid4(),
             file_path="/nonexistent/file.jpg",
@@ -71,21 +71,21 @@ class TestOCRStage:
         assert "not found" in result.error_message.lower()
 
     def test_default_languages(self) -> None:
-        """OCRStage should default to English."""
-        stage = OCRStage()
+        """OCRProcessor should default to English."""
+        stage = OCRProcessor()
         assert stage._languages == ["en"]
 
     def test_custom_languages(self) -> None:
-        """OCRStage should accept custom languages."""
-        stage = OCRStage(languages=["en", "es", "fr"])
+        """OCRProcessor should accept custom languages."""
+        stage = OCRProcessor(languages=["en", "es", "fr"])
         assert stage._languages == ["en", "es", "fr"]
 
     def test_gpu_default_enabled(self) -> None:
-        """OCRStage should enable GPU by default."""
-        stage = OCRStage()
+        """OCRProcessor should enable GPU by default."""
+        stage = OCRProcessor()
         assert stage._gpu is True
 
     def test_gpu_can_be_disabled(self) -> None:
-        """OCRStage should allow disabling GPU."""
-        stage = OCRStage(gpu=False)
+        """OCRProcessor should allow disabling GPU."""
+        stage = OCRProcessor(gpu=False)
         assert stage._gpu is False

@@ -12,13 +12,13 @@ import pytest
 from potluck.pipeline.dtos import StageResult, StageStatus
 
 
-class TestRunHashingStage:
-    """Tests for run_hashing_stage task."""
+class TestRunHashingProcessor:
+    """Tests for run_hashing_processor task."""
 
     @pytest.mark.ml
     def test_hashing_returns_correct_structure(self) -> None:
         """Task returns dict with expected keys."""
-        from potluck.pipeline.tasks.processing import run_hashing_stage
+        from potluck.pipeline.tasks.processing import run_hashing_processor
 
         # Mock the database and stage
         mock_media = MagicMock()
@@ -39,11 +39,11 @@ class TestRunHashingStage:
             patch("potluck.pipeline.tasks.processing._get_media", return_value=mock_media),
             patch("potluck.pipeline.tasks.processing._update_media_fields"),
             patch(
-                "potluck.pipeline.processing.hashing.HashingStage.execute",
+                "potluck.pipeline.processing.hashing.HashingProcessor.execute",
                 return_value=mock_result,
             ),
         ):
-            result = run_hashing_stage(str(mock_media.id))
+            result = run_hashing_processor(str(mock_media.id))
 
             assert "media_id" in result
             assert "status" in result
@@ -56,7 +56,7 @@ class TestRunHashingStage:
         """Task rejects when media not found."""
         from celery.exceptions import Reject
 
-        from potluck.pipeline.tasks.processing import run_hashing_stage
+        from potluck.pipeline.tasks.processing import run_hashing_processor
 
         with (
             patch("potluck.pipeline.tasks.processing.get_engine"),
@@ -64,18 +64,18 @@ class TestRunHashingStage:
             patch("potluck.pipeline.tasks.processing._get_media", return_value=None),
         ):
             with pytest.raises(Reject) as exc_info:
-                run_hashing_stage(str(uuid4()))
+                run_hashing_processor(str(uuid4()))
 
             assert "Media not found" in str(exc_info.value)
 
 
-class TestRunMetadataStage:
-    """Tests for run_metadata_stage task."""
+class TestRunMetadataProcessor:
+    """Tests for run_metadata_processor task."""
 
     @pytest.mark.ml
     def test_metadata_returns_correct_structure(self) -> None:
         """Task returns dict with expected keys."""
-        from potluck.pipeline.tasks.processing import run_metadata_stage
+        from potluck.pipeline.tasks.processing import run_metadata_processor
 
         mock_media = MagicMock()
         mock_media.id = uuid4()
@@ -99,24 +99,24 @@ class TestRunMetadataStage:
             patch("potluck.pipeline.tasks.processing._get_media", return_value=mock_media),
             patch("potluck.pipeline.tasks.processing._update_media_fields"),
             patch(
-                "potluck.pipeline.processing.metadata.MetadataStage.execute",
+                "potluck.pipeline.processing.metadata.MetadataProcessor.execute",
                 return_value=mock_result,
             ),
         ):
-            result = run_metadata_stage(str(mock_media.id))
+            result = run_metadata_processor(str(mock_media.id))
 
             assert "media_id" in result
             assert "status" in result
             assert "has_exif" in result
 
 
-class TestRunFacesStage:
-    """Tests for run_faces_stage task."""
+class TestRunFacesProcessor:
+    """Tests for run_faces_processor task."""
 
     @pytest.mark.ml
     def test_faces_persists_detected_faces(self) -> None:
         """Task persists detected faces to MediaPersonLink."""
-        from potluck.pipeline.tasks.processing import run_faces_stage
+        from potluck.pipeline.tasks.processing import run_faces_processor
 
         mock_media = MagicMock()
         mock_media.id = uuid4()
@@ -156,14 +156,14 @@ class TestRunFacesStage:
             patch("potluck.pipeline.tasks.processing.Session", return_value=mock_session),
             patch("potluck.pipeline.tasks.processing._get_media", return_value=mock_media),
             patch(
-                "potluck.pipeline.processing.faces.FaceStage.execute",
+                "potluck.pipeline.processing.faces.FaceProcessor.execute",
                 return_value=mock_result,
             ),
         ):
             mock_session.__enter__ = MagicMock(return_value=mock_session)
             mock_session.__exit__ = MagicMock(return_value=False)
 
-            result = run_faces_stage(str(mock_media.id))
+            result = run_faces_processor(str(mock_media.id))
 
             assert result["faces_detected"] == 2
             # Verify session.add was called for each face
@@ -196,22 +196,22 @@ class TestRunProcessingPipeline:
     def test_pipeline_uses_immutable_signatures(self) -> None:
         """Pipeline uses .si() for immutable signatures."""
         from potluck.pipeline.tasks.processing import (
-            run_captioning_stage,
-            run_faces_stage,
-            run_hashing_stage,
-            run_metadata_stage,
-            run_ocr_stage,
+            run_captioning_processor,
+            run_faces_processor,
+            run_hashing_processor,
+            run_metadata_processor,
+            run_ocr_processor,
         )
 
         media_id = str(uuid4())
 
         # Verify each task has .si() method (immutable signature)
         for task in [
-            run_hashing_stage,
-            run_metadata_stage,
-            run_ocr_stage,
-            run_faces_stage,
-            run_captioning_stage,
+            run_hashing_processor,
+            run_metadata_processor,
+            run_ocr_processor,
+            run_faces_processor,
+            run_captioning_processor,
         ]:
             sig = task.si(media_id)
             assert sig.immutable is True

@@ -21,10 +21,12 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 
 **Reminders**:
 
-- Code style: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs. Do not make imports optional conditioned by TYPE_CHECKING.
+- Code style: Ruff (format + lint) + mypy (strict). Type hints required, Pydantic for DTOs. Avoid `Any` type where possible.
+- Do not make imports optional or conditional (e.g., TYPE_CHECKING guards, try/except ImportError). All dependencies are always available.
+- Keep all imports at the top of the file. If you have an issue with circular imports, clarify the requirements since it is likely an architecture issue.
+- ML dependencies are always installed as part of the Docker/setup. Use `uv` (not `pip`) for package management.
 - Only add functionality as needed. Do not front load work. E.g. Only add exceptions to src/potluck/core/exceptions.py while creating the feature that will raise it.
 - Raise Potluck specific exceptions that are defined in `core/exceptions.py`
-- Keep all imports at the top of the file. If you have an issue with circular imports, clarify the requirements since it is likely an architecture issue
 - Tests should reuse as much code from the implementation as possible
 
 ## References

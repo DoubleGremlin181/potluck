@@ -346,6 +346,7 @@ class PipelineOrchestrator:
 
     def _queue_media_processing(self, media: Media) -> None:
         """Queue processing tasks for a media entity."""
+        # Deferred import to avoid circular import with tasks module
         from potluck.pipeline.tasks.processing import run_processing_pipeline
 
         try:

@@ -1,5 +1,6 @@
 """Application configuration using pydantic-settings."""
 
+import os
 from functools import lru_cache
 
 from pydantic import Field
@@ -29,8 +30,6 @@ class Settings(BaseSettings):
     @property
     def sync_db_url(self) -> str:
         """Get sync database URL, falling back to DATABASE_URL if needed."""
-        import os
-
         # Priority: SYNC_DATABASE_URL > DATABASE_URL env var > convert from async URL
         if self.sync_database_url:
             return self.sync_database_url
