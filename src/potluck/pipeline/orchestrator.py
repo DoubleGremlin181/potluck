@@ -7,8 +7,8 @@ from sqlmodel import Session, select
 
 from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
+from potluck.models import get_entity_type_model_map
 from potluck.models.base import BaseEntity, EntityType, SourceType
-from potluck.models.media import Media
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
 from potluck.pipeline.dtos import (
@@ -44,7 +44,8 @@ class PipelineOrchestrator:
     - Deduplicating entities by content_hash before persisting
     - Batching entity persistence for performance
     - Tracking progress and statistics
-    - Queuing media for processing after ingestion
+    - Queuing entities for processing after ingestion (all entity types)
+    - Queuing batch linkers after import completes
 
     Duplicate Handling:
     - Source-level: If the same file (by hash) was already imported successfully,
@@ -74,6 +75,8 @@ class PipelineOrchestrator:
         self.on_progress = on_progress
         # In-memory cache of seen content hashes to avoid N+1 queries
         self._seen_hashes: set[str] = set()
+        # Track entity IDs by type for batch linker processing
+        self._entity_ids_by_type: dict[EntityType, list[str]] = {}
 
     def run(
         self,
@@ -98,8 +101,9 @@ class PipelineOrchestrator:
         """
         logger.info(f"Starting pipeline for: {path}")
 
-        # Clear seen hashes cache for each new run to prevent cross-run deduplication
+        # Clear caches for each new run
         self._seen_hashes.clear()
+        self._entity_ids_by_type.clear()
 
         # Compute file hash for source-level deduplication
         file_hash = None
@@ -186,6 +190,10 @@ class PipelineOrchestrator:
                 import_run.entities_skipped = stats.entities_skipped
                 import_run.entities_failed = stats.entities_failed
                 self.session.commit()
+
+                # Queue batch linkers if entities were created
+                if stats.entities_created > 0:
+                    self._queue_linkers(import_run)
 
                 return PipelineResult(import_run=import_run, stats=stats)
 
@@ -339,23 +347,57 @@ class PipelineOrchestrator:
 
         self.session.commit()
 
-        # Queue processing for Media entities
+        # Queue processing for all entity types
         for entity in batch:
-            if isinstance(entity, Media):
-                self._queue_media_processing(entity)
+            entity_type = self._get_entity_type(entity)
+            self._queue_entity_processing(entity, entity_type)
 
-    def _queue_media_processing(self, media: Media) -> None:
-        """Queue processing tasks for a media entity."""
+            # Track entity IDs for batch linker processing
+            if entity_type not in self._entity_ids_by_type:
+                self._entity_ids_by_type[entity_type] = []
+            self._entity_ids_by_type[entity_type].append(str(entity.id))
+
+    def _get_entity_type(self, entity: BaseEntity) -> EntityType:
+        """Determine EntityType from entity instance."""
+        model_map = get_entity_type_model_map()
+        for etype, model_class in model_map.items():
+            if isinstance(entity, model_class):
+                return etype
+        # Default fallback
+        return EntityType.MEDIA
+
+    def _queue_entity_processing(self, entity: BaseEntity, entity_type: EntityType) -> None:
+        """Queue processing tasks for any entity type."""
         # Deferred import to avoid circular import with tasks module
-        from potluck.pipeline.tasks.processing import run_processing_pipeline
+        from potluck.pipeline.tasks.processing import run_entity_pipeline
 
         try:
-            run_processing_pipeline(str(media.id))
-            logger.debug(f"Queued processing for media {media.id}")
+            run_entity_pipeline(entity_type.value, str(entity.id))
+            logger.debug(f"Queued processing for {entity_type.value} {entity.id}")
         except Exception:
             logger.exception(
-                f"Failed to queue processing for media {media.id}. "
-                "This media will need to be manually reprocessed."
+                f"Failed to queue processing for {entity_type.value} {entity.id}. "
+                "This entity will need to be manually reprocessed."
+            )
+
+    def _queue_linkers(self, import_run: ImportRun) -> None:
+        """Queue batch linkers for all imported entities."""
+        # Deferred import to avoid circular import with tasks module
+        from potluck.pipeline.tasks.processing import run_linkers_batch
+
+        # Convert to serializable format
+        entity_ids_by_type = {etype.value: ids for etype, ids in self._entity_ids_by_type.items()}
+
+        if not any(entity_ids_by_type.values()):
+            return
+
+        try:
+            run_linkers_batch(str(import_run.id), entity_ids_by_type)
+            logger.debug(f"Queued batch linkers for import run {import_run.id}")
+        except Exception:
+            logger.exception(
+                f"Failed to queue linkers for import run {import_run.id}. "
+                "Linking will need to be run manually."
             )
 
     def _update_progress(
@@ -429,7 +471,8 @@ def ingest(
     """Run the pipeline for a path.
 
     This is a convenience function that creates a PipelineOrchestrator
-    and runs it. Media entities are automatically queued for processing.
+    and runs it. All entity types are automatically queued for processing,
+    and batch linkers are queued after import completes.
 
     Args:
         path: Path to source file or directory.

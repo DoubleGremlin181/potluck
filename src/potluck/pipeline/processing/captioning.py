@@ -8,6 +8,7 @@ import torch
 from celery import Task
 from celery.exceptions import Retry
 from PIL import Image
+from sqlmodel import SQLModel
 from transformers import Blip2ForConditionalGeneration, Blip2Processor
 
 from potluck.core.celery import (
@@ -17,13 +18,16 @@ from potluck.core.celery import (
     celery_app,
 )
 from potluck.core.logging import get_logger
+from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 
 
+@ProcessorRegistry.register(priority=50)
 class CaptioningProcessor(BaseProcessor):
     """Processor for generating AI image captions using BLIP-2.
 
@@ -32,6 +36,7 @@ class CaptioningProcessor(BaseProcessor):
     """
 
     NAME: ClassVar[str] = "captioning"
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {EntityType.MEDIA}
     PERSIST_FIELDS: ClassVar[list[str]] = ["caption"]
 
     DEFAULT_MODEL = "Salesforce/blip2-opt-2.7b"
@@ -80,22 +85,24 @@ class CaptioningProcessor(BaseProcessor):
             )
             self._model.to(device)
 
-    def should_execute(self, media: Media) -> bool:
+    def should_execute(self, entity: SQLModel) -> bool:
         """Only process images."""
+        media: Media = entity  # type: ignore[assignment]
         return media.media_type == MediaType.IMAGE
 
-    def execute(self, media: Media) -> StageResult:
+    def execute(self, entity: SQLModel) -> StageResult:
         """Generate an AI caption for the media.
 
         Args:
-            media: The media item to process.
+            entity: The media entity to process.
 
         Returns:
             StageResult with the generated caption.
         """
+        media: Media = entity  # type: ignore[assignment]
         start_time = time.monotonic()
 
-        if not self.should_execute(media):
+        if not self.should_execute(entity):
             return StageResult(
                 item_id=media.id,
                 stage_name=self.NAME,
@@ -170,6 +177,14 @@ class CaptioningProcessor(BaseProcessor):
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_captioning_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
-    """Generate AI caption for a media item."""
-    return run_processor_task(self, media_id, CaptioningProcessor)
+def run_captioning_processor(
+    self: "Task[..., dict[str, Any]]",
+    entity_type: str,
+    entity_id: str,
+) -> dict[str, Any]:
+    """Generate AI caption for an entity."""
+    return run_processor_task(self, EntityType(entity_type), entity_id, CaptioningProcessor)
+
+
+# Register the task with the processor
+ProcessorRegistry.set_task(CaptioningProcessor.NAME, run_captioning_processor)

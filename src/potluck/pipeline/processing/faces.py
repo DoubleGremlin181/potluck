@@ -16,7 +16,7 @@ from celery.exceptions import Retry
 from facenet_pytorch import MTCNN
 from PIL import Image
 from sklearn.cluster import DBSCAN
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel
 
 from potluck.core.celery import (
     MAX_RETRIES,
@@ -26,15 +26,18 @@ from potluck.core.celery import (
 )
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
+from potluck.models.base import EntityType
 from potluck.models.faces import MediaPersonLink
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing._arcface import download_weights, get_weights_path, iresnet50
 from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 
 
+@ProcessorRegistry.register(priority=40)
 class FaceProcessor(BaseProcessor):
     """Processor for face detection using MTCNN + ArcFace (PyTorch native).
 
@@ -46,6 +49,7 @@ class FaceProcessor(BaseProcessor):
     """
 
     NAME: ClassVar[str] = "faces"
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {EntityType.MEDIA}
     # FaceProcessor does NOT use PERSIST_FIELDS - it overrides persist_result()
     # to create MediaPersonLink records instead of updating Media fields
 
@@ -175,22 +179,24 @@ class FaceProcessor(BaseProcessor):
 
         return face_normalized
 
-    def should_execute(self, media: Media) -> bool:
+    def should_execute(self, entity: SQLModel) -> bool:
         """Only process images."""
+        media: Media = entity  # type: ignore[assignment]
         return media.media_type == MediaType.IMAGE
 
-    def execute(self, media: Media) -> StageResult:
+    def execute(self, entity: SQLModel) -> StageResult:
         """Detect faces in the media and extract embeddings.
 
         Args:
-            media: The media item to process.
+            entity: The media entity to process.
 
         Returns:
             StageResult with face data including embeddings and bounding boxes.
         """
+        media: Media = entity  # type: ignore[assignment]
         start_time = time.monotonic()
 
-        if not self.should_execute(media):
+        if not self.should_execute(entity):
             return StageResult(
                 item_id=media.id,
                 stage_name=self.NAME,
@@ -304,7 +310,11 @@ class FaceProcessor(BaseProcessor):
             )
 
     def persist_result(
-        self, session: Session, media_id: str, result: StageResult
+        self,
+        session: Session,
+        entity_type: EntityType,
+        entity_id: str,
+        result: StageResult,
     ) -> dict[str, Any]:
         """Persist detected faces to MediaPersonLink records.
 
@@ -313,7 +323,8 @@ class FaceProcessor(BaseProcessor):
 
         Args:
             session: Database session for persistence.
-            media_id: ID of the media item being processed.
+            entity_type: The type of entity being processed.
+            entity_id: ID of the entity being processed.
             result: The StageResult from execute().
 
         Returns:
@@ -323,7 +334,7 @@ class FaceProcessor(BaseProcessor):
 
         for face_data in faces:
             face_link = MediaPersonLink(
-                media_id=UUID(media_id),
+                media_id=UUID(entity_id),
                 person_id=None,
                 cluster_id=None,
                 confidence=face_data.get("confidence", 1.0),
@@ -338,10 +349,11 @@ class FaceProcessor(BaseProcessor):
 
         if faces:
             session.commit()
-            logger.info(f"Persisted {len(faces)} faces for media {media_id}")
+            logger.info(f"Persisted {len(faces)} faces for {entity_type.value} {entity_id}")
 
         return {
-            "media_id": media_id,
+            "entity_type": entity_type.value,
+            "entity_id": entity_id,
             "status": result.status.value,
             "faces_detected": len(faces),
             "processing_time_ms": result.processing_time_ms,
@@ -453,6 +465,14 @@ class FaceProcessor(BaseProcessor):
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_faces_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
-    """Detect faces in a media item."""
-    return run_processor_task(self, media_id, FaceProcessor)
+def run_faces_processor(
+    self: "Task[..., dict[str, Any]]",
+    entity_type: str,
+    entity_id: str,
+) -> dict[str, Any]:
+    """Detect faces in an entity."""
+    return run_processor_task(self, EntityType(entity_type), entity_id, FaceProcessor)
+
+
+# Register the task with the processor
+ProcessorRegistry.set_task(FaceProcessor.NAME, run_faces_processor)

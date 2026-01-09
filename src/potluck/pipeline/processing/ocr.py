@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 import easyocr
 from celery import Task
 from celery.exceptions import Retry
+from sqlmodel import SQLModel
 
 from potluck.core.celery import (
     MAX_RETRIES,
@@ -20,9 +21,11 @@ from potluck.core.celery import (
 )
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
+from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
 from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 
@@ -31,6 +34,7 @@ logger = get_logger(__name__)
 DEFAULT_LANGUAGES = ["en"]
 
 
+@ProcessorRegistry.register(priority=30)
 class OCRProcessor(BaseProcessor):
     """Processor for extracting text from images using EasyOCR.
 
@@ -44,6 +48,7 @@ class OCRProcessor(BaseProcessor):
     """
 
     NAME: ClassVar[str] = "ocr"
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {EntityType.MEDIA}
     PERSIST_FIELDS: ClassVar[list[str]] = ["ocr_text"]
 
     def __init__(
@@ -76,22 +81,24 @@ class OCRProcessor(BaseProcessor):
 
         return self._reader
 
-    def should_execute(self, media: Media) -> bool:
+    def should_execute(self, entity: SQLModel) -> bool:
         """Only process images which may contain text."""
+        media: Media = entity  # type: ignore[assignment]
         return media.media_type == MediaType.IMAGE
 
-    def execute(self, media: Media) -> StageResult:
+    def execute(self, entity: SQLModel) -> StageResult:
         """Extract text from an image using OCR.
 
         Args:
-            media: Media item to process.
+            entity: Media entity to process.
 
         Returns:
             StageResult with extracted text.
         """
+        media: Media = entity  # type: ignore[assignment]
         start_time = time.monotonic()
 
-        if not self.should_execute(media):
+        if not self.should_execute(entity):
             return StageResult(
                 item_id=media.id,
                 stage_name=self.NAME,
@@ -151,8 +158,9 @@ class OCRProcessor(BaseProcessor):
                 processing_time_ms=elapsed_ms,
             )
 
-    def execute_batch(self, media_items: list[Media]) -> BatchStageResult:
+    def execute_batch(self, entities: list[SQLModel]) -> BatchStageResult:
         """Process a batch of images."""
+        media_items: list[Media] = entities  # type: ignore[assignment]
         images = [m for m in media_items if self.should_execute(m)]
         skipped = [m for m in media_items if not self.should_execute(m)]
 
@@ -195,6 +203,14 @@ class OCRProcessor(BaseProcessor):
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_ocr_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
-    """Run OCR on a media item."""
-    return run_processor_task(self, media_id, OCRProcessor)
+def run_ocr_processor(
+    self: "Task[..., dict[str, Any]]",
+    entity_type: str,
+    entity_id: str,
+) -> dict[str, Any]:
+    """Run OCR on an entity."""
+    return run_processor_task(self, EntityType(entity_type), entity_id, OCRProcessor)
+
+
+# Register the task with the processor
+ProcessorRegistry.set_task(OCRProcessor.NAME, run_ocr_processor)

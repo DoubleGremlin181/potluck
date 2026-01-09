@@ -14,6 +14,7 @@ import imagehash
 from celery import Task
 from celery.exceptions import Retry
 from PIL import Image
+from sqlmodel import SQLModel
 
 from potluck.core.celery import (
     MAX_RETRIES,
@@ -23,14 +24,17 @@ from potluck.core.celery import (
 )
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
+from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.registry import ProcessorRegistry
 from potluck.pipeline.utils.hashing import compute_file_hash
 
 logger = get_logger(__name__)
 
 
+@ProcessorRegistry.register(priority=10)
 class HashingProcessor(BaseProcessor):
     """Processor for computing file and perceptual hashes.
 
@@ -44,17 +48,19 @@ class HashingProcessor(BaseProcessor):
     """
 
     NAME: ClassVar[str] = "hashing"
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {EntityType.MEDIA}
     PERSIST_FIELDS: ClassVar[list[str]] = ["file_hash", "perceptual_hash"]
 
-    def execute(self, media: Media) -> StageResult:
+    def execute(self, entity: SQLModel) -> StageResult:
         """Compute hashes for a media file.
 
         Args:
-            media: Media item to process.
+            entity: Media entity to process.
 
         Returns:
             StageResult with file_hash and optionally perceptual_hash.
         """
+        media: Media = entity  # type: ignore[assignment]
         start_time = time.monotonic()
 
         try:
@@ -169,6 +175,14 @@ def compute_phash_distance(hash1: str, hash2: str) -> int:
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_hashing_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
-    """Compute SHA256 and perceptual hash for a media item."""
-    return run_processor_task(self, media_id, HashingProcessor)
+def run_hashing_processor(
+    self: "Task[..., dict[str, Any]]",
+    entity_type: str,
+    entity_id: str,
+) -> dict[str, Any]:
+    """Compute SHA256 and perceptual hash for an entity."""
+    return run_processor_task(self, EntityType(entity_type), entity_id, HashingProcessor)
+
+
+# Register the task with the processor
+ProcessorRegistry.set_task(HashingProcessor.NAME, run_hashing_processor)

@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 import exifread
 from celery import Task
 from celery.exceptions import Retry
+from sqlmodel import SQLModel
 
 from potluck.core.celery import (
     MAX_RETRIES,
@@ -26,9 +27,11 @@ from potluck.core.celery import (
 )
 from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
+from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 
@@ -44,6 +47,7 @@ EXIF_DATE_FORMATS = [
 ]
 
 
+@ProcessorRegistry.register(priority=20)
 class MetadataProcessor(BaseProcessor):
     """Processor for extracting EXIF metadata from images.
 
@@ -55,6 +59,7 @@ class MetadataProcessor(BaseProcessor):
     """
 
     NAME: ClassVar[str] = "metadata"
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {EntityType.MEDIA}
     PERSIST_FIELDS: ClassVar[list[str]] = [
         "latitude",
         "longitude",
@@ -63,22 +68,24 @@ class MetadataProcessor(BaseProcessor):
         "exif_data",
     ]
 
-    def should_execute(self, media: Media) -> bool:
+    def should_execute(self, entity: SQLModel) -> bool:
         """Only process images which typically have EXIF data."""
+        media: Media = entity  # type: ignore[assignment]
         return media.media_type == MediaType.IMAGE
 
-    def execute(self, media: Media) -> StageResult:
+    def execute(self, entity: SQLModel) -> StageResult:
         """Extract EXIF metadata from an image file.
 
         Args:
-            media: Media item to process.
+            entity: Media entity to process.
 
         Returns:
             StageResult with extracted metadata.
         """
+        media: Media = entity  # type: ignore[assignment]
         start_time = time.monotonic()
 
-        if not self.should_execute(media):
+        if not self.should_execute(entity):
             return StageResult(
                 item_id=media.id,
                 stage_name=self.NAME,
@@ -257,6 +264,14 @@ class MetadataProcessor(BaseProcessor):
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_metadata_processor(self: "Task[..., dict[str, Any]]", media_id: str) -> dict[str, Any]:
-    """Extract EXIF metadata from a media item."""
-    return run_processor_task(self, media_id, MetadataProcessor)
+def run_metadata_processor(
+    self: "Task[..., dict[str, Any]]",
+    entity_type: str,
+    entity_id: str,
+) -> dict[str, Any]:
+    """Extract EXIF metadata from an entity."""
+    return run_processor_task(self, EntityType(entity_type), entity_id, MetadataProcessor)
+
+
+# Register the task with the processor
+ProcessorRegistry.set_task(MetadataProcessor.NAME, run_metadata_processor)
