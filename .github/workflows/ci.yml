@@ -30,10 +30,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Install torch CPU-only first (needed for mypy to type-check torch code)
-          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          # Then install dev dependencies (ruff, mypy, pytest)
+          # Create venv and install dev dependencies first
           uv sync --extra dev
+          # Install torch CPU-only (needed for mypy to type-check torch code)
+          # This replaces the lockfile's CUDA torch with CPU-only version
+          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run ruff check
         run: uv run ruff check src/ tests/ alembic/
