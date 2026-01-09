@@ -17,10 +17,10 @@ uv run mypy src/potluck/
 
 # Run tests in Docker (same environment as CI)
 echo "→ Running tests in Docker..."
-docker compose -f docker-compose.test.yml run --rm test uv run pytest tests/ -q
+docker compose --profile test run --rm test uv run pytest tests/ -q
 
 # Clean up
-docker compose -f docker-compose.test.yml down -v >/dev/null 2>&1 || true
+docker compose --profile test down -v >/dev/null 2>&1 || true
 
 echo "✓ All checks passed!"
 echo ""

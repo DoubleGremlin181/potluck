@@ -166,12 +166,12 @@ jobs:
           EOF
 
       - name: Start services
-        run: docker compose -f docker-compose.test.yml up -d db redis
+        run: docker compose up -d db redis
 
       - name: Wait for DB
         run: |
           for i in {1..30}; do
-            if docker compose -f docker-compose.test.yml exec -T db pg_isready -U potluck -d potluck_test; then
+            if docker compose exec -T db pg_isready -U potluck -d potluck; then
               echo "Database is ready"
               break
             fi
@@ -181,18 +181,18 @@ jobs:
 
       - name: Run migrations
         run: |
-          docker compose -f docker-compose.test.yml run --rm test \
+          docker compose --profile test run --rm test \
             uv run alembic upgrade head
 
       - name: Run all tests
         run: |
-          docker compose -f docker-compose.test.yml run --rm test \
+          docker compose --profile test run --rm test \
             uv run pytest tests/ -v --run-e2e --run-ml --cov=potluck --cov-report=xml
 
       - name: Copy coverage report
         if: always()
         run: |
-          docker compose -f docker-compose.test.yml cp test:/app/coverage.xml ./coverage.xml 2>/dev/null || true
+          docker compose --profile test cp test:/app/coverage.xml ./coverage.xml 2>/dev/null || true
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -202,4 +202,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: docker compose -f docker-compose.test.yml down -v
+        run: docker compose --profile test down -v

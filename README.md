@@ -130,16 +130,16 @@ All tests run in Docker to ensure consistency between local development and CI.
 
 ```bash
 # Run all tests
-docker compose -f docker-compose.test.yml run --rm test
+docker compose --profile test run --rm test
 
 # Run specific test file
-docker compose -f docker-compose.test.yml run --rm test uv run pytest tests/unit/models/ -v
+docker compose --profile test run --rm test uv run pytest tests/unit/models/ -v
 
 # Run with e2e tests (database integration)
-docker compose -f docker-compose.test.yml run --rm test uv run pytest tests/ -v --run-e2e
+docker compose --profile test run --rm test uv run pytest tests/ -v --run-e2e
 ```
 
-GitHub Actions uses the same `docker-compose.test.yml` configuration.
+GitHub Actions uses the same configuration with the `test` profile.
 
 The tests verify:
 - Docker containers start correctly (Percona PostgreSQL 17 with pgvector + pg_tde)

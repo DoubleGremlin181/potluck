@@ -194,9 +194,30 @@ FastAPI + HTMX server-side rendered interface.
 └───────────────┴───────────────┴───────────────┘
 ```
 
+**Installation Methods:**
+
+| Method | Audience | Command |
+|--------|----------|---------|
+| One-liner install | End-users | `curl ... \| bash` downloads pre-built images from GHCR |
+| Development setup | Contributors | `./scripts/setup.sh` builds locally |
+
+**Docker Images (GHCR):**
+
+- `ghcr.io/doublegremlin181/potluck:latest` - Application image (CPU-only, ~1.5GB)
+- `ghcr.io/doublegremlin181/potluck-db:latest` - Database image (Percona PG17)
+- Images are built and pushed automatically on tagged releases
+
+**GPU Support:**
+
+- Optional CUDA support available via `--gpu` flag
+- GPU builds use CUDA 12.4 PyTorch (~4.5GB image)
+- Requires NVIDIA GPU + nvidia-container-toolkit
+
+**Key Components:**
+
 - Single `potluck` command with subcommands: `mcp`, `web`
 - Alembic migrations run automatically on container start
-- Configuration via `.env` file (ports, credentials)
+- Configuration via `.env` file (ports, credentials, GPU mode)
 - Health checks on all services for reliable startup ordering
 - Redis for Celery task queue (internal network only)
 

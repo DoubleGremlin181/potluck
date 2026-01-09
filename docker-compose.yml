@@ -1,4 +1,17 @@
+# Potluck Docker Compose
+#
+# Usage:
+#   Development: docker compose up -d
+#   Testing:     docker compose --profile test run --rm test
+#   DB only:     docker compose up -d db redis
+#
+# For end-users (install without git clone), use install.sh which downloads
+# docker-compose.prod.yml with pre-built GHCR images.
+
 services:
+  # ==========================================================================
+  # Application service (development - builds locally)
+  # ==========================================================================
   app:
     build:
       context: .
@@ -17,33 +30,68 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ==========================================================================
+  # Test service (testing - mounts tests/src for live reload)
+  # ==========================================================================
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+      args:
+        GPU: ${GPU:-false}
+    container_name: potluck-test
+    command: ["uv", "run", "pytest", "-v", "--tb=short"]
+    environment:
+      DATABASE_URL: postgresql://potluck:potluck@db:5432/potluck_test
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: potluck
+      POSTGRES_PASSWORD: potluck
+      POSTGRES_DB: potluck_test
+      REDIS_URL: redis://redis:6379/0
+      TESTING: "true"
+      CI: ${CI:-false}
+    volumes:
+      - ./tests:/app/tests:ro
+      - ./src:/app/src:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Database (Percona PostgreSQL 17 with pgvector + pg_tde)
+  # ==========================================================================
   db:
     build:
       context: .
       dockerfile: docker/Dockerfile.db
     container_name: potluck-db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-potluck}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-potluck}
+      POSTGRES_DB: ${POSTGRES_DB:-potluck}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - potluck-pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-potluck} -d ${POSTGRES_DB:-potluck}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     restart: unless-stopped
 
+  # ==========================================================================
+  # Redis (for Celery task queue)
+  # ==========================================================================
   redis:
     image: redis:7-alpine
     container_name: potluck-redis
-    # Not exposed to host - only accessible within Docker network
-    # Use: docker exec -it potluck-redis redis-cli
     volumes:
       - potluck-redis:/data
     healthcheck:
