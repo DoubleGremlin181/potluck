@@ -43,12 +43,13 @@ services:
     container_name: potluck-test
     command: ["uv", "run", "pytest", "-v", "--tb=short"]
     environment:
-      DATABASE_URL: postgresql://potluck:potluck@db:5432/potluck_test
+      # Use same credentials as db service (from .env or defaults)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-potluck}:${POSTGRES_PASSWORD:-potluck}@db:5432/${POSTGRES_DB:-potluck}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-      POSTGRES_USER: potluck
-      POSTGRES_PASSWORD: potluck
-      POSTGRES_DB: potluck_test
+      POSTGRES_USER: ${POSTGRES_USER:-potluck}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-potluck}
+      POSTGRES_DB: ${POSTGRES_DB:-potluck}
       REDIS_URL: redis://redis:6379/0
       TESTING: "true"
       CI: ${CI:-false}
