@@ -143,6 +143,7 @@ class MLModels:
             processor = AutoProcessor.from_pretrained(model_name)  # type: ignore[no-untyped-call]
             model = AutoModel.from_pretrained(model_name)
             model.to(self.device)
+            model.eval()
             model.requires_grad_(False)
             self._cache[cache_key] = (model, processor)
         result: tuple[PreTrainedModel, Any] = self._cache[cache_key]
@@ -278,6 +279,7 @@ class MLModels:
 
             model.load_state_dict(state_dict, strict=False)
             model.to(self.device)
+            model.eval()
             model.requires_grad_(False)
 
             logger.info(f"Loaded ArcFace weights from {weights_path}")
