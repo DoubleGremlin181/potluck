@@ -155,7 +155,7 @@ class TextEmbeddingProcessor(BaseProcessor):
             )
 
         try:
-            model = self._models.get_text_embedding_model(self._model_name)
+            model = self._models.get_text_encoder(self._model_name)
 
             # e5 models require "passage: " prefix for documents
             text_with_prefix = f"passage: {text}"
@@ -240,7 +240,7 @@ class TextEmbeddingProcessor(BaseProcessor):
         # Batch encode if we have valid entities
         if valid_entities:
             try:
-                model = self._models.get_text_embedding_model(self._model_name)
+                model = self._models.get_text_encoder(self._model_name)
 
                 # Add e5 prefix to all texts
                 texts_with_prefix = [f"passage: {text}" for _, _, text in valid_entities]
@@ -274,6 +274,18 @@ class TextEmbeddingProcessor(BaseProcessor):
                         )
                     )
 
+            except RuntimeError as e:
+                # Check for CUDA OOM - fall back to individual processing
+                if "out of memory" in str(e).lower():
+                    logger.warning(
+                        f"Batch text embedding OOM with {len(valid_entities)} items, "
+                        "falling back to individual processing"
+                    )
+                    for entity, _entity_type, _text in valid_entities:
+                        individual_result = self.execute(entity)
+                        results.append(individual_result)
+                else:
+                    raise
             except Exception as e:
                 elapsed_ms = int((time.monotonic() - start_time) * 1000)
                 logger.exception(f"Batch text embedding failed: {e}")
@@ -339,7 +351,15 @@ class TextEmbeddingProcessor(BaseProcessor):
 
         if embedding and result.status == StageStatus.COMPLETED:
             entity = _get_entity(session, entity_type, entity_id)
-            if entity and hasattr(entity, "embedding"):
+            if entity is None:
+                logger.warning(
+                    f"Cannot persist embedding: {entity_type.value} {entity_id} not found"
+                )
+            elif not hasattr(entity, "embedding"):
+                logger.warning(
+                    f"Cannot persist embedding: {entity_type.value} lacks 'embedding' field"
+                )
+            else:
                 entity.embedding = embedding
                 session.add(entity)
                 session.commit()
@@ -443,7 +463,7 @@ class MultimodalTextEmbeddingProcessor(BaseProcessor):
             )
 
         try:
-            embedding = self._models.encode_text_siglip(text, self._model_name)
+            embedding = self._models.encode_text_multimodal(text, self._model_name)
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
             return StageResult(
@@ -511,7 +531,16 @@ class MultimodalTextEmbeddingProcessor(BaseProcessor):
 
         if embedding and result.status == StageStatus.COMPLETED:
             entity = _get_entity(session, entity_type, entity_id)
-            if entity and hasattr(entity, "multimodal_embedding"):
+            if entity is None:
+                logger.warning(
+                    f"Cannot persist multimodal embedding: {entity_type.value} {entity_id} not found"
+                )
+            elif not hasattr(entity, "multimodal_embedding"):
+                logger.warning(
+                    f"Cannot persist multimodal embedding: {entity_type.value} lacks "
+                    "'multimodal_embedding' field"
+                )
+            else:
                 entity.multimodal_embedding = embedding
                 session.add(entity)
                 session.commit()
@@ -607,7 +636,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
             # Generate SigLIP visual embedding
             if self._generate_siglip:
                 img = Image.open(file_path).convert("RGB")
-                siglip_embedding = self._models.encode_image_siglip(img, self._siglip_model_name)
+                siglip_embedding = self._models.encode_image(img, self._siglip_model_name)
                 embeddings["siglip"] = {
                     "embedding": siglip_embedding,
                     "model_name": self._siglip_model_name,
@@ -616,7 +645,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
 
             # Generate OCR text embedding (e5)
             if self._generate_ocr_embedding and media.ocr_text:
-                model = self._models.get_text_embedding_model(self._text_model_name)
+                model = self._models.get_text_encoder(self._text_model_name)
                 ocr_text_with_prefix = f"passage: {media.ocr_text}"
                 ocr_embedding = model.encode(
                     ocr_text_with_prefix,
@@ -631,7 +660,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
 
             # Generate caption embedding (e5)
             if self._generate_caption_embedding and media.caption:
-                model = self._models.get_text_embedding_model(self._text_model_name)
+                model = self._models.get_text_encoder(self._text_model_name)
                 caption_text_with_prefix = f"passage: {media.caption}"
                 caption_embedding = model.encode(
                     caption_text_with_prefix,
@@ -712,6 +741,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
                 img = Image.open(file_path).convert("RGB")
                 valid_media.append((media, img))
             except Exception as e:
+                logger.warning(f"Failed to load image {media.file_path}: {e}")
                 results.append(
                     StageResult(
                         item_id=media.id,
@@ -726,7 +756,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
             try:
                 import torch
 
-                model, processor = self._models.get_siglip_model(self._siglip_model_name)
+                model, processor = self._models.get_multimodal_encoder(self._siglip_model_name)
                 images = [img for _, img in valid_media]
 
                 # Batch process with SigLIP
@@ -753,7 +783,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
 
                     # Add OCR/caption embeddings individually (not batched)
                     if self._generate_ocr_embedding and media.ocr_text:
-                        text_model = self._models.get_text_embedding_model(self._text_model_name)
+                        text_model = self._models.get_text_encoder(self._text_model_name)
                         ocr_text_with_prefix = f"passage: {media.ocr_text}"
                         ocr_emb = text_model.encode(
                             ocr_text_with_prefix,
@@ -767,7 +797,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
                         }
 
                     if self._generate_caption_embedding and media.caption:
-                        text_model = self._models.get_text_embedding_model(self._text_model_name)
+                        text_model = self._models.get_text_encoder(self._text_model_name)
                         cap_text_with_prefix = f"passage: {media.caption}"
                         cap_emb = text_model.encode(
                             cap_text_with_prefix,
@@ -793,6 +823,18 @@ class MediaEmbeddingProcessor(BaseProcessor):
                         )
                     )
 
+            except RuntimeError as e:
+                # Check for CUDA OOM - fall back to individual processing
+                if "out of memory" in str(e).lower():
+                    logger.warning(
+                        f"Batch media embedding OOM with {len(valid_media)} items, "
+                        "falling back to individual processing"
+                    )
+                    for media, _ in valid_media:
+                        individual_result = self.execute(media)
+                        results.append(individual_result)
+                else:
+                    raise
             except Exception as e:
                 elapsed_ms = int((time.monotonic() - start_time) * 1000)
                 logger.exception(f"Batch media embedding failed: {e}")

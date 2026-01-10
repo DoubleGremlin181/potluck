@@ -89,10 +89,10 @@ class FaceProcessor(BaseProcessor):
     def _load_models(self) -> None:
         """Load face detection and embedding models from MLModels."""
         if self._mtcnn is None:
-            self._mtcnn = self._models.get_mtcnn()
+            self._mtcnn = self._models.get_face_detector()
 
         if self._recognizer is None:
-            self._recognizer = self._models.get_arcface_model()
+            self._recognizer = self._models.get_face_encoder()
 
     def _preprocess_face_for_arcface(self, face_crop: torch.Tensor) -> torch.Tensor:
         """Preprocess MTCNN face crop for ArcFace recognition.

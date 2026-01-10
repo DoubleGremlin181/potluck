@@ -64,6 +64,39 @@ def _get_media(session: Session, media_id: str) -> Media | None:
     return entity if isinstance(entity, Media) else None
 
 
+def _get_entities_bulk(
+    session: Session,
+    entity_type: EntityType,
+    entity_ids: list[str],
+) -> tuple[dict[str, SQLModel], list[str]]:
+    """Fetch multiple entities by type and IDs in a single query.
+
+    Args:
+        session: Database session.
+        entity_type: The entity type to fetch.
+        entity_ids: List of entity IDs to fetch.
+
+    Returns:
+        Tuple of (found_entities dict mapping id -> entity, missing_ids list).
+    """
+    model_map = get_entity_type_model_map()
+    model_class = model_map.get(entity_type)
+    if model_class is None:
+        logger.warning(f"No model class found for entity type: {entity_type}")
+        return {}, entity_ids
+
+    uuids = [UUID(eid) for eid in entity_ids]
+    stmt = select(model_class).where(model_class.id.in_(uuids))  # type: ignore[attr-defined]
+    result = session.execute(stmt)
+    results = result.scalars().all()
+
+    # Build lookup dict
+    found: dict[str, SQLModel] = {str(entity.id): entity for entity in results}  # type: ignore[attr-defined]
+    missing = [eid for eid in entity_ids if eid not in found]
+
+    return found, missing
+
+
 def _update_entity_fields(
     session: Session,
     entity_type: EntityType,
@@ -356,16 +389,9 @@ def run_batch_processor_task(
     try:
         engine = get_engine()
         with Session(engine) as session:
-            # Fetch all entities in one query
-            entities: list[SQLModel] = []
-            missing_ids: list[str] = []
-
-            for entity_id in entity_ids:
-                entity = _get_entity(session, entity_type, entity_id)
-                if entity is not None:
-                    entities.append(entity)
-                else:
-                    missing_ids.append(entity_id)
+            # Fetch all entities in a single query
+            found_entities, missing_ids = _get_entities_bulk(session, entity_type, entity_ids)
+            entities: list[SQLModel] = list(found_entities.values())
 
             if missing_ids:
                 logger.warning(

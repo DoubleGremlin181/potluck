@@ -86,89 +86,89 @@ class TestMLModels:
 
         MLModels.clear_cache()
 
-    def test_text_embedding_model_cached(self) -> None:
-        """Text embedding model should be cached after first load."""
+    def test_text_encoder_cached(self) -> None:
+        """Text encoder should be cached after first load."""
         models = MLModels(device="cpu")
 
         # First call loads the model
-        model1 = models.get_text_embedding_model()
+        model1 = models.get_text_encoder()
 
         # Second call returns cached model
-        model2 = models.get_text_embedding_model()
+        model2 = models.get_text_encoder()
 
         assert model1 is model2
 
-    def test_text_embedding_model_has_correct_dimension(self) -> None:
-        """Text embedding model should produce 384-dimensional embeddings."""
+    def test_text_encoder_has_correct_dimension(self) -> None:
+        """Text encoder should produce 384-dimensional embeddings."""
         models = MLModels(device="cpu")
-        model = models.get_text_embedding_model()
+        model = models.get_text_encoder()
 
         # e5 model produces 384-d embeddings
         embedding = model.encode("query: test text")
         assert len(embedding) == 384
 
-    def test_siglip_model_cached(self) -> None:
-        """SigLIP model should be cached after first load."""
+    def test_multimodal_encoder_cached(self) -> None:
+        """Multimodal encoder should be cached after first load."""
         models = MLModels(device="cpu")
 
         # First call loads the model
-        model1, processor1 = models.get_siglip_model()
+        model1, processor1 = models.get_multimodal_encoder()
 
         # Second call returns cached model
-        model2, processor2 = models.get_siglip_model()
+        model2, processor2 = models.get_multimodal_encoder()
 
         assert model1 is model2
         assert processor1 is processor2
 
-    def test_encode_text_siglip_returns_768d(self) -> None:
-        """SigLIP text encoding should return 768-dimensional vector."""
+    def test_encode_text_multimodal_returns_768d(self) -> None:
+        """Multimodal text encoding should return 768-dimensional vector."""
         models = MLModels(device="cpu")
-        embedding = models.encode_text_siglip("test text")
+        embedding = models.encode_text_multimodal("test text")
 
         assert len(embedding) == 768
 
-    def test_encode_text_siglip_normalized(self) -> None:
-        """SigLIP text embedding should be L2-normalized by default."""
+    def test_encode_text_multimodal_normalized(self) -> None:
+        """Multimodal text embedding should be L2-normalized by default."""
         import numpy as np
 
         models = MLModels(device="cpu")
-        embedding = models.encode_text_siglip("test text")
+        embedding = models.encode_text_multimodal("test text")
 
         # L2 norm should be approximately 1.0
         norm = np.linalg.norm(embedding)
         assert abs(norm - 1.0) < 0.01
 
-    def test_easyocr_reader_cached(self) -> None:
-        """EasyOCR reader should be cached after first load."""
+    def test_ocr_reader_cached(self) -> None:
+        """OCR reader should be cached after first load."""
         models = MLModels(device="cpu")
 
         # First call loads the reader
-        reader1 = models.get_easyocr_reader()
+        reader1 = models.get_ocr_reader()
 
         # Second call returns cached reader
-        reader2 = models.get_easyocr_reader()
+        reader2 = models.get_ocr_reader()
 
         assert reader1 is reader2
 
-    def test_easyocr_custom_languages(self) -> None:
-        """EasyOCR reader should support custom languages."""
+    def test_ocr_reader_custom_languages(self) -> None:
+        """OCR reader should support custom languages."""
         models = MLModels(device="cpu")
 
         # Different languages should create different cache entries
-        reader_en = models.get_easyocr_reader(["en"])
-        reader_es = models.get_easyocr_reader(["es"])
+        reader_en = models.get_ocr_reader(["en"])
+        reader_es = models.get_ocr_reader(["es"])
 
         # Both should be cached but different instances
         assert reader_en is not reader_es
 
-    def test_mtcnn_cached(self) -> None:
-        """MTCNN detector should be cached after first load."""
+    def test_face_detector_cached(self) -> None:
+        """Face detector should be cached after first load."""
         models = MLModels(device="cpu")
 
         # First call loads the detector
-        mtcnn1 = models.get_mtcnn()
+        detector1 = models.get_face_detector()
 
         # Second call returns cached detector
-        mtcnn2 = models.get_mtcnn()
+        detector2 = models.get_face_detector()
 
-        assert mtcnn1 is mtcnn2
+        assert detector1 is detector2

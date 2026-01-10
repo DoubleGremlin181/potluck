@@ -67,8 +67,8 @@ class OCRProcessor(BaseProcessor):
 
     @property
     def reader(self) -> Any:
-        """Get the EasyOCR reader from MLModels."""
-        return self._models.get_easyocr_reader(self._languages)
+        """Get the OCR reader from MLModels."""
+        return self._models.get_ocr_reader(self._languages)
 
     def should_execute(self, entity: SQLModel) -> bool:
         """Only process images which may contain text."""

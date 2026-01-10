@@ -8,6 +8,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
+from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM
 from potluck.models.base import GeolocatedEntity
 from potluck.models.utils import utc_now
 
@@ -164,7 +165,7 @@ class MediaEmbedding(SQLModel, table=True):
         description="Name of the model used to generate the embedding",
     )
     embedding: list[float] = Field(
-        sa_column=Column(Vector(768)),  # Common dimension, adjust as needed
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
         description="Embedding vector",
     )
     created_at: datetime = Field(

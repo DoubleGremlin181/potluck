@@ -18,6 +18,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlmodel import Field
 
+from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import SimpleEntity
 
 
@@ -45,13 +46,13 @@ class KnowledgeNote(SimpleEntity, table=True):
     # Embeddings for semantic search
     embedding: list[float] | None = Field(
         default=None,
-        sa_column=Column(Vector(384)),
-        description="Text embedding (e5) for text-to-text semantic search",
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
     )
     multimodal_embedding: list[float] | None = Field(
         default=None,
-        sa_column=Column(Vector(768)),
-        description="Multimodal embedding (SigLIP) for text-to-image cross-modal search",
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
     )
 
     # Creation context

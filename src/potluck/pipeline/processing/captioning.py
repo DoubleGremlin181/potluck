@@ -63,7 +63,7 @@ class CaptioningProcessor(BaseProcessor):
         if self._processor is not None:
             return
 
-        self._model, self._processor = self._models.get_blip2_model(self._model_name)
+        self._model, self._processor = self._models.get_captioning_model(self._model_name)
 
     def should_execute(self, entity: SQLModel) -> bool:
         """Only process images."""

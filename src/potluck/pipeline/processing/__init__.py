@@ -23,7 +23,8 @@ Public API:
     - OCRProcessor: Text extraction using EasyOCR
     - FaceProcessor: Face detection using MTCNN + ArcFace
     - CaptioningProcessor: Image captioning using BLIP-2
-    - TextEmbeddingProcessor: Text embedding for semantic search
+    - TextEmbeddingProcessor: Text embedding for text-to-text semantic search
+    - MultimodalTextEmbeddingProcessor: Text embedding for cross-modal search
     - MediaEmbeddingProcessor: Visual/text embeddings for media
     - compute_phash_distance: Helper for comparing perceptual hashes
 """
@@ -52,6 +53,7 @@ from potluck.pipeline.processing.base import (  # noqa: E402
 from potluck.pipeline.processing.captioning import CaptioningProcessor  # noqa: E402
 from potluck.pipeline.processing.embeddings import (  # noqa: E402
     MediaEmbeddingProcessor,
+    MultimodalTextEmbeddingProcessor,
     TextEmbeddingProcessor,
 )
 from potluck.pipeline.processing.faces import FaceProcessor  # noqa: E402
@@ -84,6 +86,7 @@ __all__ = [
     "FaceProcessor",
     "CaptioningProcessor",
     "TextEmbeddingProcessor",
+    "MultimodalTextEmbeddingProcessor",
     "MediaEmbeddingProcessor",
     # Utilities
     "compute_phash_distance",
