@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
@@ -97,6 +99,12 @@ class Email(TimestampedEntity, table=True):
     """
 
     __tablename__ = "emails"
+
+    # Search configuration
+    __searchable__: ClassVar[bool] = True
+    __search_text_fields__: ClassVar[list[str]] = ["subject", "body_text"]
+    __search_title_field__: ClassVar[str | None] = "subject"
+    __search_date_field__: ClassVar[str] = "occurred_at"
 
     # Thread relationship
     thread_id: UUID | None = Field(
@@ -238,6 +246,13 @@ class Email(TimestampedEntity, table=True):
         default=None,
         sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
         description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

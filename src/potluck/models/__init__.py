@@ -118,10 +118,12 @@ _ENTITY_TYPE_MODEL_MAP: dict[EntityType, type[SQLModel]] = {
     EntityType.KNOWLEDGE_NOTE: KnowledgeNote,
     EntityType.CALENDAR_EVENT: CalendarEvent,
     EntityType.TRANSACTION: Transaction,
+    EntityType.LOCATION: Location,
     EntityType.LOCATION_VISIT: LocationVisit,
     EntityType.BROWSING_HISTORY: BrowsingHistory,
     EntityType.BOOKMARK: Bookmark,
     EntityType.PERSON: Person,
+    EntityType.TAG: Tag,
 }
 
 

@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM
@@ -40,6 +42,12 @@ class Media(GeolocatedEntity, table=True):
     """
 
     __tablename__ = "media"
+
+    # Search configuration - FTS on caption and ocr_text
+    __searchable__: ClassVar[bool] = True
+    __search_text_fields__: ClassVar[list[str]] = ["caption", "ocr_text"]
+    __search_title_field__: ClassVar[str | None] = "caption"
+    __search_date_field__: ClassVar[str] = "occurred_at"
 
     # File information
     file_path: str = Field(
@@ -129,6 +137,13 @@ class Media(GeolocatedEntity, table=True):
     album_name: str | None = Field(
         default=None,
         description="Album or folder name from source",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search on caption/ocr_text (auto-populated by trigger)",
     )
 
     # Relationships

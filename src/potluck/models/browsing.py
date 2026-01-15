@@ -1,10 +1,15 @@
 """Browsing history and bookmark models."""
 
 from datetime import datetime
+from typing import ClassVar
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
+from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity
 
 
@@ -15,6 +20,12 @@ class BrowsingHistory(TimestampedEntity, table=True):
     """
 
     __tablename__ = "browsing_history"
+
+    # Search configuration - FTS on title and url
+    __searchable__: ClassVar[bool] = True
+    __search_text_fields__: ClassVar[list[str]] = ["title", "url"]
+    __search_title_field__: ClassVar[str | None] = "title"
+    __search_date_field__: ClassVar[str] = "occurred_at"
 
     # URL information
     url: str = Field(
@@ -74,11 +85,36 @@ class BrowsingHistory(TimestampedEntity, table=True):
         description="Search query if this was a search result",
     )
 
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
+    )
+
 
 class Bookmark(BaseEntity, table=True):
     """Saved bookmark with URL, title, and folder organization."""
 
     __tablename__ = "bookmarks"
+
+    # Search configuration - FTS on title and description
+    __searchable__: ClassVar[bool] = True
+    __search_text_fields__: ClassVar[list[str]] = ["title", "description"]
+    __search_title_field__: ClassVar[str | None] = "title"
+    __search_date_field__: ClassVar[str] = "created_at"
 
     # URL information
     url: str = Field(
@@ -144,6 +180,25 @@ class Bookmark(BaseEntity, table=True):
     is_archived: bool = Field(
         default=False,
         description="Whether archived/hidden",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Note: tags field is inherited from BaseEntity

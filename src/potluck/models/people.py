@@ -2,13 +2,15 @@
 
 from datetime import date, datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.core.constants import FACE_EMBEDDING_DIM
+from potluck.core.constants import FACE_EMBEDDING_DIM, MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import SourceType
 from potluck.models.utils import utc_now
 
@@ -31,6 +33,12 @@ class Person(SQLModel, table=True):
     """
 
     __tablename__ = "people"
+
+    # Search configuration - FTS on display_name and notes
+    __searchable__: ClassVar[bool] = True
+    __search_text_fields__: ClassVar[list[str]] = ["display_name", "notes"]
+    __search_title_field__: ClassVar[str | None] = "display_name"
+    __search_date_field__: ClassVar[str] = "created_at"
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -69,6 +77,25 @@ class Person(SQLModel, table=True):
         default=None,
         foreign_key="people.id",
         description="If merged, points to the canonical Person record",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

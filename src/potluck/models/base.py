@@ -36,10 +36,12 @@ class EntityType(str, Enum):
     KNOWLEDGE_NOTE = "knowledge_note"
     CALENDAR_EVENT = "calendar_event"
     TRANSACTION = "transaction"
+    LOCATION = "location"
     LOCATION_VISIT = "location_visit"
     BROWSING_HISTORY = "browsing_history"
     BOOKMARK = "bookmark"
     PERSON = "person"
+    TAG = "tag"
 
 
 class TimestampPrecision(str, Enum):
