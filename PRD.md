@@ -89,9 +89,18 @@ All entities are generic and not tied to a specific source. A `source_type` fiel
 
 ### Search
 
-**Hybrid Search** combining:
-- pgvector similarity search with HNSW indexes
-- Reciprocal Rank Fusion (RRF) with configurable weights
+**Hybrid Search** combining two complementary approaches:
+
+| Method | Column | What it Finds | Example |
+|--------|--------|---------------|---------|
+| Full-Text Search (FTS) | `search_vector` (TSVECTOR) | Keyword matches with stemming | "running" → "run", "runs" |
+| Vector Similarity | `embedding` (384d) | Semantically similar content | "car" → "automobile", "vehicle" |
+
+- **TSVECTOR**: PostgreSQL's pre-processed text format for fast keyword lookup via GIN indexes. Auto-populated by triggers.
+- **Embeddings**: Dense vectors encoding meaning (e5-small-v2 for text, SigLIP for cross-modal image search).
+- **Reciprocal Rank Fusion (RRF)**: Blends ranked results from both methods with configurable weights.
+
+Search modes: FTS-only, vector-only (text or multimodal), or hybrid (default).
 
 ### Entity Linking
 
