@@ -35,6 +35,8 @@ jobs:
           # Install torch CPU-only (needed for mypy to type-check torch code)
           # This replaces the lockfile's CUDA torch with CPU-only version
           uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          # Install transformers for type-checking transformers/huggingface code
+          uv pip install transformers
 
       - name: Run ruff check
         run: uv run ruff check src/ tests/ alembic/
