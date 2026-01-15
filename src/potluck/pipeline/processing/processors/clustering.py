@@ -21,7 +21,7 @@ from potluck.core.celery import (
 from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
 from potluck.models.faces import ClusterStatus, FaceCluster, MediaPersonLink
-from potluck.pipeline.processing.faces import FaceProcessor
+from potluck.pipeline.processing.processors.faces import FaceProcessor
 
 logger = get_logger(__name__)
 

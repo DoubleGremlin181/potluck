@@ -11,7 +11,7 @@ pytest.importorskip("sentence_transformers")
 
 import torch
 
-from potluck.pipeline.processing.ml import MLModels, get_device
+from potluck.pipeline.processing.core.ml import MLModels, get_device
 
 
 class TestGetDevice:

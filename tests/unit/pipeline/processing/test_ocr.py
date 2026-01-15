@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.ocr import OCRProcessor
+from potluck.pipeline.processing.processors.ocr import OCRProcessor
 
 
 class TestOCRProcessor:

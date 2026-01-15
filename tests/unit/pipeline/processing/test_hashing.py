@@ -8,7 +8,7 @@ from PIL import Image
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.hashing import HashingProcessor, compute_phash_distance
+from potluck.pipeline.processing.processors.hashing import HashingProcessor, compute_phash_distance
 
 
 class TestHashingProcessor:

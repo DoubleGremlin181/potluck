@@ -66,7 +66,9 @@ def download_models(
 
     Models are cached locally and shared across all Potluck processes.
     """
-    from potluck.pipeline.processing.ml import MLModels
+    # Late import to avoid circular dependency: core/__init__.py imports cli.py,
+    # and pipeline imports would trigger models/__init__.py which imports from core
+    from potluck.pipeline.processing.core.ml import MLModels
 
     typer.echo("Downloading ML models...")
     models = MLModels(device=device)

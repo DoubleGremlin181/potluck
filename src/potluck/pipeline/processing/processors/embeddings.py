@@ -32,24 +32,24 @@ from potluck.core.celery import (
     RETRY_BACKOFF_MAX,
     celery_app,
 )
+from potluck.core.constants import (
+    DEFAULT_MULTIMODAL_MODEL,
+    DEFAULT_TEXT_EMBEDDING_MODEL,
+)
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 from potluck.models.media import EmbeddingType, Media, MediaEmbedding, MediaType
 from potluck.models.messages import ChatMessage
 from potluck.models.notes import KnowledgeNote
 from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
-from potluck.pipeline.processing.base import (
+from potluck.pipeline.processing.core.base import (
     BaseProcessor,
     _get_entity,
     run_batch_processor_task,
     run_processor_task,
 )
-from potluck.pipeline.processing.ml import (
-    DEFAULT_MULTIMODAL_MODEL,
-    DEFAULT_TEXT_EMBEDDING_MODEL,
-    MLModels,
-)
-from potluck.pipeline.processing.registry import ProcessorRegistry
+from potluck.pipeline.processing.core.ml import MLModels
+from potluck.pipeline.processing.core.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 
@@ -64,7 +64,7 @@ TEXT_FIELD_MAP: dict[EntityType, str] = {
 }
 
 
-@ProcessorRegistry.register(priority=60)
+@ProcessorRegistry.register(priority=25)
 class TextEmbeddingProcessor(BaseProcessor):
     """Processor for generating text embeddings using e5-small-v2.
 
@@ -374,7 +374,7 @@ class TextEmbeddingProcessor(BaseProcessor):
         }
 
 
-@ProcessorRegistry.register(priority=65)
+@ProcessorRegistry.register(priority=26)
 class MultimodalTextEmbeddingProcessor(BaseProcessor):
     """Processor for generating multimodal text embeddings using SigLIP.
 
@@ -555,7 +555,7 @@ class MultimodalTextEmbeddingProcessor(BaseProcessor):
         }
 
 
-@ProcessorRegistry.register(priority=70)
+@ProcessorRegistry.register(priority=28)
 class MediaEmbeddingProcessor(BaseProcessor):
     """Processor for generating media embeddings using SigLIP.
 

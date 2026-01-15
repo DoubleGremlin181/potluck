@@ -8,7 +8,7 @@ from PIL import Image
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.metadata import MetadataProcessor
+from potluck.pipeline.processing.processors.metadata import MetadataProcessor
 
 
 class TestMetadataProcessor:

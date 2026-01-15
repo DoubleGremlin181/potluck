@@ -30,9 +30,9 @@ from potluck.models.base import EntityType
 from potluck.models.faces import MediaPersonLink
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
-from potluck.pipeline.processing.ml import MLModels
-from potluck.pipeline.processing.registry import ProcessorRegistry
+from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.ml import MLModels
+from potluck.pipeline.processing.core.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 

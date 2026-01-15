@@ -12,7 +12,7 @@ import torch
 from potluck.core.exceptions import ProcessingError
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.faces import FaceProcessor
+from potluck.pipeline.processing.processors.faces import FaceProcessor
 
 
 class TestFaceProcessor:

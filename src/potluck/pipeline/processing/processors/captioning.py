@@ -15,13 +15,14 @@ from potluck.core.celery import (
     RETRY_BACKOFF_MAX,
     celery_app,
 )
+from potluck.core.constants import DEFAULT_CAPTIONING_MODEL
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
-from potluck.pipeline.processing.ml import DEFAULT_CAPTIONING_MODEL, MLModels
-from potluck.pipeline.processing.registry import ProcessorRegistry
+from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.ml import MLModels
+from potluck.pipeline.processing.core.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 

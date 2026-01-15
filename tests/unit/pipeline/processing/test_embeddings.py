@@ -17,7 +17,7 @@ from potluck.models.media import Media, MediaType
 from potluck.models.messages import ChatMessage
 from potluck.models.notes import KnowledgeNote
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.embeddings import (
+from potluck.pipeline.processing.processors.embeddings import (
     MediaEmbeddingProcessor,
     MultimodalTextEmbeddingProcessor,
     TextEmbeddingProcessor,

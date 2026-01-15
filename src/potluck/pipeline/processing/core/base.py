@@ -87,8 +87,7 @@ def _get_entities_bulk(
 
     uuids = [UUID(eid) for eid in entity_ids]
     stmt = select(model_class).where(model_class.id.in_(uuids))  # type: ignore[attr-defined]
-    result = session.execute(stmt)
-    results = result.scalars().all()
+    results = session.exec(stmt).all()
 
     # Build lookup dict
     found: dict[str, SQLModel] = {str(entity.id): entity for entity in results}  # type: ignore[attr-defined]
@@ -125,8 +124,7 @@ def _update_entity_fields(
 def _update_media_fields(session: Session, media_id: str, **fields: Any) -> None:
     """Update specific fields on a Media record.
 
-    Convenience function for Media-specific processors. Kept for backward
-    compatibility.
+    Convenience function for Media-specific processors.
     """
     _update_entity_fields(session, EntityType.MEDIA, media_id, **fields)
 
@@ -280,7 +278,7 @@ def run_processor_task(
     entity_id: str,
     processor_class: type[BaseProcessor],
 ) -> dict[str, Any]:
-    """Execute a processor with standard error handling.
+    """Run a processor with standard error handling.
 
     This is the core implementation shared by all processor tasks. It handles:
     - Entity lookup and validation
@@ -350,7 +348,7 @@ def run_batch_processor_task(
     entity_ids: list[str],
     processor_class: type[BaseProcessor],
 ) -> dict[str, Any]:
-    """Execute a processor on a batch of entities with standard error handling.
+    """Run a processor on a batch of entities with standard error handling.
 
     This is the batch variant of run_processor_task(). It provides:
     - Single database round-trip for fetching all entities
@@ -409,7 +407,7 @@ def run_batch_processor_task(
                     "missing": len(missing_ids),
                 }
 
-            # Execute batch (processor can optimize this)
+            # Run batch (processor can optimize this)
             batch_result = processor.execute_batch(entities)
 
             # Persist all successful results
@@ -444,25 +442,3 @@ def run_batch_processor_task(
             raise task.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err
-
-
-# Legacy function for backward compatibility
-def run_processor_task_legacy(
-    task: Task[..., dict[str, Any]],
-    media_id: str,
-    processor_class: type[BaseProcessor],
-) -> dict[str, Any]:
-    """Execute a processor for a Media entity (legacy signature).
-
-    This function maintains backward compatibility with existing code that
-    uses the old signature. New code should use run_processor_task() instead.
-
-    Args:
-        task: The Celery task instance.
-        media_id: ID of the media item to process.
-        processor_class: The processor class to instantiate and run.
-
-    Returns:
-        Dict with task results.
-    """
-    return run_processor_task(task, EntityType.MEDIA, media_id, processor_class)

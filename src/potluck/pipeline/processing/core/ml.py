@@ -23,17 +23,16 @@ from transformers import (
     PreTrainedModel,
 )
 
-from potluck.core.constants import FACE_EMBEDDING_DIM
+from potluck.core.constants import (
+    DEFAULT_CAPTIONING_MODEL,
+    DEFAULT_MULTIMODAL_MODEL,
+    DEFAULT_TEXT_EMBEDDING_MODEL,
+    FACE_EMBEDDING_DIM,
+)
 from potluck.core.logging import get_logger
 from potluck.pipeline.processing._arcface import download_weights, get_weights_path, iresnet50
 
 logger = get_logger(__name__)
-
-
-# Default model identifiers
-DEFAULT_TEXT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
-DEFAULT_MULTIMODAL_MODEL = "google/siglip-base-patch16-224"
-DEFAULT_CAPTIONING_MODEL = "Salesforce/blip2-opt-2.7b"
 
 
 def get_device(preferred: str | None = None) -> torch.device:

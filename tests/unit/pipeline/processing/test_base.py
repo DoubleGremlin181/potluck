@@ -133,14 +133,14 @@ class TestGetEntitiesBulk:
         from unittest.mock import MagicMock, patch
 
         from potluck.models.base import EntityType
-        from potluck.pipeline.processing.base import _get_entities_bulk
+        from potluck.pipeline.processing.core.base import _get_entities_bulk
 
         session = MagicMock()
         # Use valid UUID strings
         entity_ids = [str(uuid4()), str(uuid4())]
 
         # Mock the model map to return None (unknown entity type)
-        with patch("potluck.pipeline.processing.base.get_entity_type_model_map") as mock_map:
+        with patch("potluck.pipeline.processing.core.base.get_entity_type_model_map") as mock_map:
             mock_map.return_value = {}
             found, missing = _get_entities_bulk(session, EntityType.MEDIA, entity_ids)
 
