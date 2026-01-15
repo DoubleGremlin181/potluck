@@ -35,12 +35,12 @@ class TestRunHashingProcessor:
         )
 
         with (
-            patch("potluck.pipeline.processing.base.get_engine"),
-            patch("potluck.pipeline.processing.base.Session"),
-            patch("potluck.pipeline.processing.base._get_entity", return_value=mock_media),
-            patch("potluck.pipeline.processing.base._update_entity_fields"),
+            patch("potluck.pipeline.processing.core.base.get_engine"),
+            patch("potluck.pipeline.processing.core.base.Session"),
+            patch("potluck.pipeline.processing.core.base._get_entity", return_value=mock_media),
+            patch("potluck.pipeline.processing.core.base._update_entity_fields"),
             patch(
-                "potluck.pipeline.processing.hashing.HashingProcessor.execute",
+                "potluck.pipeline.processing.processors.hashing.HashingProcessor.execute",
                 return_value=mock_result,
             ),
         ):
@@ -61,9 +61,9 @@ class TestRunHashingProcessor:
         from potluck.pipeline.tasks.processing import run_hashing_processor
 
         with (
-            patch("potluck.pipeline.processing.base.get_engine"),
-            patch("potluck.pipeline.processing.base.Session"),
-            patch("potluck.pipeline.processing.base._get_entity", return_value=None),
+            patch("potluck.pipeline.processing.core.base.get_engine"),
+            patch("potluck.pipeline.processing.core.base.Session"),
+            patch("potluck.pipeline.processing.core.base._get_entity", return_value=None),
         ):
             with pytest.raises(Reject) as exc_info:
                 run_hashing_processor(EntityType.MEDIA.value, str(uuid4()))
@@ -97,16 +97,16 @@ class TestRunMetadataProcessor:
         )
 
         with (
-            patch("potluck.pipeline.processing.base.get_engine"),
-            patch("potluck.pipeline.processing.base.Session"),
-            patch("potluck.pipeline.processing.base._get_entity", return_value=mock_media),
-            patch("potluck.pipeline.processing.base._update_entity_fields"),
+            patch("potluck.pipeline.processing.core.base.get_engine"),
+            patch("potluck.pipeline.processing.core.base.Session"),
+            patch("potluck.pipeline.processing.core.base._get_entity", return_value=mock_media),
+            patch("potluck.pipeline.processing.core.base._update_entity_fields"),
             patch(
-                "potluck.pipeline.processing.metadata.MetadataProcessor.should_execute",
+                "potluck.pipeline.processing.processors.metadata.MetadataProcessor.should_execute",
                 return_value=True,
             ),
             patch(
-                "potluck.pipeline.processing.metadata.MetadataProcessor.execute",
+                "potluck.pipeline.processing.processors.metadata.MetadataProcessor.execute",
                 return_value=mock_result,
             ),
         ):
@@ -159,15 +159,15 @@ class TestRunFacesProcessor:
         mock_session = MagicMock()
 
         with (
-            patch("potluck.pipeline.processing.base.get_engine"),
-            patch("potluck.pipeline.processing.base.Session", return_value=mock_session),
-            patch("potluck.pipeline.processing.base._get_entity", return_value=mock_media),
+            patch("potluck.pipeline.processing.core.base.get_engine"),
+            patch("potluck.pipeline.processing.core.base.Session", return_value=mock_session),
+            patch("potluck.pipeline.processing.core.base._get_entity", return_value=mock_media),
             patch(
-                "potluck.pipeline.processing.faces.FaceProcessor.should_execute",
+                "potluck.pipeline.processing.processors.faces.FaceProcessor.should_execute",
                 return_value=True,
             ),
             patch(
-                "potluck.pipeline.processing.faces.FaceProcessor.execute",
+                "potluck.pipeline.processing.processors.faces.FaceProcessor.execute",
                 return_value=mock_result,
             ),
         ):
@@ -243,9 +243,9 @@ class TestClusterUnassignedFaces:
         mock_result.scalars.return_value.all.return_value = []
 
         with (
-            patch("potluck.pipeline.processing.clustering.get_engine"),
+            patch("potluck.pipeline.processing.processors.clustering.get_engine"),
             patch(
-                "potluck.pipeline.processing.clustering.Session",
+                "potluck.pipeline.processing.processors.clustering.Session",
                 return_value=mock_session,
             ),
         ):

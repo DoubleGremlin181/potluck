@@ -28,7 +28,7 @@ from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 
 # Import registry for dynamic pipeline construction
-from potluck.pipeline.processing.registry import ProcessorRegistry
+from potluck.pipeline.processing.core.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 
@@ -86,8 +86,8 @@ def run_basic_processing(media_id: str) -> None:
     Args:
         media_id: ID of the media item to process.
     """
-    from potluck.pipeline.processing.hashing import run_hashing_processor
-    from potluck.pipeline.processing.metadata import run_metadata_processor
+    from potluck.pipeline.processing.processors.hashing import run_hashing_processor
+    from potluck.pipeline.processing.processors.metadata import run_metadata_processor
 
     chain(
         run_hashing_processor.si(EntityType.MEDIA.value, media_id),
@@ -196,16 +196,16 @@ def run_linkers_batch(import_run_id: str, entity_ids_by_type: dict[str, list[str
 
 
 # Re-export individual tasks for direct access
-from potluck.pipeline.processing.captioning import run_captioning_processor  # noqa: E402
-from potluck.pipeline.processing.clustering import cluster_unassigned_faces  # noqa: E402
-from potluck.pipeline.processing.embeddings import (  # noqa: E402
+from potluck.pipeline.processing.processors.captioning import run_captioning_processor  # noqa: E402
+from potluck.pipeline.processing.processors.clustering import cluster_unassigned_faces  # noqa: E402
+from potluck.pipeline.processing.processors.embeddings import (  # noqa: E402
     run_media_embedding_processor,
     run_text_embedding_processor,
 )
-from potluck.pipeline.processing.faces import run_faces_processor  # noqa: E402
-from potluck.pipeline.processing.hashing import run_hashing_processor  # noqa: E402
-from potluck.pipeline.processing.metadata import run_metadata_processor  # noqa: E402
-from potluck.pipeline.processing.ocr import run_ocr_processor  # noqa: E402
+from potluck.pipeline.processing.processors.faces import run_faces_processor  # noqa: E402
+from potluck.pipeline.processing.processors.hashing import run_hashing_processor  # noqa: E402
+from potluck.pipeline.processing.processors.metadata import run_metadata_processor  # noqa: E402
+from potluck.pipeline.processing.processors.ocr import run_ocr_processor  # noqa: E402
 
 __all__ = [
     # Pipeline orchestration

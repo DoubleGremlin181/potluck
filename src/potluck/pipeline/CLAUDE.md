@@ -18,13 +18,21 @@ pipeline/
 │   └── registry.py          # Stage registration
 ├── processing/              # Media processing (self-contained)
 │   ├── __init__.py          # Auto-discovery + exports
-│   ├── base.py              # BaseProcessor + run_processor_task
-│   ├── hashing.py           # HashingProcessor + Celery task
-│   ├── metadata.py          # MetadataProcessor + Celery task
-│   ├── ocr.py               # OCRProcessor + Celery task (ML)
-│   ├── faces.py             # FaceProcessor + Celery task (ML)
-│   ├── captioning.py        # CaptioningProcessor + Celery task (ML)
-│   └── clustering.py        # cluster_unassigned_faces task (ML)
+│   ├── core/                # Base infrastructure
+│   │   ├── __init__.py      # Core exports
+│   │   ├── base.py          # BaseProcessor + run_processor_task
+│   │   ├── registry.py      # ProcessorRegistry
+│   │   └── ml.py            # MLModels centralized loading
+│   ├── processors/          # Actual processing implementations
+│   │   ├── hashing.py       # HashingProcessor + Celery task
+│   │   ├── metadata.py      # MetadataProcessor + Celery task
+│   │   ├── ocr.py           # OCRProcessor + Celery task (ML)
+│   │   ├── faces.py         # FaceProcessor + Celery task (ML)
+│   │   ├── embeddings.py    # Embedding processors (text + media)
+│   │   ├── captioning.py    # CaptioningProcessor + Celery task (ML)
+│   │   └── clustering.py    # cluster_unassigned_faces task (ML)
+│   ├── _arcface/            # Private ArcFace implementation
+│   └── linkers/             # Cross-entity semantic linking
 └── utils/                   # Shared utilities
     ├── archive.py           # ZIP/TAR extraction
     ├── hashing.py           # SHA256/content hashing
@@ -78,7 +86,7 @@ class MyIngestionStage(BaseIngestionStage):
 Each processor is self-contained with business logic AND Celery task in one file:
 
 ```python
-from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.core.celery import celery_app
 
@@ -174,9 +182,9 @@ run_basic_processing(media_id)
 
 ## Adding a New Processor
 
-1. Create `processing/my_processor.py` (self-contained):
+1. Create `processing/processors/my_processor.py` (self-contained):
 ```python
-from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
 from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.core.celery import celery_app, ...
 
@@ -201,12 +209,14 @@ def run_my_processor(self, media_id: str) -> dict[str, Any]:
 ## Auto-Discovery
 
 The `processing/__init__.py` uses `pkgutil` to automatically discover and import
-all processor modules. This triggers Celery task registration:
+all processor modules in the `processors/` subdirectory. This triggers Celery task
+registration:
 
 ```python
 import pkgutil
-for module_info in pkgutil.iter_modules([package_dir]):
-    importlib.import_module(f".{module_info.name}", __package__)
+processors_dir = Path(__file__).parent / "processors"
+for module_info in pkgutil.iter_modules([str(processors_dir)]):
+    importlib.import_module(f".processors.{module_info.name}", __package__)
 ```
 
 ## ML Dependencies

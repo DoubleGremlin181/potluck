@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.captioning import CaptioningProcessor
+from potluck.pipeline.processing.processors.captioning import CaptioningProcessor
 
 
 class TestCaptioningProcessor:
@@ -92,4 +92,7 @@ class TestCaptioningProcessor:
         )
         assert stage._model_name == "custom/model"
         assert stage._max_length == 100
-        assert stage._device == "cpu"
+        # Device is now accessed through MLModels
+        import torch
+
+        assert stage._models.device == torch.device("cpu")

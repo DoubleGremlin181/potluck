@@ -30,7 +30,7 @@ class TestHashingWithRealImages:
     @pytest.mark.ml
     def test_hashing_jpeg_image(self, sample_jpeg_path: Path) -> None:
         """HashingProcessor correctly processes JPEG images."""
-        from potluck.pipeline.processing.hashing import HashingProcessor
+        from potluck.pipeline.processing.processors.hashing import HashingProcessor
 
         media = _create_test_media(sample_jpeg_path)
         stage = HashingProcessor()
@@ -45,7 +45,7 @@ class TestHashingWithRealImages:
     @pytest.mark.ml
     def test_hashing_png_image(self, sample_png_path: Path) -> None:
         """HashingProcessor correctly processes PNG images."""
-        from potluck.pipeline.processing.hashing import HashingProcessor
+        from potluck.pipeline.processing.processors.hashing import HashingProcessor
 
         media = _create_test_media(sample_png_path)
         stage = HashingProcessor()
@@ -66,7 +66,10 @@ class TestPerceptualHashDuplicateDetection:
         identical_images_different_formats: tuple[Path, Path],
     ) -> None:
         """Same image in PNG and JPEG has similar perceptual hash."""
-        from potluck.pipeline.processing.hashing import HashingProcessor, compute_phash_distance
+        from potluck.pipeline.processing.processors.hashing import (
+            HashingProcessor,
+            compute_phash_distance,
+        )
 
         jpeg_path, png_path = identical_images_different_formats
 
@@ -98,7 +101,10 @@ class TestPerceptualHashDuplicateDetection:
         image_with_text: Path,
     ) -> None:
         """Different images have different perceptual hashes."""
-        from potluck.pipeline.processing.hashing import HashingProcessor, compute_phash_distance
+        from potluck.pipeline.processing.processors.hashing import (
+            HashingProcessor,
+            compute_phash_distance,
+        )
 
         stage = HashingProcessor()
 
@@ -125,7 +131,7 @@ class TestOCRWithRealImages:
     @pytest.mark.ml
     def test_ocr_extracts_text_from_image(self, image_with_text: Path) -> None:
         """OCRProcessor extracts readable text from images."""
-        from potluck.pipeline.processing.ocr import OCRProcessor
+        from potluck.pipeline.processing.processors.ocr import OCRProcessor
 
         media = _create_test_media(image_with_text)
         stage = OCRProcessor()
@@ -144,7 +150,7 @@ class TestFaceDetectionWithRealImages:
     @pytest.mark.ml
     def test_face_detection_returns_embeddings(self, image_with_face: Path) -> None:
         """FaceProcessor returns face embeddings when faces are detected."""
-        from potluck.pipeline.processing.faces import FaceProcessor
+        from potluck.pipeline.processing.processors.faces import FaceProcessor
 
         media = _create_test_media(image_with_face)
         stage = FaceProcessor()
@@ -170,7 +176,7 @@ class TestCaptioningWithRealImages:
     @pytest.mark.ml
     def test_captioning_generates_description(self, sample_jpeg_path: Path) -> None:
         """CaptioningProcessor generates text description for images."""
-        from potluck.pipeline.processing.captioning import CaptioningProcessor
+        from potluck.pipeline.processing.processors.captioning import CaptioningProcessor
 
         media = _create_test_media(sample_jpeg_path)
         stage = CaptioningProcessor()
@@ -188,7 +194,7 @@ class TestMetadataWithRealImages:
     @pytest.mark.ml
     def test_metadata_processes_without_exif(self, sample_jpeg_path: Path) -> None:
         """MetadataProcessor handles images without EXIF gracefully."""
-        from potluck.pipeline.processing.metadata import MetadataProcessor
+        from potluck.pipeline.processing.processors.metadata import MetadataProcessor
 
         media = _create_test_media(sample_jpeg_path)
         stage = MetadataProcessor()

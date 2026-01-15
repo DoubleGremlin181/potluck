@@ -1,7 +1,7 @@
 """Face detection and clustering processor using MTCNN + ArcFace (PyTorch native).
 
 Uses MTCNN for detection (from facenet-pytorch) and ArcFace IResNet for recognition.
-All inference runs on native PyTorch.
+All inference runs on native PyTorch. Uses MLModels for centralized model loading.
 """
 
 import time
@@ -30,9 +30,9 @@ from potluck.models.base import EntityType
 from potluck.models.faces import MediaPersonLink
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing._arcface import download_weights, get_weights_path, iresnet50
-from potluck.pipeline.processing.base import BaseProcessor, run_processor_task
-from potluck.pipeline.processing.registry import ProcessorRegistry
+from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.ml import MLModels
+from potluck.pipeline.processing.core.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
 
@@ -45,6 +45,7 @@ class FaceProcessor(BaseProcessor):
     face embeddings. The embeddings can later be clustered to group similar
     faces together using DBSCAN.
 
+    Uses MLModels for centralized model loading and GPU configuration.
     Note: ArcFace models are for non-commercial research purposes only.
     """
 
@@ -71,14 +72,12 @@ class FaceProcessor(BaseProcessor):
         """Initialize the face processor.
 
         Args:
-            device: Device to use for inference ('cuda', 'cpu', or None for auto).
+            device: Device to use for inference ('cuda', 'cpu', or None for auto based on GPU env var).
             clustering_eps: DBSCAN eps parameter for clustering.
             min_samples: DBSCAN min_samples parameter.
             confidence_threshold: Minimum confidence for face detection (0.0-1.0).
         """
-        self._device = torch.device(
-            device if device else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        self._models = MLModels(device=device)
         self._clustering_eps = clustering_eps
         self._min_samples = min_samples
         self._confidence_threshold = confidence_threshold
@@ -88,70 +87,12 @@ class FaceProcessor(BaseProcessor):
         self._recognizer: torch.nn.Module | None = None
 
     def _load_models(self) -> None:
-        """Load face detection and embedding models."""
+        """Load face detection and embedding models from MLModels."""
         if self._mtcnn is None:
-            logger.info(f"Loading MTCNN face detector on {self._device}")
-            self._mtcnn = MTCNN(
-                keep_all=True,
-                device=self._device,
-                post_process=False,  # Return raw crops, we'll preprocess for ArcFace
-            )
+            self._mtcnn = self._models.get_face_detector()
 
         if self._recognizer is None:
-            logger.info(f"Loading ArcFace IResNet50 recognizer on {self._device}")
-            self._recognizer = iresnet50(num_features=512)
-
-            # Download weights if not present
-            weights_path = get_weights_path()
-            if not weights_path.exists():
-                logger.info("Downloading ArcFace weights (first time setup)...")
-                download_weights()
-
-            if weights_path.exists():
-                state_dict = torch.load(weights_path, map_location=self._device, weights_only=True)
-
-                # Handle different checkpoint formats - some have 'arcface.' prefix
-                if any(k.startswith("arcface.") for k in state_dict):
-                    state_dict = {
-                        k.replace("arcface.", ""): v
-                        for k, v in state_dict.items()
-                        if k.startswith("arcface.")
-                    }
-
-                # Try to load, handling potential mismatches
-                try:
-                    self._recognizer.load_state_dict(state_dict, strict=True)
-                    logger.info(f"Loaded ArcFace weights from {weights_path}")
-                except RuntimeError as e:
-                    logger.error(
-                        f"Strict weight loading failed: {e}. "
-                        "Attempting non-strict loading - face recognition quality may be degraded."
-                    )
-                    try:
-                        incompatible = self._recognizer.load_state_dict(state_dict, strict=False)
-                        if incompatible.missing_keys:
-                            logger.error(
-                                f"Missing weight keys (may affect accuracy): {incompatible.missing_keys}"
-                            )
-                        if incompatible.unexpected_keys:
-                            logger.warning(
-                                f"Unexpected weight keys (ignored): {incompatible.unexpected_keys}"
-                            )
-                        logger.info(f"Loaded ArcFace weights (non-strict) from {weights_path}")
-                    except RuntimeError as e2:
-                        raise ProcessingError(
-                            f"Failed to load ArcFace weights even in non-strict mode: {e2}"
-                        ) from e2
-            else:
-                raise ProcessingError(
-                    f"ArcFace weights not found at {weights_path}. "
-                    "Face detection cannot produce meaningful results without pretrained weights. "
-                    "Run: python -c 'from potluck.pipeline.processing._arcface import download_weights; download_weights()'"
-                )
-
-            self._recognizer.to(self._device)
-            self._recognizer.eval()
-            self._recognizer.requires_grad_(False)
+            self._recognizer = self._models.get_face_encoder()
 
     def _preprocess_face_for_arcface(self, face_crop: torch.Tensor) -> torch.Tensor:
         """Preprocess MTCNN face crop for ArcFace recognition.
@@ -261,7 +202,7 @@ class FaceProcessor(BaseProcessor):
 
                 # Preprocess for ArcFace (resize to 112x112, normalize)
                 face_tensor = self._preprocess_face_for_arcface(face_crop)
-                face_tensor = face_tensor.to(self._device)
+                face_tensor = face_tensor.to(self._models.device)
 
                 # Generate embedding with ArcFace
                 with torch.no_grad():

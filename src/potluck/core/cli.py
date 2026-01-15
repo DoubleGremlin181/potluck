@@ -43,3 +43,34 @@ def web(
 
     typer.echo(f"Starting web server on {actual_host}:{actual_port}")
     run_web_server(host=actual_host, port=actual_port)
+
+
+@app.command("download-models")
+def download_models(
+    device: str = typer.Option(
+        None,
+        "--device",
+        "-d",
+        help="Device to load models on ('cpu' or 'cuda'). Default: auto-detect.",
+    ),
+) -> None:
+    """Pre-download all ML models for offline use.
+
+    Downloads and caches all ML models used by Potluck processors:
+    - Text encoder (e5-small-v2, ~90MB)
+    - Multimodal encoder (SigLIP, ~380MB)
+    - Face detector (MTCNN)
+    - Face encoder (ArcFace, ~250MB)
+    - OCR reader (EasyOCR, ~100MB)
+    - Captioning model (BLIP-2, ~2.7GB)
+
+    Models are cached locally and shared across all Potluck processes.
+    """
+    # Late import to avoid circular dependency: core/__init__.py imports cli.py,
+    # and pipeline imports would trigger models/__init__.py which imports from core
+    from potluck.pipeline.processing.core.ml import MLModels
+
+    typer.echo("Downloading ML models...")
+    models = MLModels(device=device)
+    models.download_all_models()
+    typer.echo("All models downloaded successfully!")

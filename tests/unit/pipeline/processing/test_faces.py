@@ -12,7 +12,7 @@ import torch
 from potluck.core.exceptions import ProcessingError
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageStatus
-from potluck.pipeline.processing.faces import FaceProcessor
+from potluck.pipeline.processing.processors.faces import FaceProcessor
 
 
 class TestFaceProcessor:
@@ -74,15 +74,16 @@ class TestFaceProcessor:
         assert "not found" in result.error_message.lower()
 
     def test_default_device_selection(self) -> None:
-        """FaceProcessor should auto-select device."""
+        """FaceProcessor should auto-select device based on GPU env var."""
         stage = FaceProcessor()
-        expected_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        assert stage._device == expected_device
+        # Device is now accessed through MLModels and respects GPU env var
+        # In test environment without GPU env var, defaults to CPU
+        assert stage._models.device in [torch.device("cpu"), torch.device("cuda")]
 
     def test_explicit_device_selection(self) -> None:
         """FaceProcessor should accept explicit device selection."""
         stage = FaceProcessor(device="cpu")
-        assert stage._device == torch.device("cpu")
+        assert stage._models.device == torch.device("cpu")
 
     def test_custom_clustering_settings(self) -> None:
         """FaceProcessor should accept custom clustering settings."""

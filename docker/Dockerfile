@@ -46,11 +46,12 @@ RUN mkdir -p src/potluck && touch src/potluck/__init__.py
 # ============================================================================
 FROM base AS cpu-deps
 
-# 1. Create venv and install CPU torch first
-# 2. Sync remaining deps, skipping nvidia/triton packages (CUDA-only, not needed for CPU torch)
+# 1. Create venv and sync deps excluding torch/nvidia packages
+# 2. Install CPU torch separately to avoid CUDA version from lockfile
 RUN uv venv && \
-    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     uv sync --all-extras --frozen \
+        --no-install-package torch \
+        --no-install-package torchvision \
         --no-install-package nvidia-cublas-cu12 \
         --no-install-package nvidia-cuda-cupti-cu12 \
         --no-install-package nvidia-cuda-nvrtc-cu12 \
@@ -67,6 +68,7 @@ RUN uv venv && \
         --no-install-package nvidia-cufile-cu12 \
         --no-install-package nvidia-nvshmem-cu12 \
         --no-install-package triton && \
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     rm -rf /root/.cache/uv /root/.cache/pip
 
 # ============================================================================
@@ -113,5 +115,5 @@ COPY src/ src/
 COPY alembic/ alembic/
 COPY alembic.ini .
 
-# Run migrations and start web server
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run potluck web"]
+# Run migrations, download models (cached in volume), and start web server
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run potluck download-models && uv run potluck web"]

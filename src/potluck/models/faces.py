@@ -14,10 +14,8 @@ from pydantic import field_validator, model_validator
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship
 
+from potluck.core.constants import FACE_EMBEDDING_DIM
 from potluck.models.base import SimpleEntity
-
-# Face embeddings are 512-dimensional vectors
-FACE_EMBEDDING_DIM = 512
 
 
 class ClusterStatus(str, Enum):
@@ -42,7 +40,7 @@ class FaceCluster(SimpleEntity, table=True):
     __tablename__ = "face_clusters"
 
     representative_encoding: list[float] = Field(
-        sa_column=Column(Vector(512)),
+        sa_column=Column(Vector(FACE_EMBEDDING_DIM)),
         description="Centroid/representative face embedding for the cluster",
     )
     status: ClusterStatus = Field(
@@ -126,8 +124,8 @@ class MediaPersonLink(SimpleEntity, table=True):
     # Face embedding and bounding box (for detected faces)
     embedding: list[float] | None = Field(
         default=None,
-        sa_column=Column(Vector(512), nullable=True),
-        description="512-dimensional face embedding vector",
+        sa_column=Column(Vector(FACE_EMBEDDING_DIM), nullable=True),
+        description="Face embedding vector for recognition",
     )
     bbox_x: int | None = Field(
         default=None,
