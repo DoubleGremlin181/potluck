@@ -55,11 +55,11 @@ class TestVectorRetrieverBehavior:
         retriever = VectorRetriever()
         mock_session = MagicMock()
 
-        # Entity types that aren't searchable
+        # Entity types that aren't searchable (LOCATION_VISIT has no __searchable__ = True)
         result = retriever.retrieve(
             session=mock_session,
             query="test",
-            entity_types={EntityType.PERSON, EntityType.TRANSACTION},
+            entity_types={EntityType.LOCATION_VISIT},
             limit=10,
         )
 
