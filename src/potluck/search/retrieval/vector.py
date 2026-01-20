@@ -7,19 +7,11 @@ from sqlalchemy import literal, select, text, union_all
 from sqlalchemy.sql import Select
 from sqlmodel import Session, SQLModel
 
-from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.pipeline.processing.core.ml import MLModels
 from potluck.search.dtos import RetrievalResult
 from potluck.search.retrieval.base import Retriever
-
-
-def get_searchable_models() -> dict[EntityType, type[SQLModel]]:
-    """Get all models that have search enabled."""
-    entity_map = get_entity_type_model_map()
-    return {
-        et: model for et, model in entity_map.items() if getattr(model, "__searchable__", False)
-    }
+from potluck.search.utils import get_primary_date_field, get_searchable_models
 
 
 class VectorRetriever(Retriever):
@@ -37,20 +29,14 @@ class VectorRetriever(Retriever):
     - Handling synonyms and paraphrases
     """
 
-    def __init__(self, models: MLModels | None = None) -> None:
-        """Initialize the vector retriever.
-
-        Args:
-            models: MLModels instance for query encoding. If None, creates one.
-        """
-        self._models = models
+    _models: MLModels | None = None
 
     @property
     def models(self) -> MLModels:
-        """Lazy-load MLModels instance."""
-        if self._models is None:
-            self._models = MLModels()
-        return self._models
+        """Lazy-load MLModels instance (class-level singleton)."""
+        if VectorRetriever._models is None:
+            VectorRetriever._models = MLModels()
+        return VectorRetriever._models
 
     def retrieve(
         self,
@@ -158,14 +144,15 @@ class VectorRetriever(Retriever):
         """Build a SELECT query for a single entity type.
 
         Returns a query that selects entity_type, entity_id, and similarity score.
+        Date filtering is applied BEFORE ordering and limiting for correct results.
         """
         # Get the embedding column
         emb_col = getattr(model, embedding_column, None)
         if emb_col is None:
             return None
 
-        # Get date field for filtering
-        date_field: str = getattr(model, "__search_date_field__", "created_at")
+        # Get date field for filtering using utility function
+        date_field = get_primary_date_field(model)
         date_col = getattr(model, date_field, None)
 
         # Convert query embedding to PostgreSQL vector format
@@ -182,23 +169,21 @@ class VectorRetriever(Retriever):
         # Get the id column (all searchable models have id from base classes)
         id_col: Any = getattr(model, "id")  # noqa: B009
 
-        # Build query - only include rows with embeddings
-        query = (
-            select(
-                literal(entity_type.value).label("entity_type"),
-                id_col.label("entity_id"),
-                similarity,
-            )
-            .where(emb_col.is_not(None))
-            .order_by(cosine_distance)  # Order by distance (ascending)
-            .limit(limit)
-        )
+        # Build base query - only include rows with embeddings
+        query = select(
+            literal(entity_type.value).label("entity_type"),
+            id_col.label("entity_id"),
+            similarity,
+        ).where(emb_col.is_not(None))
 
-        # Add date filtering
+        # Apply date filtering BEFORE ordering and limiting (correct order of operations)
         if date_col is not None:
             if since is not None:
                 query = query.where(date_col >= since)
             if until is not None:
                 query = query.where(date_col <= until)
+
+        # Apply ordering and limit after all filters
+        query = query.order_by(cosine_distance).limit(limit)
 
         return query

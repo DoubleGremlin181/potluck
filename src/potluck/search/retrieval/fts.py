@@ -7,21 +7,15 @@ from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.sql import Select
 from sqlmodel import Session, SQLModel
 
-from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.search.dtos import RetrievalResult
 from potluck.search.retrieval.base import Retriever
-
-
-def get_searchable_models() -> dict[EntityType, type[SQLModel]]:
-    """Get all models that have search enabled.
-
-    Returns models that have __searchable__ = True class attribute.
-    """
-    entity_map = get_entity_type_model_map()
-    return {
-        et: model for et, model in entity_map.items() if getattr(model, "__searchable__", False)
-    }
+from potluck.search.utils import (
+    get_model_priority_fields,
+    get_model_text_fields,
+    get_primary_date_field,
+    get_searchable_models,
+)
 
 
 class FTSRetriever(Retriever):
@@ -30,11 +24,11 @@ class FTSRetriever(Retriever):
     Uses tsvector columns and GIN indexes for fast keyword matching.
     Scores results using ts_rank_cd (cover density ranking).
 
-    FTS is best for:
-    - Exact keyword matching
-    - Boolean queries (AND/OR)
-    - Phrase matching
-    - Prefix matching
+    Supports Google-like search syntax via websearch_to_tsquery:
+    - AND: space between words (default)
+    - OR: "or" between words
+    - Phrase: "quoted words"
+    - Negation: -word
     """
 
     def retrieve(
@@ -59,9 +53,9 @@ class FTSRetriever(Retriever):
         if not target_types:
             return []
 
-        # Build tsquery from user input
-        # plainto_tsquery handles user input safely (splits on spaces, ANDs terms)
-        tsquery = func.plainto_tsquery("english", query)
+        # Build tsquery from user input using websearch_to_tsquery
+        # Supports Google-like syntax: AND (space), OR, "phrase", -negation
+        tsquery = func.websearch_to_tsquery("english", query)
 
         # Build subqueries for each entity type
         subqueries = []
@@ -122,19 +116,24 @@ class FTSRetriever(Retriever):
         """Build a SELECT query for a single entity type.
 
         Returns a query that selects entity_type, entity_id, score, and snippet.
+        Date filtering is applied BEFORE ordering and limiting for correct results.
         """
-        # Get search configuration from model class attributes
-        text_fields: list[str] = getattr(model, "__search_text_fields__", [])
-        title_field: str | None = getattr(model, "__search_title_field__", None)
-        date_field: str = getattr(model, "__search_date_field__", "created_at")
+        # Get search configuration using utility functions
+        text_fields = get_model_text_fields(model)
+        priority_fields = get_model_priority_fields(model)
+        date_field = get_primary_date_field(model)
 
         if not text_fields:
             return None
 
-        # Build headline (snippet) from title or first text field
-        headline_field = title_field or text_fields[0]
-        headline_col = getattr(model, headline_field, None)
+        # Build headline (snippet) from priority field or first text field
+        headline_field = next(iter(priority_fields), None) or (
+            text_fields[0] if text_fields else None
+        )
+        if headline_field is None:
+            return None
 
+        headline_col = getattr(model, headline_field, None)
         if headline_col is None:
             return None
 
@@ -156,25 +155,23 @@ class FTSRetriever(Retriever):
         # Get the id column (all searchable models have id from base classes)
         id_col: Any = getattr(model, "id")  # noqa: B009
 
-        # Build query
-        query = (
-            select(
-                literal(entity_type.value).label("entity_type"),
-                id_col.label("entity_id"),
-                score.label("score"),
-                snippet.label("snippet"),
-            )
-            .where(search_vector_col.op("@@")(tsquery))
-            .order_by(score.desc())
-            .limit(limit)
-        )
+        # Build base query with FTS match filter
+        query = select(
+            literal(entity_type.value).label("entity_type"),
+            id_col.label("entity_id"),
+            score.label("score"),
+            snippet.label("snippet"),
+        ).where(search_vector_col.op("@@")(tsquery))
 
-        # Add date filtering if the model has the date field
+        # Apply date filtering BEFORE ordering and limiting (correct order of operations)
         date_col = getattr(model, date_field, None)
         if date_col is not None:
             if since is not None:
                 query = query.where(date_col >= since)
             if until is not None:
                 query = query.where(date_col <= until)
+
+        # Apply ordering and limit after all filters
+        query = query.order_by(score.desc()).limit(limit)
 
         return query
