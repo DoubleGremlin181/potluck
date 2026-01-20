@@ -133,11 +133,19 @@ class ChatMessage(TimestampedEntity, table=True):
 
     __tablename__ = "chat_messages"
 
-    # Search configuration
+    # Search configuration - auto-discovers content field
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["content"]
-    __search_title_field__: ClassVar[str | None] = None
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = set()  # No priority field
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        sender = self.sender_name or "Unknown"
+        content_preview = (self.content or "")[:100]
+        if len(self.content or "") > 100:
+            content_preview += "..."
+        return f"[{self.source_type.value}] {sender}: {content_preview}"
 
     # Thread relationship
     thread_id: UUID = Field(

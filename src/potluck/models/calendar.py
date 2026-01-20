@@ -53,11 +53,18 @@ class CalendarEvent(GeolocatedEntity, table=True):
 
     __tablename__ = "calendar_events"
 
-    # Search configuration - FTS on summary and description
+    # Search configuration - summary is priority, description auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["summary", "description"]
-    __search_title_field__: ClassVar[str | None] = "summary"
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"summary"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at", "start_time"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        summary = self.summary or "(No title)"
+        calendar = self.calendar_name or "Calendar"
+        time_str = self.start_time.strftime("%Y-%m-%d %H:%M") if self.start_time else ""
+        return f"[{self.source_type.value}] {calendar}: {summary} ({time_str})"
 
     # Event identifiers
     event_id: str | None = Field(

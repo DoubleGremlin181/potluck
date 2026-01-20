@@ -116,11 +116,18 @@ class Transaction(TimestampedEntity, table=True):
 
     __tablename__ = "transactions"
 
-    # Search configuration - FTS on description and payee
+    # Search configuration - payee is priority, description/category auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["description", "payee", "category"]
-    __search_title_field__: ClassVar[str | None] = "payee"
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"payee"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        payee = self.payee or "Unknown"
+        amount_str = f"${self.amount:,.2f}" if self.amount else ""
+        category = self.category or "Uncategorized"
+        return f"[{self.source_type.value}] {payee}: {amount_str} ({category})"
 
     # Account relationship
     account_id: UUID = Field(

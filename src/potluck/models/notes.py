@@ -36,12 +36,19 @@ class KnowledgeNote(SimpleEntity, table=True):
 
     __tablename__ = "knowledge_notes"
 
-    # Search configuration
-    # Note: Migration schema has title field that trigger uses, model uses content only
+    # Search configuration - content auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["content"]
-    __search_title_field__: ClassVar[str | None] = None
-    __search_date_field__: ClassVar[str] = "created_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = set()
+    __search_date_fields__: ClassVar[set[str]] = {"created_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        content_preview = (self.content or "")[:120]
+        if len(self.content or "") > 120:
+            content_preview += "..."
+        creator = self.created_by or "unknown"
+        return f"[Note by {creator}] {content_preview}"
 
     # Note content
     content: str = Field(

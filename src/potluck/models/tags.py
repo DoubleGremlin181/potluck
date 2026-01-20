@@ -24,11 +24,17 @@ class Tag(SimpleEntity, table=True):
 
     __tablename__ = "tags"
 
-    # Search configuration - FTS on name and description
+    # Search configuration - name is priority, description auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["name", "description"]
-    __search_title_field__: ClassVar[str | None] = "name"
-    __search_date_field__: ClassVar[str] = "created_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"name"}
+    __search_date_fields__: ClassVar[set[str]] = {"created_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        if self.name:
+            return f"[Tag] {self.name}" + (f" ({self.category})" if self.category else "")
+        return f"[Lambda Tag] {(self.description or '')[:60]}..."
 
     # Tag information
     name: str | None = Field(

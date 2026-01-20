@@ -60,11 +60,17 @@ class SocialPost(TimestampedEntity, table=True):
 
     __tablename__ = "social_posts"
 
-    # Search configuration
+    # Search configuration - title is priority, body auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["title", "body"]
-    __search_title_field__: ClassVar[str | None] = "title"
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"title"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        title = self.title or "(Untitled)"
+        community = f"r/{self.community_name}" if self.community_name else self.platform.value
+        return f"[{self.source_type.value}] {community}: {title}"
 
     # Platform information
     platform: Platform = Field(
@@ -266,11 +272,20 @@ class SocialComment(TimestampedEntity, table=True):
 
     __tablename__ = "social_comments"
 
-    # Search configuration
+    # Search configuration - body auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["body"]
-    __search_title_field__: ClassVar[str | None] = None
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = set()
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        author = self.author_name or "Unknown"
+        body_preview = (self.body or "")[:80]
+        if len(self.body or "") > 80:
+            body_preview += "..."
+        context = self.post_title or self.community_name or ""
+        return f"[{self.source_type.value}] {author} on {context}: {body_preview}"
 
     # Post relationship
     post_id: UUID | None = Field(

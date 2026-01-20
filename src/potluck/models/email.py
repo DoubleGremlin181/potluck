@@ -100,11 +100,17 @@ class Email(TimestampedEntity, table=True):
 
     __tablename__ = "emails"
 
-    # Search configuration
+    # Search configuration - subject is priority, body_text auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["subject", "body_text"]
-    __search_title_field__: ClassVar[str | None] = "subject"
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"subject"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        subject = self.subject or "(No subject)"
+        sender = self.from_name or self.from_address
+        return f"[{self.source_type.value}] {sender}: {subject}"
 
     # Thread relationship
     thread_id: UUID | None = Field(

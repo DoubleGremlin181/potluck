@@ -43,11 +43,19 @@ class Media(GeolocatedEntity, table=True):
 
     __tablename__ = "media"
 
-    # Search configuration - FTS on caption and ocr_text
+    # Search configuration - caption is priority, ocr_text auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["caption", "ocr_text"]
-    __search_title_field__: ClassVar[str | None] = "caption"
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"caption"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        filename = self.original_filename or self.file_path.split("/")[-1]
+        caption = self.caption or self.ocr_text or "(no description)"
+        if len(caption) > 80:
+            caption = caption[:77] + "..."
+        return f"[{self.source_type.value}] {self.media_type.value}: {filename} - {caption}"
 
     # File information
     file_path: str = Field(

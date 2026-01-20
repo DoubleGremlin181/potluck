@@ -21,11 +21,17 @@ class BrowsingHistory(TimestampedEntity, table=True):
 
     __tablename__ = "browsing_history"
 
-    # Search configuration - FTS on title and url
+    # Search configuration - title is priority, url auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["title", "url"]
-    __search_title_field__: ClassVar[str | None] = "title"
-    __search_date_field__: ClassVar[str] = "occurred_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"title"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        title = self.title or self.url
+        domain = self.domain or "unknown"
+        return f"[{self.source_type.value}] {domain}: {title}"
 
     # URL information
     url: str = Field(
@@ -110,11 +116,17 @@ class Bookmark(BaseEntity, table=True):
 
     __tablename__ = "bookmarks"
 
-    # Search configuration - FTS on title and description
+    # Search configuration - title is priority, description auto-discovered
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["title", "description"]
-    __search_title_field__: ClassVar[str | None] = "title"
-    __search_date_field__: ClassVar[str] = "created_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"title"}
+    __search_date_fields__: ClassVar[set[str]] = {"created_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        title = self.title or self.url
+        folder = self.folder_path or "Bookmarks"
+        return f"[{self.source_type.value}] {folder}: {title}"
 
     # URL information
     url: str = Field(
