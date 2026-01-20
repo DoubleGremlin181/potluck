@@ -165,7 +165,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if EntityType.LOCATION_VISIT in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.location import ingest_location_visits
 
-            yield from ingest_location_visits(path, filters)
+            # Location, LocationVisit, LocationHistory are SQLModel, not BaseEntity
+            yield from ingest_location_visits(path, filters)  # type: ignore[misc]
 
         if EntityType.MEDIA in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.photos import ingest_media
