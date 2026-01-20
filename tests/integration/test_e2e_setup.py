@@ -198,7 +198,6 @@ class TestTableColumns:
             "display_name",
             "photo_url",
             "date_of_birth",
-            "notes",
             "is_self",
             "merged_into_id",
         }

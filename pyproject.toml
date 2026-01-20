@@ -113,3 +113,8 @@ markers = [
     "e2e: End-to-end tests requiring Docker (use --run-e2e to enable)",
 ]
 addopts = "-m 'not e2e'"
+filterwarnings = [
+    # Ignore deprecation warnings from third-party dependencies
+    "ignore:torch.ao.quantization is deprecated:DeprecationWarning",
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]
