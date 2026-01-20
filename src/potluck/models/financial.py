@@ -3,10 +3,15 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
+from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity
 
 
@@ -111,6 +116,20 @@ class Transaction(TimestampedEntity, table=True):
 
     __tablename__ = "transactions"
 
+    # Search configuration - payee is priority, description/category auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"payee"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        payee = self.payee or "Unknown"
+        amount_str = f"${self.amount:,.2f}" if self.amount else ""
+        category = self.category or "Uncategorized"
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"Transaction (id: {self.id}): {payee} {amount_str} ({category}){date_str}"
+
     # Account relationship
     account_id: UUID = Field(
         foreign_key="accounts.id",
@@ -200,6 +219,25 @@ class Transaction(TimestampedEntity, table=True):
     longitude: float | None = Field(
         default=None,
         description="Transaction location longitude",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

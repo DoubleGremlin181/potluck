@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
@@ -57,6 +59,19 @@ class SocialPost(TimestampedEntity, table=True):
     """
 
     __tablename__ = "social_posts"
+
+    # Search configuration - title is priority, body auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"title"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        title = self.title or "(Untitled)"
+        community = f"r/{self.community_name}" if self.community_name else self.platform.value
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"SocialPost (id: {self.id}): {title} | {community}{date_str}"
 
     # Platform information
     platform: Platform = Field(
@@ -242,6 +257,13 @@ class SocialPost(TimestampedEntity, table=True):
         description="Multimodal embedding for text-to-image cross-modal search",
     )
 
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
+    )
+
     # Relationships
     comments: list["SocialComment"] = Relationship(back_populates="post")
 
@@ -250,6 +272,22 @@ class SocialComment(TimestampedEntity, table=True):
     """Comment on a social media post."""
 
     __tablename__ = "social_comments"
+
+    # Search configuration - body auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = set()
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        author = self.author_name or "Unknown"
+        body_preview = (self.body or "")[:60]
+        if len(self.body or "") > 60:
+            body_preview += "..."
+        context = self.post_title or self.community_name or ""
+        post_ref = f" | post: {self.post_id}" if self.post_id else ""
+        return f"SocialComment (id: {self.id}): {author} on {context}: {body_preview}{post_ref}"
 
     # Post relationship
     post_id: UUID | None = Field(
@@ -372,6 +410,13 @@ class SocialComment(TimestampedEntity, table=True):
         default=None,
         sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
         description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

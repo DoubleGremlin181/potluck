@@ -1,9 +1,14 @@
 """Tag and tagging models for entity organization."""
 
+from typing import ClassVar
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
+from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import SimpleEntity
 from potluck.models.links import EntityType
 
@@ -19,6 +24,19 @@ class Tag(SimpleEntity, table=True):
 
     __tablename__ = "tags"
 
+    # Search configuration - name is priority, description auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"name"}
+    __search_date_fields__: ClassVar[set[str]] = {"created_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        if self.name:
+            category_str = f" ({self.category})" if self.category else ""
+            return f"Tag (id: {self.id}): {self.name}{category_str}"
+        return f"Tag (id: {self.id}): {(self.description or '')[:60]}..."
+
     # Tag information
     name: str | None = Field(
         default=None,
@@ -33,6 +51,25 @@ class Tag(SimpleEntity, table=True):
     description: str | None = Field(
         default=None,
         description="Description or note content (especially for lambda tags)",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

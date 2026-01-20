@@ -23,11 +23,9 @@ class TestPeopleModels:
         person = Person(
             display_name="Jane Doe",
             date_of_birth=date(1990, 5, 15),
-            notes="A friend",
             is_self=True,
         )
         assert person.date_of_birth == date(1990, 5, 15)
-        assert person.notes == "A friend"
         assert person.is_self is True
 
     def test_person_merged_property(self) -> None:

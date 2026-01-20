@@ -2,13 +2,15 @@
 
 from datetime import date, datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.core.constants import FACE_EMBEDDING_DIM
+from potluck.core.constants import FACE_EMBEDDING_DIM, MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import SourceType
 from potluck.models.utils import utc_now
 
@@ -31,6 +33,16 @@ class Person(SQLModel, table=True):
     """
 
     __tablename__ = "people"
+
+    # Search configuration - display_name is priority
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"display_name"}
+    __search_date_fields__: ClassVar[set[str]] = {"created_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        return f"Person (id: {self.id}): {self.display_name}"
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -57,10 +69,6 @@ class Person(SQLModel, table=True):
         default=None,
         description="Date of birth if known",
     )
-    notes: str | None = Field(
-        default=None,
-        description="User notes about this person",
-    )
     is_self: bool = Field(
         default=False,
         description="Whether this person is the data owner",
@@ -69,6 +77,25 @@ class Person(SQLModel, table=True):
         default=None,
         foreign_key="people.id",
         description="If merged, points to the canonical Person record",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

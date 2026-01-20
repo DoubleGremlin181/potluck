@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
@@ -97,6 +99,19 @@ class Email(TimestampedEntity, table=True):
     """
 
     __tablename__ = "emails"
+
+    # Search configuration - subject is priority, body_text auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"subject"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        subject = self.subject or "(No subject)"
+        sender = self.from_name or self.from_address
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"Email (id: {self.id}): {subject} | from: {sender}{date_str}"
 
     # Thread relationship
     thread_id: UUID | None = Field(
@@ -238,6 +253,13 @@ class Email(TimestampedEntity, table=True):
         default=None,
         sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
         description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

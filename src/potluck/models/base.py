@@ -36,10 +36,12 @@ class EntityType(str, Enum):
     KNOWLEDGE_NOTE = "knowledge_note"
     CALENDAR_EVENT = "calendar_event"
     TRANSACTION = "transaction"
+    LOCATION = "location"
     LOCATION_VISIT = "location_visit"
     BROWSING_HISTORY = "browsing_history"
     BOOKMARK = "bookmark"
     PERSON = "person"
+    TAG = "tag"
 
 
 class TimestampPrecision(str, Enum):
@@ -58,9 +60,21 @@ class SimpleEntity(SQLModel):
 
     Provides id, created_at, and updated_at for entities that don't need
     full source tracking (e.g., link tables, embeddings, participants).
+
+    Search Configuration (class variables):
+        __searchable__: Whether this entity type supports search. Default False.
+        __search_exclude_fields__: Fields to exclude from auto-discovered text search.
+        __search_priority_fields__: Fields to weight higher in FTS (weight 'A').
+        __search_date_fields__: Date fields for date-range filtering.
     """
 
     __abstract__: ClassVar[bool] = True
+
+    # Search configuration - subclasses override these
+    __searchable__: ClassVar[bool] = False
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = set()
+    __search_date_fields__: ClassVar[set[str]] = set()
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -77,11 +91,37 @@ class SimpleEntity(SQLModel):
         description="When the entity was last updated",
     )
 
+    def to_text_repr(self) -> str:
+        """Return a text representation useful for LLMs and related content lookup.
+
+        This representation is used for:
+        - Search result display
+        - LLM context (helping the model understand and reference entities)
+        - Finding related content via IDs and metadata
+
+        Format guidelines for subclass implementations:
+        - Start with entity type and ID: "Photo (id: abc123)"
+        - Include primary identifier/title
+        - Include key relationships with IDs: "person: John (id: xyz789)"
+        - Include temporal info: "date: 2024-01-15"
+        - Include location if relevant: "location: Beach House (id: loc456)"
+        - Include tags if present
+
+        The goal is to provide enough context that an LLM can:
+        1. Understand what this entity is
+        2. Reference it by ID in follow-up queries
+        3. Find related entities via included relationship IDs
+
+        Returns:
+            Human-readable text with IDs for entity lookup.
+        """
+        return f"{self.__class__.__name__} (id: {self.id})"
+
 
 class BaseEntity(SimpleEntity):
     """Base class for all Potluck entities.
 
-    Inherits id, created_at, updated_at from SimpleEntity.
+    Inherits id, created_at, updated_at, and search configuration from SimpleEntity.
     Adds source tracking and content hashing for deduplication.
     """
 
@@ -99,6 +139,18 @@ class BaseEntity(SimpleEntity):
         index=True,
         description="SHA256 hash of content for deduplication",
     )
+
+    def to_text_repr(self) -> str:
+        """Return a text representation useful for LLMs and related content lookup.
+
+        Override of SimpleEntity's method to include source_type.
+        See SimpleEntity.to_text_repr for format guidelines.
+
+        Returns:
+            Human-readable text with IDs for entity lookup.
+        """
+        entity_type = self.__class__.__name__
+        return f"{entity_type} (id: {self.id}) | source: {self.source_type.value}"
 
 
 class TimestampedEntity(BaseEntity):

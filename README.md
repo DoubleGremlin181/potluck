@@ -18,7 +18,7 @@ Potluck is a privacy-first personal knowledge management system that:
 ## Features
 
 - **Source-agnostic entities**: A chat message model works for WhatsApp, Telegram, SMS, etc.
-- **Hybrid search**: Combines PostgreSQL full-text search with pgvector similarity
+- **Hybrid search**: Combines PostgreSQL full-text search (keywords) with pgvector similarity (semantics)
 - **Face recognition**: Link photos to people via auto-clustering (Google Photos-style)
 - **Image captioning**: AI-generated alt-text descriptions for images
 - **Multiple embeddings**: Support different embedding types (text, multimodal) per entity
@@ -28,8 +28,8 @@ Potluck is a privacy-first personal knowledge management system that:
 
 - **Python 3.12+** with FastAPI, SQLModel, Celery
 - **PostgreSQL** (Percona flavor) with pgvector and pg_tde encryption
-- **sentence-transformers** for text embeddings
-- **CLIP** for multimodal embeddings
+- **e5-small-v2** for text embeddings (via sentence-transformers)
+- **SigLIP** for multimodal embeddings (text-to-image search)
 - **EasyOCR** for image text extraction
 - **MTCNN + ArcFace** for face detection and embedding
 - **BLIP-2** for AI image captioning

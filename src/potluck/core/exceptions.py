@@ -46,3 +46,31 @@ class ProcessingError(PipelineError):
     - EXIF parsing errors
     - Model loading errors
     """
+
+
+class SearchError(PotluckError):
+    """Base exception for search operations.
+
+    Covers all search-related errors including:
+    - Query parsing errors
+    - Retrieval failures
+    - Ranking errors
+    """
+
+
+class InvalidSearchQueryError(SearchError):
+    """Raised when a search query is malformed or invalid.
+
+    Examples:
+    - Empty query string
+    - Invalid entity types specified
+    - Invalid search mode
+    """
+
+
+class NoSearchableEntitiesError(SearchError):
+    """Raised when no searchable entities match the query criteria.
+
+    For example, when searching for entity types that don't have
+    search support enabled.
+    """

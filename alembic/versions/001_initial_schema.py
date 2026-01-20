@@ -28,6 +28,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import TSVECTOR
 
 from alembic import op
 
@@ -91,11 +92,40 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(), nullable=False),
         sa.Column("photo_url", sa.String(), nullable=True),
         sa.Column("date_of_birth", sa.Date(), nullable=True),
-        sa.Column("notes", sa.String(), nullable=True),
         sa.Column("is_self", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("merged_into_id", sa.Uuid(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["merged_into_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
+    )
+    # HNSW indexes for semantic search on people
+    op.execute(
+        """
+        CREATE INDEX ix_people_embedding_hnsw
+        ON people
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_people_multimodal_embedding_hnsw
+        ON people
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search on people
+    op.execute(
+        """
+        CREATE INDEX ix_people_search_vector_gin
+        ON people
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
     )
 
     op.create_table(
@@ -152,6 +182,8 @@ def upgrade() -> None:
         sa.Column("transcript", sa.String(), nullable=True),
         sa.Column("source_url", sa.String(), nullable=True),
         sa.Column("album_name", sa.String(), nullable=True),
+        # Search columns (FTS on caption and ocr_text)
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_media_content_hash", "media", ["content_hash"])
@@ -159,6 +191,15 @@ def upgrade() -> None:
     op.create_index("ix_media_file_path", "media", ["file_path"])
     op.create_index("ix_media_file_hash", "media", ["file_hash"])
     op.create_index("ix_media_perceptual_hash", "media", ["perceptual_hash"])
+    # GIN index for full-text search on caption and ocr_text
+    op.execute(
+        """
+        CREATE INDEX ix_media_search_vector_gin
+        ON media
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "media_embeddings",
@@ -314,6 +355,10 @@ def upgrade() -> None:
         sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("reactions", sa.String(), nullable=True),
         sa.Column("tags", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["thread_id"], ["chat_threads.id"]),
         sa.ForeignKeyConstraint(["sender_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
@@ -324,6 +369,32 @@ def upgrade() -> None:
     op.create_index("ix_chat_messages_sender_id", "chat_messages", ["sender_id"])
     op.create_index("ix_chat_messages_occurred_at", "chat_messages", ["occurred_at"])
     op.create_index("ix_chat_messages_content_hash", "chat_messages", ["content_hash"])
+    # HNSW indexes for semantic search
+    op.execute(
+        """
+        CREATE INDEX ix_chat_messages_embedding_hnsw
+        ON chat_messages
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_chat_messages_multimodal_embedding_hnsw
+        ON chat_messages
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search
+    op.execute(
+        """
+        CREATE INDEX ix_chat_messages_search_vector_gin
+        ON chat_messages
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "chat_thread_participants",
@@ -405,6 +476,10 @@ def upgrade() -> None:
         sa.Column("has_attachments", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("size_bytes", sa.Integer(), nullable=True),
         sa.Column("tags", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["thread_id"], ["email_threads.id"]),
         sa.ForeignKeyConstraint(["sender_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -414,6 +489,32 @@ def upgrade() -> None:
     op.create_index("ix_emails_sender_id", "emails", ["sender_id"])
     op.create_index("ix_emails_occurred_at", "emails", ["occurred_at"])
     op.create_index("ix_emails_content_hash", "emails", ["content_hash"])
+    # HNSW indexes for semantic search
+    op.execute(
+        """
+        CREATE INDEX ix_emails_embedding_hnsw
+        ON emails
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_emails_multimodal_embedding_hnsw
+        ON emails
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search
+    op.execute(
+        """
+        CREATE INDEX ix_emails_search_vector_gin
+        ON emails
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "email_attachments",
@@ -481,6 +582,10 @@ def upgrade() -> None:
         sa.Column("flair", sa.String(), nullable=True),
         sa.Column("tags", sa.String(), nullable=True),
         sa.Column("crosspost_parent_id", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["author_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -490,6 +595,32 @@ def upgrade() -> None:
     op.create_index("ix_social_posts_community_name", "social_posts", ["community_name"])
     op.create_index("ix_social_posts_occurred_at", "social_posts", ["occurred_at"])
     op.create_index("ix_social_posts_content_hash", "social_posts", ["content_hash"])
+    # HNSW indexes for semantic search
+    op.execute(
+        """
+        CREATE INDEX ix_social_posts_embedding_hnsw
+        ON social_posts
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_social_posts_multimodal_embedding_hnsw
+        ON social_posts
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search
+    op.execute(
+        """
+        CREATE INDEX ix_social_posts_search_vector_gin
+        ON social_posts
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "social_comments",
@@ -525,6 +656,10 @@ def upgrade() -> None:
         sa.Column("is_saved", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_liked", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("tags", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["post_id"], ["social_posts.id"]),
         sa.ForeignKeyConstraint(["author_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["parent_comment_id"], ["social_comments.id"]),
@@ -535,6 +670,32 @@ def upgrade() -> None:
     op.create_index("ix_social_comments_author_id", "social_comments", ["author_id"])
     op.create_index("ix_social_comments_occurred_at", "social_comments", ["occurred_at"])
     op.create_index("ix_social_comments_content_hash", "social_comments", ["content_hash"])
+    # HNSW indexes for semantic search
+    op.execute(
+        """
+        CREATE INDEX ix_social_comments_embedding_hnsw
+        ON social_comments
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_social_comments_multimodal_embedding_hnsw
+        ON social_comments
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search
+    op.execute(
+        """
+        CREATE INDEX ix_social_comments_search_vector_gin
+        ON social_comments
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "subscriptions",
@@ -583,6 +744,10 @@ def upgrade() -> None:
         sa.Column("device", sa.String(), nullable=True),
         sa.Column("search_query", sa.String(), nullable=True),
         sa.Column("tags", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_browsing_history_url", "browsing_history", ["url"])
@@ -590,6 +755,32 @@ def upgrade() -> None:
     op.create_index("ix_browsing_history_domain", "browsing_history", ["domain"])
     op.create_index("ix_browsing_history_occurred_at", "browsing_history", ["occurred_at"])
     op.create_index("ix_browsing_history_content_hash", "browsing_history", ["content_hash"])
+    # HNSW indexes for semantic search on browsing_history
+    op.execute(
+        """
+        CREATE INDEX ix_browsing_history_embedding_hnsw
+        ON browsing_history
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_browsing_history_multimodal_embedding_hnsw
+        ON browsing_history
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search on browsing_history
+    op.execute(
+        """
+        CREATE INDEX ix_browsing_history_search_vector_gin
+        ON browsing_history
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "bookmark_folders",
@@ -629,6 +820,10 @@ def upgrade() -> None:
         sa.Column("is_favorite", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_archived", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("tags", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["folder_id"], ["bookmark_folders.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -636,6 +831,32 @@ def upgrade() -> None:
     op.create_index("ix_bookmarks_url_hash", "bookmarks", ["url_hash"])
     op.create_index("ix_bookmarks_domain", "bookmarks", ["domain"])
     op.create_index("ix_bookmarks_folder_id", "bookmarks", ["folder_id"])
+    # HNSW indexes for semantic search on bookmarks
+    op.execute(
+        """
+        CREATE INDEX ix_bookmarks_embedding_hnsw
+        ON bookmarks
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_bookmarks_multimodal_embedding_hnsw
+        ON bookmarks
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search on bookmarks
+    op.execute(
+        """
+        CREATE INDEX ix_bookmarks_search_vector_gin
+        ON bookmarks
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     # === Notes tables ===
 
@@ -669,20 +890,40 @@ def upgrade() -> None:
         sa.Column("linked_media_ids", sa.String(), nullable=True),
         sa.Column("reminder_at", sa.DateTime(), nullable=True),
         sa.Column("has_reminder", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("embedding", Vector(768), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.Column("color", sa.String(), nullable=True),
         sa.Column("tags", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_knowledge_notes_occurred_at", "knowledge_notes", ["occurred_at"])
     op.create_index("ix_knowledge_notes_content_hash", "knowledge_notes", ["content_hash"])
-    # HNSW index for note vector similarity search
+    # HNSW indexes for semantic search
     op.execute(
         """
         CREATE INDEX ix_knowledge_notes_embedding_hnsw
         ON knowledge_notes
         USING hnsw (embedding vector_cosine_ops)
         WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_knowledge_notes_multimodal_embedding_hnsw
+        ON knowledge_notes
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search
+    op.execute(
+        """
+        CREATE INDEX ix_knowledge_notes_search_vector_gin
+        ON knowledge_notes
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
         """
     )
 
@@ -707,6 +948,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("person_id", sa.Uuid(), nullable=True),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("location_type", sa.String(), nullable=False),
         sa.Column("latitude", sa.Float(), nullable=False),
@@ -722,11 +964,43 @@ def upgrade() -> None:
         sa.Column("phone", sa.String(), nullable=True),
         sa.Column("website", sa.String(), nullable=True),
         sa.Column("notes", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
+        sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_index("ix_locations_person_id", "locations", ["person_id"])
     op.create_index("ix_locations_city", "locations", ["city"])
     op.create_index("ix_locations_country", "locations", ["country"])
     op.create_index("ix_locations_place_id", "locations", ["place_id"])
+    # HNSW indexes for semantic search on locations
+    op.execute(
+        """
+        CREATE INDEX ix_locations_embedding_hnsw
+        ON locations
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_locations_multimodal_embedding_hnsw
+        ON locations
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search on locations
+    op.execute(
+        """
+        CREATE INDEX ix_locations_search_vector_gin
+        ON locations
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "location_visits",
@@ -814,6 +1088,10 @@ def upgrade() -> None:
         sa.Column("event_created_at", sa.DateTime(), nullable=True),
         sa.Column("event_updated_at", sa.DateTime(), nullable=True),
         sa.Column("color", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["organizer_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -822,6 +1100,32 @@ def upgrade() -> None:
     op.create_index("ix_calendar_events_start_time", "calendar_events", ["start_time"])
     op.create_index("ix_calendar_events_occurred_at", "calendar_events", ["occurred_at"])
     op.create_index("ix_calendar_events_content_hash", "calendar_events", ["content_hash"])
+    # HNSW indexes for semantic search on calendar_events
+    op.execute(
+        """
+        CREATE INDEX ix_calendar_events_embedding_hnsw
+        ON calendar_events
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_calendar_events_multimodal_embedding_hnsw
+        ON calendar_events
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search on calendar_events
+    op.execute(
+        """
+        CREATE INDEX ix_calendar_events_search_vector_gin
+        ON calendar_events
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "event_participants",
@@ -899,6 +1203,10 @@ def upgrade() -> None:
         sa.Column("merchant_location", sa.String(), nullable=True),
         sa.Column("latitude", sa.Float(), nullable=True),
         sa.Column("longitude", sa.Float(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.id"]),
         sa.ForeignKeyConstraint(["payee_id"], ["people.id"]),
         sa.ForeignKeyConstraint(["transfer_account_id"], ["accounts.id"]),
@@ -910,6 +1218,32 @@ def upgrade() -> None:
     op.create_index("ix_transactions_occurred_at", "transactions", ["occurred_at"])
     op.create_index("ix_transactions_payee", "transactions", ["payee"])
     op.create_index("ix_transactions_category", "transactions", ["category"])
+    # HNSW indexes for semantic search on transactions
+    op.execute(
+        """
+        CREATE INDEX ix_transactions_embedding_hnsw
+        ON transactions
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_transactions_multimodal_embedding_hnsw
+        ON transactions
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search on transactions
+    op.execute(
+        """
+        CREATE INDEX ix_transactions_search_vector_gin
+        ON transactions
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "budgets",
@@ -963,24 +1297,43 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.Column("name", sa.String(), nullable=False),
-        sa.Column("display_name", sa.String(), nullable=True),
+        sa.Column("name", sa.String(), nullable=True),
         sa.Column("category", sa.String(), nullable=True),
         sa.Column("description", sa.String(), nullable=True),
-        sa.Column("color", sa.String(), nullable=True),
-        sa.Column("icon", sa.String(), nullable=True),
-        sa.Column("parent_id", sa.Uuid(), nullable=True),
-        sa.Column("full_path", sa.String(), nullable=True),
-        sa.Column("usage_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("is_system", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("is_hidden", sa.Boolean(), nullable=False, server_default="false"),
-        sa.ForeignKeyConstraint(["parent_id"], ["tags.id"]),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("name"),
     )
     op.create_index("ix_tags_name", "tags", ["name"])
     op.create_index("ix_tags_category", "tags", ["category"])
-    op.create_index("ix_tags_full_path", "tags", ["full_path"])
+    # HNSW indexes for semantic search on tags
+    op.execute(
+        """
+        CREATE INDEX ix_tags_embedding_hnsw
+        ON tags
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_tags_multimodal_embedding_hnsw
+        ON tags
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search on tags
+    op.execute(
+        """
+        CREATE INDEX ix_tags_search_vector_gin
+        ON tags
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     op.create_table(
         "tag_assignments",
@@ -1014,8 +1367,320 @@ def upgrade() -> None:
     op.create_index("ix_tag_synonyms_tag_id", "tag_synonyms", ["tag_id"])
     op.create_index("ix_tag_synonyms_synonym", "tag_synonyms", ["synonym"])
 
+    # === FTS Trigger Functions ===
+    # These automatically populate search_vector columns on INSERT/UPDATE
+
+    # Chat messages: content only
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_chat_messages_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector := to_tsvector('english', COALESCE(NEW.content, ''));
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER chat_messages_search_vector_update
+            BEFORE INSERT OR UPDATE OF content ON chat_messages
+            FOR EACH ROW EXECUTE FUNCTION update_chat_messages_search_vector();
+        """
+    )
+
+    # Emails: subject (weight A) + body_text (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_emails_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.subject, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.body_text, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER emails_search_vector_update
+            BEFORE INSERT OR UPDATE OF subject, body_text ON emails
+            FOR EACH ROW EXECUTE FUNCTION update_emails_search_vector();
+        """
+    )
+
+    # Social posts: title (weight A) + body (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_social_posts_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.body, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER social_posts_search_vector_update
+            BEFORE INSERT OR UPDATE OF title, body ON social_posts
+            FOR EACH ROW EXECUTE FUNCTION update_social_posts_search_vector();
+        """
+    )
+
+    # Social comments: body only
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_social_comments_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector := to_tsvector('english', COALESCE(NEW.body, ''));
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER social_comments_search_vector_update
+            BEFORE INSERT OR UPDATE OF body ON social_comments
+            FOR EACH ROW EXECUTE FUNCTION update_social_comments_search_vector();
+        """
+    )
+
+    # Knowledge notes: title (weight A) + content (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_knowledge_notes_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.content, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER knowledge_notes_search_vector_update
+            BEFORE INSERT OR UPDATE OF title, content ON knowledge_notes
+            FOR EACH ROW EXECUTE FUNCTION update_knowledge_notes_search_vector();
+        """
+    )
+
+    # Media: caption (weight A) + ocr_text (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_media_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.caption, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.ocr_text, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER media_search_vector_update
+            BEFORE INSERT OR UPDATE OF caption, ocr_text ON media
+            FOR EACH ROW EXECUTE FUNCTION update_media_search_vector();
+        """
+    )
+
+    # People: display_name (weight A)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_people_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.display_name, '')), 'A');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER people_search_vector_update
+            BEFORE INSERT OR UPDATE OF display_name ON people
+            FOR EACH ROW EXECUTE FUNCTION update_people_search_vector();
+        """
+    )
+
+    # Browsing history: title (weight A) + url (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_browsing_history_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.url, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER browsing_history_search_vector_update
+            BEFORE INSERT OR UPDATE OF title, url ON browsing_history
+            FOR EACH ROW EXECUTE FUNCTION update_browsing_history_search_vector();
+        """
+    )
+
+    # Bookmarks: title (weight A) + description (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_bookmarks_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.description, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER bookmarks_search_vector_update
+            BEFORE INSERT OR UPDATE OF title, description ON bookmarks
+            FOR EACH ROW EXECUTE FUNCTION update_bookmarks_search_vector();
+        """
+    )
+
+    # Locations: name (weight A) + address, city (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_locations_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.name, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.address, '') || ' ' || COALESCE(NEW.city, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER locations_search_vector_update
+            BEFORE INSERT OR UPDATE OF name, address, city ON locations
+            FOR EACH ROW EXECUTE FUNCTION update_locations_search_vector();
+        """
+    )
+
+    # Calendar events: summary (weight A) + description (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_calendar_events_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.summary, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.description, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER calendar_events_search_vector_update
+            BEFORE INSERT OR UPDATE OF summary, description ON calendar_events
+            FOR EACH ROW EXECUTE FUNCTION update_calendar_events_search_vector();
+        """
+    )
+
+    # Transactions: payee (weight A) + description, category (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_transactions_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.payee, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.description, '') || ' ' || COALESCE(NEW.category, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER transactions_search_vector_update
+            BEFORE INSERT OR UPDATE OF payee, description, category ON transactions
+            FOR EACH ROW EXECUTE FUNCTION update_transactions_search_vector();
+        """
+    )
+
+    # Tags: name (weight A) + description (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_tags_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.name, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.description, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER tags_search_vector_update
+            BEFORE INSERT OR UPDATE OF name, description ON tags
+            FOR EACH ROW EXECUTE FUNCTION update_tags_search_vector();
+        """
+    )
+
 
 def downgrade() -> None:
+    # Drop FTS triggers and functions
+    op.execute("DROP TRIGGER IF EXISTS tags_search_vector_update ON tags")
+    op.execute("DROP FUNCTION IF EXISTS update_tags_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS transactions_search_vector_update ON transactions")
+    op.execute("DROP FUNCTION IF EXISTS update_transactions_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS calendar_events_search_vector_update ON calendar_events")
+    op.execute("DROP FUNCTION IF EXISTS update_calendar_events_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS locations_search_vector_update ON locations")
+    op.execute("DROP FUNCTION IF EXISTS update_locations_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS bookmarks_search_vector_update ON bookmarks")
+    op.execute("DROP FUNCTION IF EXISTS update_bookmarks_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS browsing_history_search_vector_update ON browsing_history")
+    op.execute("DROP FUNCTION IF EXISTS update_browsing_history_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS people_search_vector_update ON people")
+    op.execute("DROP FUNCTION IF EXISTS update_people_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS media_search_vector_update ON media")
+    op.execute("DROP FUNCTION IF EXISTS update_media_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS knowledge_notes_search_vector_update ON knowledge_notes")
+    op.execute("DROP FUNCTION IF EXISTS update_knowledge_notes_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS social_comments_search_vector_update ON social_comments")
+    op.execute("DROP FUNCTION IF EXISTS update_social_comments_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS social_posts_search_vector_update ON social_posts")
+    op.execute("DROP FUNCTION IF EXISTS update_social_posts_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS emails_search_vector_update ON emails")
+    op.execute("DROP FUNCTION IF EXISTS update_emails_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS chat_messages_search_vector_update ON chat_messages")
+    op.execute("DROP FUNCTION IF EXISTS update_chat_messages_search_vector()")
+
     # Drop tables in reverse order of creation (respecting foreign key constraints)
     op.drop_table("tag_synonyms")
     op.drop_table("tag_assignments")

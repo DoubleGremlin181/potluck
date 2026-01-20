@@ -2,10 +2,15 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
+from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import GeolocatedEntity, SimpleEntity
 from potluck.models.utils import IANATimezone
 
@@ -47,6 +52,21 @@ class CalendarEvent(GeolocatedEntity, table=True):
     """
 
     __tablename__ = "calendar_events"
+
+    # Search configuration - summary is priority, description auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"summary"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at", "start_time"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        summary = self.summary or "(No title)"
+        calendar = self.calendar_name or "Calendar"
+        time_str = (
+            f" | time: {self.start_time.strftime('%Y-%m-%d %H:%M')}" if self.start_time else ""
+        )
+        return f"CalendarEvent (id: {self.id}): {summary} | calendar: {calendar}{time_str}"
 
     # Event identifiers
     event_id: str | None = Field(
@@ -187,6 +207,25 @@ class CalendarEvent(GeolocatedEntity, table=True):
     color: str | None = Field(
         default=None,
         description="Event color ID or hex code",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships

@@ -1,10 +1,15 @@
 """Browsing history and bookmark models."""
 
 from datetime import datetime
+from typing import ClassVar
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
+from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
 from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity
 
 
@@ -15,6 +20,19 @@ class BrowsingHistory(TimestampedEntity, table=True):
     """
 
     __tablename__ = "browsing_history"
+
+    # Search configuration - title is priority, url auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"title"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        title = self.title or self.url
+        domain = self.domain or "unknown"
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"BrowsingHistory (id: {self.id}): {title} | domain: {domain}{date_str}"
 
     # URL information
     url: str = Field(
@@ -74,11 +92,42 @@ class BrowsingHistory(TimestampedEntity, table=True):
         description="Search query if this was a search result",
     )
 
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
+    )
+
 
 class Bookmark(BaseEntity, table=True):
     """Saved bookmark with URL, title, and folder organization."""
 
     __tablename__ = "bookmarks"
+
+    # Search configuration - title is priority, description auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"title"}
+    __search_date_fields__: ClassVar[set[str]] = {"created_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        title = self.title or self.url
+        folder = self.folder_path or "Bookmarks"
+        return f"Bookmark (id: {self.id}): {title} | folder: {folder}"
 
     # URL information
     url: str = Field(
@@ -144,6 +193,25 @@ class Bookmark(BaseEntity, table=True):
     is_archived: bool = Field(
         default=False,
         description="Whether archived/hidden",
+    )
+
+    # Embeddings for semantic search
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(TEXT_EMBEDDING_DIM)),
+        description="Text embedding for text-to-text semantic search",
+    )
+    multimodal_embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
+        description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Note: tags field is inherited from BaseEntity

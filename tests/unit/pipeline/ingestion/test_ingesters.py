@@ -54,10 +54,12 @@ class TestEntityType:
             "knowledge_note",
             "calendar_event",
             "transaction",
+            "location",
             "location_visit",
             "browsing_history",
             "bookmark",
             "person",
+            "tag",
         }
         actual = {et.value for et in EntityType}
         assert actual == expected

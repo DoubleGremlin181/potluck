@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM
@@ -40,6 +42,22 @@ class Media(GeolocatedEntity, table=True):
     """
 
     __tablename__ = "media"
+
+    # Search configuration - caption is priority, ocr_text auto-discovered
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"caption"}
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        filename = self.original_filename or self.file_path.split("/")[-1]
+        caption = self.caption or self.ocr_text or ""
+        if len(caption) > 60:
+            caption = caption[:57] + "..."
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        caption_str = f" | {caption}" if caption else ""
+        return f"Media (id: {self.id}): {self.media_type.value} {filename}{caption_str}{date_str}"
 
     # File information
     file_path: str = Field(
@@ -129,6 +147,13 @@ class Media(GeolocatedEntity, table=True):
     album_name: str | None = Field(
         default=None,
         description="Album or folder name from source",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search on caption/ocr_text (auto-populated by trigger)",
     )
 
     # Relationships

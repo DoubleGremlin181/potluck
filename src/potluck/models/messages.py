@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
@@ -131,6 +133,21 @@ class ChatMessage(TimestampedEntity, table=True):
 
     __tablename__ = "chat_messages"
 
+    # Search configuration - auto-discovers content field
+    __searchable__: ClassVar[bool] = True
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = set()  # No priority field
+    __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
+
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        sender = self.sender_name or "Unknown"
+        content_preview = (self.content or "")[:80]
+        if len(self.content or "") > 80:
+            content_preview += "..."
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"ChatMessage (id: {self.id}): {sender}: {content_preview}{date_str}"
+
     # Thread relationship
     thread_id: UUID = Field(
         foreign_key="chat_threads.id",
@@ -224,6 +241,13 @@ class ChatMessage(TimestampedEntity, table=True):
         default=None,
         sa_column=Column(Vector(MULTIMODAL_EMBEDDING_DIM)),
         description="Multimodal embedding for text-to-image cross-modal search",
+    )
+
+    # Full-text search vector (auto-populated by database trigger)
+    search_vector: str | None = Field(
+        default=None,
+        sa_column=Column(TSVECTOR),
+        description="FTS vector for keyword search (auto-populated by trigger)",
     )
 
     # Relationships
