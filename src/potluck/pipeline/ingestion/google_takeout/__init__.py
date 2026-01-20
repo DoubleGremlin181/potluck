@@ -159,7 +159,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if EntityType.CALENDAR_EVENT in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.calendar import ingest_calendar_events
 
-            yield from ingest_calendar_events(path, filters)
+            # EventParticipant extends SimpleEntity, not BaseEntity, but is valid for ingestion
+            yield from ingest_calendar_events(path, filters)  # type: ignore[misc]
 
         if EntityType.LOCATION_VISIT in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.location import ingest_location_visits
