@@ -153,7 +153,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if EntityType.CHAT_MESSAGE in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.chat import ingest_chat_messages
 
-            yield from ingest_chat_messages(path, filters)
+            # ChatThread extends SQLModel, not BaseEntity, but is valid for ingestion
+            yield from ingest_chat_messages(path, filters)  # type: ignore[misc]
 
         if EntityType.CALENDAR_EVENT in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.calendar import ingest_calendar_events
