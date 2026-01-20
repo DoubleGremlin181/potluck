@@ -92,7 +92,6 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(), nullable=False),
         sa.Column("photo_url", sa.String(), nullable=True),
         sa.Column("date_of_birth", sa.Date(), nullable=True),
-        sa.Column("notes", sa.String(), nullable=True),
         sa.Column("is_self", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("merged_into_id", sa.Uuid(), nullable=True),
         # Search columns
@@ -1499,15 +1498,14 @@ def upgrade() -> None:
         """
     )
 
-    # People: display_name (weight A) + notes (weight B)
+    # People: display_name (weight A)
     op.execute(
         """
         CREATE OR REPLACE FUNCTION update_people_search_vector()
         RETURNS TRIGGER AS $$
         BEGIN
             NEW.search_vector :=
-                setweight(to_tsvector('english', COALESCE(NEW.display_name, '')), 'A') ||
-                setweight(to_tsvector('english', COALESCE(NEW.notes, '')), 'B');
+                setweight(to_tsvector('english', COALESCE(NEW.display_name, '')), 'A');
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
@@ -1516,7 +1514,7 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TRIGGER people_search_vector_update
-            BEFORE INSERT OR UPDATE OF display_name, notes ON people
+            BEFORE INSERT OR UPDATE OF display_name ON people
             FOR EACH ROW EXECUTE FUNCTION update_people_search_vector();
         """
     )
