@@ -27,11 +27,12 @@ class BrowsingHistory(TimestampedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"title"}
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         title = self.title or self.url
         domain = self.domain or "unknown"
-        return f"[{self.source_type.value}] {domain}: {title}"
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"BrowsingHistory (id: {self.id}): {title} | domain: {domain}{date_str}"
 
     # URL information
     url: str = Field(
@@ -122,11 +123,11 @@ class Bookmark(BaseEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"title"}
     __search_date_fields__: ClassVar[set[str]] = {"created_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         title = self.title or self.url
         folder = self.folder_path or "Bookmarks"
-        return f"[{self.source_type.value}] {folder}: {title}"
+        return f"Bookmark (id: {self.id}): {title} | folder: {folder}"
 
     # URL information
     url: str = Field(

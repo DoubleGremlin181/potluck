@@ -122,12 +122,13 @@ class Transaction(TimestampedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"payee"}
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         payee = self.payee or "Unknown"
         amount_str = f"${self.amount:,.2f}" if self.amount else ""
         category = self.category or "Uncategorized"
-        return f"[{self.source_type.value}] {payee}: {amount_str} ({category})"
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"Transaction (id: {self.id}): {payee} {amount_str} ({category}){date_str}"
 
     # Account relationship
     account_id: UUID = Field(

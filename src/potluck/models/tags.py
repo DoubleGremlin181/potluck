@@ -30,11 +30,12 @@ class Tag(SimpleEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"name"}
     __search_date_fields__: ClassVar[set[str]] = {"created_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         if self.name:
-            return f"[Tag] {self.name}" + (f" ({self.category})" if self.category else "")
-        return f"[Lambda Tag] {(self.description or '')[:60]}..."
+            category_str = f" ({self.category})" if self.category else ""
+            return f"Tag (id: {self.id}): {self.name}{category_str}"
+        return f"Tag (id: {self.id}): {(self.description or '')[:60]}..."
 
     # Tag information
     name: str | None = Field(

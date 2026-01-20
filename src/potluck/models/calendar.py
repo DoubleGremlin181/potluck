@@ -59,12 +59,14 @@ class CalendarEvent(GeolocatedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"summary"}
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at", "start_time"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         summary = self.summary or "(No title)"
         calendar = self.calendar_name or "Calendar"
-        time_str = self.start_time.strftime("%Y-%m-%d %H:%M") if self.start_time else ""
-        return f"[{self.source_type.value}] {calendar}: {summary} ({time_str})"
+        time_str = (
+            f" | time: {self.start_time.strftime('%Y-%m-%d %H:%M')}" if self.start_time else ""
+        )
+        return f"CalendarEvent (id: {self.id}): {summary} | calendar: {calendar}{time_str}"
 
     # Event identifiers
     event_id: str | None = Field(

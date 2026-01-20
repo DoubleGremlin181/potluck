@@ -106,11 +106,12 @@ class Email(TimestampedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"subject"}
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         subject = self.subject or "(No subject)"
         sender = self.from_name or self.from_address
-        return f"[{self.source_type.value}] {sender}: {subject}"
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"Email (id: {self.id}): {subject} | from: {sender}{date_str}"
 
     # Thread relationship
     thread_id: UUID | None = Field(

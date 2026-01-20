@@ -45,14 +45,14 @@ class Location(SQLModel, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"name"}
     __search_date_fields__: ClassVar[set[str]] = {"created_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         location_parts = [self.name]
         if self.city:
             location_parts.append(self.city)
         if self.country:
             location_parts.append(self.country)
-        return f"[{self.source_type}] {', '.join(location_parts)}"
+        return f"Location (id: {self.id}): {', '.join(location_parts)}"
 
     id: UUID = Field(
         default_factory=uuid4,

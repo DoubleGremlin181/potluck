@@ -91,16 +91,31 @@ class SimpleEntity(SQLModel):
         description="When the entity was last updated",
     )
 
-    def to_search_repr(self) -> str:
-        """Generate a human-readable text representation for search results.
+    def to_text_repr(self) -> str:
+        """Return a text representation useful for LLMs and related content lookup.
 
-        Subclasses can override this for entity-specific formatting.
-        Default implementation returns the entity type name.
+        This representation is used for:
+        - Search result display
+        - LLM context (helping the model understand and reference entities)
+        - Finding related content via IDs and metadata
+
+        Format guidelines for subclass implementations:
+        - Start with entity type and ID: "Photo (id: abc123)"
+        - Include primary identifier/title
+        - Include key relationships with IDs: "person: John (id: xyz789)"
+        - Include temporal info: "date: 2024-01-15"
+        - Include location if relevant: "location: Beach House (id: loc456)"
+        - Include tags if present
+
+        The goal is to provide enough context that an LLM can:
+        1. Understand what this entity is
+        2. Reference it by ID in follow-up queries
+        3. Find related entities via included relationship IDs
 
         Returns:
-            Text representation suitable for displaying in search results.
+            Human-readable text with IDs for entity lookup.
         """
-        return self.__class__.__name__
+        return f"{self.__class__.__name__} (id: {self.id})"
 
 
 class BaseEntity(SimpleEntity):
@@ -125,16 +140,17 @@ class BaseEntity(SimpleEntity):
         description="SHA256 hash of content for deduplication",
     )
 
-    def to_search_repr(self) -> str:
-        """Generate a human-readable text representation for search results.
+    def to_text_repr(self) -> str:
+        """Return a text representation useful for LLMs and related content lookup.
 
         Override of SimpleEntity's method to include source_type.
+        See SimpleEntity.to_text_repr for format guidelines.
 
         Returns:
-            Text representation suitable for displaying in search results.
+            Human-readable text with IDs for entity lookup.
         """
         entity_type = self.__class__.__name__
-        return f"[{self.source_type.value}] {entity_type}"
+        return f"{entity_type} (id: {self.id}) | source: {self.source_type.value}"
 
 
 class TimestampedEntity(BaseEntity):

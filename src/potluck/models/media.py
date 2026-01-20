@@ -49,13 +49,15 @@ class Media(GeolocatedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"caption"}
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         filename = self.original_filename or self.file_path.split("/")[-1]
-        caption = self.caption or self.ocr_text or "(no description)"
-        if len(caption) > 80:
-            caption = caption[:77] + "..."
-        return f"[{self.source_type.value}] {self.media_type.value}: {filename} - {caption}"
+        caption = self.caption or self.ocr_text or ""
+        if len(caption) > 60:
+            caption = caption[:57] + "..."
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        caption_str = f" | {caption}" if caption else ""
+        return f"Media (id: {self.id}): {self.media_type.value} {filename}{caption_str}{date_str}"
 
     # File information
     file_path: str = Field(

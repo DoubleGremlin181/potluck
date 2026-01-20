@@ -66,11 +66,12 @@ class SocialPost(TimestampedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = {"title"}
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         title = self.title or "(Untitled)"
         community = f"r/{self.community_name}" if self.community_name else self.platform.value
-        return f"[{self.source_type.value}] {community}: {title}"
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"SocialPost (id: {self.id}): {title} | {community}{date_str}"
 
     # Platform information
     platform: Platform = Field(
@@ -278,14 +279,15 @@ class SocialComment(TimestampedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = set()
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         author = self.author_name or "Unknown"
-        body_preview = (self.body or "")[:80]
-        if len(self.body or "") > 80:
+        body_preview = (self.body or "")[:60]
+        if len(self.body or "") > 60:
             body_preview += "..."
         context = self.post_title or self.community_name or ""
-        return f"[{self.source_type.value}] {author} on {context}: {body_preview}"
+        post_ref = f" | post: {self.post_id}" if self.post_id else ""
+        return f"SocialComment (id: {self.id}): {author} on {context}: {body_preview}{post_ref}"
 
     # Post relationship
     post_id: UUID | None = Field(

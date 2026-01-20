@@ -42,13 +42,13 @@ class KnowledgeNote(SimpleEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = set()
     __search_date_fields__: ClassVar[set[str]] = {"created_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
-        content_preview = (self.content or "")[:120]
-        if len(self.content or "") > 120:
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
+        content_preview = (self.content or "")[:100]
+        if len(self.content or "") > 100:
             content_preview += "..."
         creator = self.created_by or "unknown"
-        return f"[Note by {creator}] {content_preview}"
+        return f"Note (id: {self.id}): {content_preview} | by: {creator}"
 
     # Note content
     content: str = Field(

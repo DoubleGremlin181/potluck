@@ -139,13 +139,14 @@ class ChatMessage(TimestampedEntity, table=True):
     __search_priority_fields__: ClassVar[set[str]] = set()  # No priority field
     __search_date_fields__: ClassVar[set[str]] = {"occurred_at"}
 
-    def to_search_repr(self) -> str:
-        """Generate search result representation."""
+    def to_text_repr(self) -> str:
+        """Return text representation with ID for LLM context."""
         sender = self.sender_name or "Unknown"
-        content_preview = (self.content or "")[:100]
-        if len(self.content or "") > 100:
+        content_preview = (self.content or "")[:80]
+        if len(self.content or "") > 80:
             content_preview += "..."
-        return f"[{self.source_type.value}] {sender}: {content_preview}"
+        date_str = f" | date: {self.occurred_at.date()}" if self.occurred_at else ""
+        return f"ChatMessage (id: {self.id}): {sender}: {content_preview}{date_str}"
 
     # Thread relationship
     thread_id: UUID = Field(
