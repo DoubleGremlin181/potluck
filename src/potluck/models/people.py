@@ -34,11 +34,15 @@ class Person(SQLModel, table=True):
 
     __tablename__ = "people"
 
-    # Search configuration - FTS on display_name and notes
+    # Search configuration - display_name is priority
     __searchable__: ClassVar[bool] = True
-    __search_text_fields__: ClassVar[list[str]] = ["display_name", "notes"]
-    __search_title_field__: ClassVar[str | None] = "display_name"
-    __search_date_field__: ClassVar[str] = "created_at"
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = {"display_name"}
+    __search_date_fields__: ClassVar[set[str]] = {"created_at"}
+
+    def to_search_repr(self) -> str:
+        """Generate search result representation."""
+        return f"[Person] {self.display_name}"
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -64,10 +68,6 @@ class Person(SQLModel, table=True):
     date_of_birth: date | None = Field(
         default=None,
         description="Date of birth if known",
-    )
-    notes: str | None = Field(
-        default=None,
-        description="User notes about this person",
     )
     is_self: bool = Field(
         default=False,
