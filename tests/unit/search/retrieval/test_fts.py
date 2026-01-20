@@ -1,7 +1,8 @@
 """Tests for FTS retriever."""
 
 from potluck.models.base import EntityType
-from potluck.search.retrieval.fts import FTSRetriever, get_searchable_models
+from potluck.search.retrieval.fts import FTSRetriever
+from potluck.search.utils import get_searchable_models
 
 
 class TestGetSearchableModels:
@@ -54,8 +55,10 @@ class TestGetSearchableModels:
 
         for _et, model in result.items():
             assert getattr(model, "__searchable__", False) is True
-            assert hasattr(model, "__search_text_fields__")
-            assert hasattr(model, "__search_date_field__")
+            # New search config uses auto-discovery with optional exclusions
+            assert hasattr(model, "__search_exclude_fields__")
+            assert hasattr(model, "__search_priority_fields__")
+            assert hasattr(model, "__search_date_fields__")
 
 
 class TestFTSRetriever:

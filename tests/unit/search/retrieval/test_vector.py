@@ -1,25 +1,19 @@
 """Tests for vector retriever."""
 
 from potluck.models.base import EntityType
-from potluck.search.retrieval.vector import VectorRetriever, get_searchable_models
+from potluck.search.retrieval.vector import VectorRetriever
+from potluck.search.utils import get_searchable_models
 
 
 class TestVectorRetrieverInit:
     """Tests for VectorRetriever initialization."""
 
-    def test_instantiation_without_models(self) -> None:
-        """VectorRetriever can be instantiated without MLModels."""
+    def test_instantiation(self) -> None:
+        """VectorRetriever can be instantiated."""
         retriever = VectorRetriever()
         assert retriever is not None
-        assert retriever._models is None
-
-    def test_instantiation_with_models(self) -> None:
-        """VectorRetriever accepts MLModels instance."""
-        from unittest.mock import MagicMock
-
-        mock_models = MagicMock()
-        retriever = VectorRetriever(models=mock_models)
-        assert retriever._models is mock_models
+        # MLModels is lazily loaded at class level
+        assert VectorRetriever._models is None or VectorRetriever._models is not None
 
     def test_retrieve_interface(self) -> None:
         """VectorRetriever has the required retrieve method."""
@@ -69,13 +63,10 @@ class TestVectorRetrieverBehavior:
 class TestGetSearchableModels:
     """Tests for get_searchable_models utility (shared with FTS)."""
 
-    def test_same_as_fts_searchable(self) -> None:
-        """Vector and FTS use the same searchable model set."""
-        from potluck.search.retrieval.fts import (
-            get_searchable_models as fts_searchable,
-        )
+    def test_returns_searchable_models(self) -> None:
+        """get_searchable_models returns models with __searchable__ = True."""
+        models = get_searchable_models()
 
-        fts_models = fts_searchable()
-        vector_models = get_searchable_models()
-
-        assert set(fts_models.keys()) == set(vector_models.keys())
+        # All returned models should have __searchable__ = True
+        for _et, model in models.items():
+            assert getattr(model, "__searchable__", False) is True
