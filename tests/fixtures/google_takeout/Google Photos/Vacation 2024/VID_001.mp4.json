@@ -1,0 +1,19 @@
+{
+  "title": "Beach Waves.mp4",
+  "description": "Waves crashing on the shore",
+  "photoTakenTime": {
+    "timestamp": "1705449600",
+    "formatted": "Jan 17, 2024, 12:00:00 AM UTC"
+  },
+  "geoData": {
+    "latitude": 25.7617,
+    "longitude": -80.1918,
+    "altitude": 3.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "creationTime": {
+    "timestamp": "1705449600",
+    "formatted": "Jan 17, 2024, 12:00:00 AM UTC"
+  }
+}
