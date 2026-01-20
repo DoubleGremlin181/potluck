@@ -50,6 +50,9 @@ dependencies = [
     "python-dateutil>=2.9.0",
     "tqdm>=4.66.0",
 
+    # Calendar parsing
+    "icalendar>=6.0.0",
+
     # CLI
     "typer>=0.15.0",
 ]

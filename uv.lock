@@ -716,6 +716,19 @@ wheels = [
 ]
 
 [[package]]
+name = "icalendar"
+version = "6.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+    { name = "tzdata" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5d/70/458092b3e7c15783423fe64d07e63ea3311a597e723be6a1060513e3db93/icalendar-6.3.2.tar.gz", hash = "sha256:e0c10ecbfcebe958d33af7d491f6e6b7580d11d475f2eeb29532d0424f9110a1", size = 178422 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/ee/2ff96bb5bd88fe03ab90aedf5180f96dc0f3ae4648ca264b473055bcaaff/icalendar-6.3.2-py3-none-any.whl", hash = "sha256:d400e9c9bb8c025e5a3c77c236941bb690494be52528a0b43cc7e8b7c9505064", size = 242403 },
+]
+
+[[package]]
 name = "idna"
 version = "3.11"
 source = { registry = "https://pypi.org/simple" }
@@ -1450,7 +1463,7 @@ wheels = [
 
 [[package]]
 name = "potluck"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1459,6 +1472,7 @@ dependencies = [
     { name = "exifread" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "icalendar" },
     { name = "imagehash" },
     { name = "jinja2" },
     { name = "mcp" },
@@ -1522,6 +1536,7 @@ requires-dist = [
     { name = "facenet-pytorch", marker = "extra == 'ml'", specifier = ">=2.5.3" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
+    { name = "icalendar", specifier = ">=6.0.0" },
     { name = "imagehash", specifier = ">=4.3.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "mcp", specifier = ">=1.0.0" },
