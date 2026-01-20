@@ -60,9 +60,21 @@ class SimpleEntity(SQLModel):
 
     Provides id, created_at, and updated_at for entities that don't need
     full source tracking (e.g., link tables, embeddings, participants).
+
+    Search Configuration (class variables):
+        __searchable__: Whether this entity type supports search. Default False.
+        __search_exclude_fields__: Fields to exclude from auto-discovered text search.
+        __search_priority_fields__: Fields to weight higher in FTS (weight 'A').
+        __search_date_fields__: Date fields for date-range filtering.
     """
 
     __abstract__: ClassVar[bool] = True
+
+    # Search configuration - subclasses override these
+    __searchable__: ClassVar[bool] = False
+    __search_exclude_fields__: ClassVar[set[str]] = set()
+    __search_priority_fields__: ClassVar[set[str]] = set()
+    __search_date_fields__: ClassVar[set[str]] = set()
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -79,11 +91,22 @@ class SimpleEntity(SQLModel):
         description="When the entity was last updated",
     )
 
+    def to_search_repr(self) -> str:
+        """Generate a human-readable text representation for search results.
+
+        Subclasses can override this for entity-specific formatting.
+        Default implementation returns the entity type name.
+
+        Returns:
+            Text representation suitable for displaying in search results.
+        """
+        return self.__class__.__name__
+
 
 class BaseEntity(SimpleEntity):
     """Base class for all Potluck entities.
 
-    Inherits id, created_at, updated_at from SimpleEntity.
+    Inherits id, created_at, updated_at, and search configuration from SimpleEntity.
     Adds source tracking and content hashing for deduplication.
     """
 
@@ -101,6 +124,17 @@ class BaseEntity(SimpleEntity):
         index=True,
         description="SHA256 hash of content for deduplication",
     )
+
+    def to_search_repr(self) -> str:
+        """Generate a human-readable text representation for search results.
+
+        Override of SimpleEntity's method to include source_type.
+
+        Returns:
+            Text representation suitable for displaying in search results.
+        """
+        entity_type = self.__class__.__name__
+        return f"[{self.source_type.value}] {entity_type}"
 
 
 class TimestampedEntity(BaseEntity):
