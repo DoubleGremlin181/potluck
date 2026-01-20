@@ -147,7 +147,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if EntityType.BOOKMARK in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.chrome import ingest_bookmarks
 
-            yield from ingest_bookmarks(path, filters)
+            # BookmarkFolder extends SimpleEntity, not BaseEntity, but is valid for ingestion
+            yield from ingest_bookmarks(path, filters)  # type: ignore[misc]
 
         if EntityType.CHAT_MESSAGE in types_to_process:
             from potluck.pipeline.ingestion.google_takeout.chat import ingest_chat_messages
