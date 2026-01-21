@@ -209,8 +209,8 @@ def _get_occurred_at(media_file: Path, metadata: dict[str, Any] | None) -> datet
         if timestamp:
             try:
                 return datetime.fromtimestamp(int(timestamp), tz=UTC)
-            except (ValueError, OSError):
-                pass
+            except (ValueError, OSError) as e:
+                logger.debug(f"Could not parse photoTakenTime '{timestamp}': {e}")
 
         # Try creationTime as fallback
         creation = metadata.get("creationTime", {})
@@ -218,14 +218,15 @@ def _get_occurred_at(media_file: Path, metadata: dict[str, Any] | None) -> datet
         if timestamp:
             try:
                 return datetime.fromtimestamp(int(timestamp), tz=UTC)
-            except (ValueError, OSError):
-                pass
+            except (ValueError, OSError) as e:
+                logger.debug(f"Could not parse creationTime '{timestamp}': {e}")
 
     # Fall back to file mtime
     try:
         mtime = media_file.stat().st_mtime
         return datetime.fromtimestamp(mtime, tz=UTC)
-    except OSError:
+    except OSError as e:
+        logger.debug(f"Could not get mtime for {media_file}: {e}")
         return None
 
 
@@ -268,7 +269,10 @@ def _create_media_entity(
     try:
         file_hash = compute_file_hash(media_file)
     except (OSError, ValueError) as e:
-        logger.warning(f"Failed to compute hash for {media_file}: {e}")
+        logger.error(
+            f"Failed to compute hash for {media_file}: {e}. "
+            "This file will be imported without deduplication protection."
+        )
         file_hash = None
 
     # Extract metadata fields

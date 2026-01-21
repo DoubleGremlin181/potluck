@@ -5,7 +5,6 @@ Handles:
 - Bookmarks.html: Chrome bookmarks (Netscape HTML format)
 """
 
-import contextlib
 import hashlib
 import re
 from collections.abc import Iterator
@@ -15,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from potluck.core.exceptions import PipelineError
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.browsing import Bookmark, BookmarkFolder, BrowsingHistory
@@ -56,7 +56,7 @@ def ingest_browsing_history(
 
     try:
         data = parse_json(history_file)
-    except Exception as e:
+    except PipelineError as e:
         logger.error(f"Failed to parse BrowserHistory.json: {e}")
         return
 
@@ -94,7 +94,7 @@ def ingest_browsing_history(
 
             yield entity
             yielded += 1
-        except Exception as e:
+        except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to parse history entry: {e}")
             skipped += 1
 
@@ -179,7 +179,7 @@ def ingest_bookmarks(
 
     try:
         html_content = bookmarks_file.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:
+    except OSError as e:
         logger.error(f"Failed to read Bookmarks.html: {e}")
         return
 
@@ -187,7 +187,8 @@ def ingest_bookmarks(
     parser = _BookmarkHTMLParser()
     try:
         parser.feed(html_content)
-    except Exception as e:
+    except (ValueError, AssertionError) as e:
+        # HTMLParser may raise ValueError for malformed input
         logger.error(f"Failed to parse Bookmarks.html: {e}")
         return
 
@@ -300,8 +301,10 @@ class _BookmarkHTMLParser(HTMLParser):
         folder_created_at = None
         add_date = self._current_attrs.get("add_date")
         if add_date:
-            with contextlib.suppress(ValueError, OSError):
+            try:
                 folder_created_at = datetime.fromtimestamp(int(add_date), tz=UTC)
+            except (ValueError, OSError) as e:
+                logger.debug(f"Could not parse folder ADD_DATE '{add_date}': {e}")
 
         folder = BookmarkFolder(
             id=folder_id,
@@ -333,8 +336,10 @@ class _BookmarkHTMLParser(HTMLParser):
         bookmarked_at = None
         add_date = self._current_attrs.get("add_date")
         if add_date:
-            with contextlib.suppress(ValueError, OSError):
+            try:
                 bookmarked_at = datetime.fromtimestamp(int(add_date), tz=UTC)
+            except (ValueError, OSError) as e:
+                logger.debug(f"Could not parse bookmark ADD_DATE '{add_date}': {e}")
 
         # Extract domain
         domain = _extract_domain(url)

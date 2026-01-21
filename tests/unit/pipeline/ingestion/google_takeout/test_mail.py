@@ -270,6 +270,114 @@ class TestHelperFunctions:
         assert folder == EmailFolder.ARCHIVE
 
 
+class TestEmailEdgeCases:
+    """Tests for email MBOX edge cases."""
+
+    def test_email_without_from_header(self) -> None:
+        """Emails missing From header are skipped gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mail_dir = Path(tmpdir) / "Mail"
+            mail_dir.mkdir(parents=True)
+
+            # MBOX with email missing From header
+            mbox_content = """From - Mon Jan 15 10:00:00 2024
+Subject: No From Header
+To: recipient@example.com
+Date: Mon, 15 Jan 2024 10:00:00 +0000
+X-GM-THRID: 123456789
+X-Gmail-Labels: Inbox
+
+This email has no From header.
+
+From - Mon Jan 15 11:00:00 2024
+From: valid@example.com
+Subject: Valid Email
+To: recipient@example.com
+Date: Mon, 15 Jan 2024 11:00:00 +0000
+X-GM-THRID: 987654321
+X-Gmail-Labels: Inbox
+
+This is a valid email.
+"""
+            (mail_dir / "Test.mbox").write_text(mbox_content)
+
+            entities = list(ingest_emails(Path(tmpdir)))
+            emails = [e for e in entities if isinstance(e, Email)]
+
+            # Only valid email should be yielded
+            assert len(emails) == 1
+            assert emails[0].subject == "Valid Email"
+
+    def test_email_with_malformed_date(self) -> None:
+        """Emails with malformed dates have None occurred_at."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mail_dir = Path(tmpdir) / "Mail"
+            mail_dir.mkdir(parents=True)
+
+            mbox_content = """From - Mon Jan 15 10:00:00 2024
+From: sender@example.com
+Subject: Bad Date
+To: recipient@example.com
+Date: Not a valid date at all
+X-GM-THRID: 123456789
+X-Gmail-Labels: Inbox
+
+Email with invalid date header.
+"""
+            (mail_dir / "Test.mbox").write_text(mbox_content)
+
+            entities = list(ingest_emails(Path(tmpdir)))
+            emails = [e for e in entities if isinstance(e, Email)]
+
+            assert len(emails) == 1
+            assert emails[0].occurred_at is None
+
+    def test_email_with_encoded_headers(self) -> None:
+        """Emails with MIME-encoded headers are decoded correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mail_dir = Path(tmpdir) / "Mail"
+            mail_dir.mkdir(parents=True)
+
+            # MIME encoded subject (UTF-8 base64)
+            mbox_content = """From - Mon Jan 15 10:00:00 2024
+From: sender@example.com
+Subject: =?UTF-8?B?VGVzdCBTdWJqZWN0?=
+To: recipient@example.com
+Date: Mon, 15 Jan 2024 10:00:00 +0000
+X-GM-THRID: 123456789
+X-Gmail-Labels: Inbox
+
+Email with encoded subject.
+"""
+            (mail_dir / "Test.mbox").write_text(mbox_content)
+
+            entities = list(ingest_emails(Path(tmpdir)))
+            emails = [e for e in entities if isinstance(e, Email)]
+
+            assert len(emails) == 1
+            assert emails[0].subject == "Test Subject"
+
+    def test_empty_mbox_file(self) -> None:
+        """Empty MBOX files are handled gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mail_dir = Path(tmpdir) / "Mail"
+            mail_dir.mkdir(parents=True)
+            (mail_dir / "Empty.mbox").write_text("")
+
+            entities = list(ingest_emails(Path(tmpdir)))
+            assert entities == []
+
+    def test_mbox_with_only_whitespace(self) -> None:
+        """MBOX files with only whitespace are handled."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mail_dir = Path(tmpdir) / "Mail"
+            mail_dir.mkdir(parents=True)
+            (mail_dir / "Whitespace.mbox").write_text("   \n\n   \n")
+
+            entities = list(ingest_emails(Path(tmpdir)))
+            assert entities == []
+
+
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 

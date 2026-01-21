@@ -76,6 +76,15 @@ class Location(SQLModel, IngestableEntity, table=True):
     source_type: SourceType = Field(
         description="Source of the location data",
     )
+    source_id: str | None = Field(
+        default=None,
+        description="Original identifier from the source system (e.g., place_id)",
+    )
+    content_hash: str | None = Field(
+        default=None,
+        index=True,
+        description="SHA256 hash of content for deduplication",
+    )
 
     # Person association (for storing someone else's home/work address)
     person_id: UUID | None = Field(
@@ -208,6 +217,15 @@ class LocationVisit(SQLModel, IngestableEntity, table=True):
     source_type: SourceType = Field(
         description="Source of the visit data",
     )
+    source_id: str | None = Field(
+        default=None,
+        description="Original identifier from the source system",
+    )
+    content_hash: str | None = Field(
+        default=None,
+        index=True,
+        description="SHA256 hash of content for deduplication",
+    )
 
     # Coordinates (stored separately as location may not be matched)
     latitude: float = Field(
@@ -292,6 +310,15 @@ class LocationHistory(SQLModel, IngestableEntity, table=True):
     )
     source_type: SourceType = Field(
         description="Source of the location data",
+    )
+    source_id: str | None = Field(
+        default=None,
+        description="Original identifier from the source system",
+    )
+    content_hash: str | None = Field(
+        default=None,
+        index=True,
+        description="SHA256 hash of content for deduplication",
     )
 
     # Coordinates

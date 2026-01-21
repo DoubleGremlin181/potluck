@@ -35,15 +35,16 @@ def ingest_calendar_events(
 ) -> Iterator[CalendarEvent | EventParticipant]:
     """Ingest Google Calendar events from Google Takeout.
 
-    Yields CalendarEvent entities first, then EventParticipant entities
-    (grouped by event) for proper foreign key ordering.
+    For each event, yields the CalendarEvent first, followed immediately by
+    its EventParticipant entities. This per-event ordering ensures proper
+    foreign key constraints are satisfied.
 
     Args:
         path: Path to the extracted takeout directory.
         filters: Optional date range filters.
 
     Yields:
-        CalendarEvent and EventParticipant entities.
+        CalendarEvent and EventParticipant entities (event followed by its participants).
     """
     calendar_dir = _find_calendar_dir(path)
     if not calendar_dir:

@@ -6,6 +6,7 @@ Handles the rich semantic data from Android Timeline export including:
 - Timeline path (raw GPS points)
 """
 
+import hashlib
 import json
 import re
 from collections.abc import Iterator
@@ -110,16 +111,24 @@ def _parse_visit_segment(
     # Get semantic type
     semantic_type = top_candidate.get("semanticType", "UNKNOWN")
     place_name = _semantic_type_to_place_name(semantic_type)
+    place_id = top_candidate.get("placeId")
+
+    # Generate source_id and content_hash for deduplication
+    source_id = f"visit-{start_time.isoformat()}-{lat}-{lng}"
+    hash_content = f"visit|{start_time.isoformat()}|{lat}|{lng}"
+    content_hash = hashlib.sha256(hash_content.encode()).hexdigest()
 
     return LocationVisit(
         source_type=SourceType.ANDROID_TIMELINE,
+        source_id=source_id,
+        content_hash=content_hash,
         latitude=lat,
         longitude=lng,
         started_at=start_time,
         ended_at=end_time,
         duration_minutes=duration_minutes,
         occurred_at=start_time,
-        place_id=top_candidate.get("placeId"),
+        place_id=place_id,
         place_name=place_name,
         confidence=top_candidate.get("probability"),
     )
@@ -162,8 +171,15 @@ def _parse_activity_segment(
         duration = (end_time - start_time).total_seconds() / 60
         duration_minutes = int(duration)
 
+    # Generate source_id and content_hash for deduplication
+    source_id = f"activity-{start_time.isoformat()}-{lat}-{lng}"
+    hash_content = f"activity|{start_time.isoformat()}|{lat}|{lng}"
+    content_hash = hashlib.sha256(hash_content.encode()).hexdigest()
+
     return LocationVisit(
         source_type=SourceType.ANDROID_TIMELINE,
+        source_id=source_id,
+        content_hash=content_hash,
         latitude=lat,
         longitude=lng,
         started_at=start_time,
@@ -206,8 +222,15 @@ def _parse_timeline_path(
         if lat is None or lng is None:
             continue
 
+        # Generate source_id and content_hash for deduplication
+        source_id = f"path-{timestamp.isoformat()}-{lat}-{lng}"
+        hash_content = f"path|{timestamp.isoformat()}|{lat}|{lng}"
+        content_hash = hashlib.sha256(hash_content.encode()).hexdigest()
+
         yield LocationHistory(
             source_type=SourceType.ANDROID_TIMELINE,
+            source_id=source_id,
+            content_hash=content_hash,
             latitude=lat,
             longitude=lng,
             timestamp=timestamp,

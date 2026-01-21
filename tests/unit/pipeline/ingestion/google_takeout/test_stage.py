@@ -313,3 +313,156 @@ class TestGoogleTakeoutDirectoryFinding:
             stage = GoogleTakeoutStage()
             result = stage._find_google_photos_dir(Path(tmpdir))
             assert result is None
+
+
+class TestGoogleTakeoutMalformedFiles:
+    """Tests for graceful handling of malformed input files."""
+
+    def test_malformed_json_in_browser_history(self) -> None:
+        """Gracefully handles malformed BrowserHistory.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chrome_dir = Path(tmpdir) / "Takeout" / "Chrome"
+            chrome_dir.mkdir(parents=True)
+            # Write malformed JSON
+            (chrome_dir / "BrowserHistory.json").write_text("{not valid json")
+
+            stage = GoogleTakeoutStage()
+            entities = list(
+                stage.execute(
+                    Path(tmpdir),
+                    entity_types={EntityType.BROWSING_HISTORY},
+                )
+            )
+            # Should not crash, just return empty
+            assert entities == []
+
+    def test_malformed_ics_in_calendar(self) -> None:
+        """Gracefully handles malformed ICS files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            calendar_dir = Path(tmpdir) / "Takeout" / "Calendar"
+            calendar_dir.mkdir(parents=True)
+            # Write malformed ICS
+            (calendar_dir / "calendar.ics").write_bytes(b"\x00\x01invalid binary content")
+
+            stage = GoogleTakeoutStage()
+            entities = list(
+                stage.execute(
+                    Path(tmpdir),
+                    entity_types={EntityType.CALENDAR_EVENT},
+                )
+            )
+            # Should not crash, just return empty
+            assert entities == []
+
+    def test_malformed_html_in_bookmarks(self) -> None:
+        """Gracefully handles malformed Bookmarks.html."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chrome_dir = Path(tmpdir) / "Takeout" / "Chrome"
+            chrome_dir.mkdir(parents=True)
+            # Write malformed HTML with unclosed tags
+            (chrome_dir / "Bookmarks.html").write_text(
+                "<!DOCTYPE NETSCAPE><DL><DT><A HREF='test'>unclosed"
+            )
+
+            stage = GoogleTakeoutStage()
+            entities = list(
+                stage.execute(
+                    Path(tmpdir),
+                    entity_types={EntityType.BOOKMARK},
+                )
+            )
+            # Should not crash - may parse partial content
+            assert isinstance(entities, list)
+
+    def test_malformed_json_in_chat(self) -> None:
+        """Gracefully handles malformed messages.json.
+
+        Note: The ChatThread is still created from directory structure,
+        but no ChatMessage entities are yielded when JSON is invalid.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chat_dir = Path(tmpdir) / "Takeout" / "Google Chat" / "Groups" / "DM test"
+            chat_dir.mkdir(parents=True)
+            # Write malformed JSON
+            (chat_dir / "messages.json").write_text("{corrupted")
+
+            stage = GoogleTakeoutStage()
+            entities = list(
+                stage.execute(
+                    Path(tmpdir),
+                    entity_types={EntityType.CHAT_MESSAGE},
+                )
+            )
+            # Should have thread but no messages (malformed JSON)
+            from potluck.models.messages import ChatMessage, ChatThread
+
+            threads = [e for e in entities if isinstance(e, ChatThread)]
+            messages = [e for e in entities if isinstance(e, ChatMessage)]
+            assert len(threads) == 1  # Thread created from directory
+            assert len(messages) == 0  # No messages parsed
+
+
+class TestGoogleTakeoutDeduplication:
+    """Tests for in-memory deduplication during ingestion."""
+
+    def test_duplicate_entities_deduplicated(self) -> None:
+        """Entities with same content_hash are deduplicated."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chrome_dir = Path(tmpdir) / "Takeout" / "Chrome"
+            chrome_dir.mkdir(parents=True)
+
+            # Create browsing history with duplicate entries
+            history_json = {
+                "Browser History": [
+                    {"url": "https://example.com", "time_usec": 1705000000000000},
+                    {"url": "https://example.com", "time_usec": 1705000000000000},  # duplicate
+                    {"url": "https://example.com", "time_usec": 1705000001000000},  # different time
+                ]
+            }
+            import json
+
+            (chrome_dir / "BrowserHistory.json").write_text(json.dumps(history_json))
+
+            stage = GoogleTakeoutStage()
+            entities = list(
+                stage.execute(
+                    Path(tmpdir),
+                    entity_types={EntityType.BROWSING_HISTORY},
+                )
+            )
+
+            # Should have 2 unique entries (duplicate removed)
+            assert len(entities) == 2
+
+            # Verify content_hashes are unique
+            hashes = [getattr(e, "content_hash", None) for e in entities]
+            assert len(hashes) == len(set(hashes))
+
+    def test_entities_without_content_hash_not_deduplicated(self) -> None:
+        """Entities without content_hash are all yielded."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chrome_dir = Path(tmpdir) / "Takeout" / "Chrome"
+            chrome_dir.mkdir(parents=True)
+
+            # Create bookmarks HTML - folders don't have content_hash
+            html_content = """<!DOCTYPE NETSCAPE-Bookmark-file-1>
+            <DL><p>
+                <DT><H3>Folder1</H3>
+                <DT><H3>Folder2</H3>
+            </DL>
+            """
+            (chrome_dir / "Bookmarks.html").write_text(html_content)
+
+            stage = GoogleTakeoutStage()
+            entities = list(
+                stage.execute(
+                    Path(tmpdir),
+                    entity_types={EntityType.BOOKMARK},
+                )
+            )
+
+            # Both folders should be yielded
+            from potluck.models.browsing import BookmarkFolder
+
+            folders = [e for e in entities if isinstance(e, BookmarkFolder)]
+            assert len(folders) == 2

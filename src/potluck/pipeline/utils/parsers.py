@@ -294,7 +294,7 @@ def parse_mbox(path: Path) -> Iterator[MboxMessage]:
     """
     try:
         mbox = mailbox.mbox(str(path))
-    except Exception as e:
+    except OSError as e:
         raise PipelineError(f"Could not open MBOX file {path}: {e}") from e
 
     skipped = 0
@@ -304,14 +304,15 @@ def parse_mbox(path: Path) -> Iterator[MboxMessage]:
             total += 1
             try:
                 yield _parse_email_message(msg)
-            except Exception as e:
+            except (KeyError, ValueError, TypeError, AttributeError) as e:
                 skipped += 1
                 # Include message index and any available identifiers for debugging
                 msg_id = msg.get("Message-ID", "<unknown>") if msg else "<unknown>"
                 subject = msg.get("Subject", "<no subject>")[:50] if msg else "<unknown>"
                 logger.warning(
                     f"Failed to parse email message {idx} "
-                    f"(Message-ID={msg_id}, Subject={subject!r}): {e}"
+                    f"(Message-ID={msg_id}, Subject={subject!r}): {e}",
+                    exc_info=True,
                 )
                 continue
     finally:
@@ -456,7 +457,8 @@ def _decode_header(header: str | None) -> str:
             else:
                 parts.append(content)
         return "".join(parts)
-    except Exception:
+    except (ValueError, LookupError, UnicodeDecodeError) as e:
+        logger.debug(f"Could not decode email header, using raw value: {e}")
         return str(header)
 
 
@@ -480,7 +482,8 @@ def _get_text_content(part: Message) -> str | None:
 
         charset = part.get_content_charset() or "utf-8"
         return payload.decode(charset, errors="replace")
-    except Exception:
+    except (LookupError, UnicodeDecodeError, ValueError) as e:
+        logger.debug(f"Could not extract text content from email part: {e}")
         return None
 
 

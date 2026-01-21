@@ -185,6 +185,146 @@ class TestParseChatTimestamp:
         assert _parse_chat_timestamp("") is None
 
 
+class TestChatEdgeCases:
+    """Tests for chat message edge cases."""
+
+    def test_message_without_creator(self) -> None:
+        """Messages without creator info are handled gracefully."""
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chat_dir = Path(tmpdir) / "Google Chat" / "Groups" / "DM test"
+            chat_dir.mkdir(parents=True)
+
+            # Message without creator field
+            messages_json = {
+                "messages": [
+                    {
+                        "text": "Message without creator",
+                        "created_date": "Monday, January 1, 2024 at 10:00:00 AM UTC",
+                    }
+                ]
+            }
+            (chat_dir / "messages.json").write_text(json.dumps(messages_json))
+
+            entities = list(ingest_chat_messages(Path(tmpdir)))
+            messages = [e for e in entities if isinstance(e, ChatMessage)]
+
+            assert len(messages) == 1
+            assert messages[0].sender_name is None
+            assert messages[0].content == "Message without creator"
+
+    def test_message_with_empty_creator(self) -> None:
+        """Messages with empty creator dict are handled."""
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chat_dir = Path(tmpdir) / "Google Chat" / "Groups" / "DM test"
+            chat_dir.mkdir(parents=True)
+
+            messages_json = {
+                "messages": [
+                    {
+                        "text": "Test message",
+                        "creator": {},  # Empty creator
+                        "created_date": "Monday, January 1, 2024 at 10:00:00 AM UTC",
+                    }
+                ]
+            }
+            (chat_dir / "messages.json").write_text(json.dumps(messages_json))
+
+            entities = list(ingest_chat_messages(Path(tmpdir)))
+            messages = [e for e in entities if isinstance(e, ChatMessage)]
+
+            assert len(messages) == 1
+            assert messages[0].sender_name is None
+
+    def test_empty_message_skipped(self) -> None:
+        """Messages with no text and no attachments are skipped."""
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chat_dir = Path(tmpdir) / "Google Chat" / "Groups" / "DM test"
+            chat_dir.mkdir(parents=True)
+
+            messages_json = {
+                "messages": [
+                    {
+                        "text": "",  # Empty text
+                        "creator": {"name": "Test User"},
+                        "created_date": "Monday, January 1, 2024 at 10:00:00 AM UTC",
+                    },
+                    {
+                        "text": "Valid message",
+                        "creator": {"name": "Test User"},
+                        "created_date": "Monday, January 1, 2024 at 10:01:00 AM UTC",
+                    },
+                ]
+            }
+            (chat_dir / "messages.json").write_text(json.dumps(messages_json))
+
+            entities = list(ingest_chat_messages(Path(tmpdir)))
+            messages = [e for e in entities if isinstance(e, ChatMessage)]
+
+            # Only valid message should be yielded
+            assert len(messages) == 1
+            assert messages[0].content == "Valid message"
+
+    def test_message_with_invalid_timestamp(self) -> None:
+        """Messages with invalid timestamps still yield with None occurred_at."""
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chat_dir = Path(tmpdir) / "Google Chat" / "Groups" / "DM test"
+            chat_dir.mkdir(parents=True)
+
+            messages_json = {
+                "messages": [
+                    {
+                        "text": "Message with bad timestamp",
+                        "creator": {"name": "Test User"},
+                        "created_date": "Not a valid date",
+                    }
+                ]
+            }
+            (chat_dir / "messages.json").write_text(json.dumps(messages_json))
+
+            entities = list(ingest_chat_messages(Path(tmpdir)))
+            messages = [e for e in entities if isinstance(e, ChatMessage)]
+
+            assert len(messages) == 1
+            assert messages[0].occurred_at is None
+
+    def test_content_hash_collision_handling(self) -> None:
+        """Identical messages in different threads have same content hash."""
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create two chat groups with same message content
+            for group in ["DM group1", "DM group2"]:
+                chat_dir = Path(tmpdir) / "Google Chat" / "Groups" / group
+                chat_dir.mkdir(parents=True)
+
+                messages_json = {
+                    "messages": [
+                        {
+                            "text": "Same message text",
+                            "creator": {"name": "Same User", "email": "same@example.com"},
+                            "created_date": "Monday, January 1, 2024 at 10:00:00 AM UTC",
+                        }
+                    ]
+                }
+                (chat_dir / "messages.json").write_text(json.dumps(messages_json))
+
+            entities = list(ingest_chat_messages(Path(tmpdir)))
+            messages = [e for e in entities if isinstance(e, ChatMessage)]
+
+            # Both messages have same content, sender, and timestamp
+            # Content hash should be identical
+            assert len(messages) == 2
+            assert messages[0].content_hash == messages[1].content_hash
+
+
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 

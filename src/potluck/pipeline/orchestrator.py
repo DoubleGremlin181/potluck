@@ -461,7 +461,11 @@ class PipelineOrchestrator:
         for etype, model_class in model_map.items():
             if isinstance(entity, model_class):
                 return etype
-        # Default fallback
+        # Default fallback - log warning as this may indicate missing model mapping
+        logger.warning(
+            f"Unknown entity type for {type(entity).__name__}, defaulting to MEDIA. "
+            "This may indicate a missing entry in get_entity_type_model_map()."
+        )
         return EntityType.MEDIA
 
     def _queue_entity_processing(self, entity: IngestableEntity, entity_type: EntityType) -> None:

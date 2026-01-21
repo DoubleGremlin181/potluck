@@ -8,6 +8,7 @@ Note: Android Timeline export (Timeline.json at root) is handled by
 the separate AndroidTimelineStage ingester which provides richer data.
 """
 
+import hashlib
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -137,8 +138,16 @@ def _process_takeout_timeline(
             if filters.until and timestamp >= filters.until:
                 continue
 
+        # Generate source_id and content_hash for deduplication
+        # Visit is uniquely identified by timestamp + coordinates
+        source_id = f"timeline-{timestamp.isoformat()}-{lat}-{lng}"
+        hash_content = f"{timestamp.isoformat()}|{lat}|{lng}"
+        content_hash = hashlib.sha256(hash_content.encode()).hexdigest()
+
         yield LocationVisit(
             source_type=SourceType.GOOGLE_TAKEOUT,
+            source_id=source_id,
+            content_hash=content_hash,
             latitude=lat,
             longitude=lng,
             started_at=timestamp,
@@ -195,8 +204,16 @@ def _process_labeled_places(
         # Determine location type from name
         location_type = _name_to_location_type(name)
 
+        # Generate source_id and content_hash for deduplication
+        # Location is uniquely identified by name + coordinates
+        source_id = f"labeled-{name}-{lat}-{lng}"
+        hash_content = f"{name}|{lat}|{lng}"
+        content_hash = hashlib.sha256(hash_content.encode()).hexdigest()
+
         yield Location(
             source_type=SourceType.GOOGLE_TAKEOUT,
+            source_id=source_id,
+            content_hash=content_hash,
             name=name,
             location_type=location_type,
             latitude=lat,

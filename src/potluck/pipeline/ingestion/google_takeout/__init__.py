@@ -33,6 +33,13 @@ from potluck.pipeline.utils.archive import extracted
 
 logger = get_logger(__name__)
 
+# Estimation constants for entity count approximation from file sizes
+# These are rough averages used during detection phase before full parsing
+BYTES_PER_CHAT_MESSAGE = 500  # Average size of a Google Chat message JSON
+BYTES_PER_EMAIL = 10_000  # Average size of an email in MBOX format (10KB)
+BYTES_PER_HISTORY_ENTRY = 200  # Average size of a browser history JSON entry
+BYTES_PER_LOCATION_EDIT = 200  # Average size of a Timeline Edit entry
+
 
 @register
 class GoogleTakeoutStage(BaseIngestionStage):
@@ -179,6 +186,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
 
         Yields:
             Entities of the requested types, deduplicated by content_hash.
+            Dependent entities (e.g., EventParticipant) are also skipped if
+            their parent entity was deduplicated to prevent FK orphans.
         """
         # Default to all supported types if none specified
         types_to_process = entity_types or self.SUPPORTED_ENTITY_TYPES
@@ -283,13 +292,10 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if not chat_dir:
             return 0
 
-        # Count messages.json files (each contains multiple messages)
         count = 0
         for messages_file in chat_dir.rglob("messages.json"):
-            # Estimate count from file size (rough approximation)
-            # Each message is roughly 500 bytes on average
             size = messages_file.stat().st_size
-            count += max(1, size // 500)
+            count += max(1, size // BYTES_PER_CHAT_MESSAGE)
         return count
 
     def _count_emails(self, path: Path) -> int:
@@ -298,12 +304,10 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if not mail_dir:
             return 0
 
-        # Count messages in mbox files (rough estimate from file size)
         count = 0
         for mbox_file in mail_dir.rglob("*.mbox"):
-            # Each email is roughly 10KB on average
             size = mbox_file.stat().st_size
-            count += max(1, size // 10000)
+            count += max(1, size // BYTES_PER_EMAIL)
         return count
 
     def _count_calendar_events(self, path: Path) -> int:
@@ -333,9 +337,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if not history_file.exists():
             return 0
 
-        # Estimate from file size (each entry ~200 bytes)
         size = history_file.stat().st_size
-        return max(1, size // 200)
+        return max(1, size // BYTES_PER_HISTORY_ENTRY)
 
     def _count_bookmarks(self, path: Path) -> int:
         """Count bookmarks in Chrome bookmarks file."""
@@ -366,11 +369,10 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if not timeline_dir:
             return 0
 
-        # Check Timeline Edits.json
         edits_file = timeline_dir / "Timeline Edits.json"
         if edits_file.exists():
             size = edits_file.stat().st_size
-            return max(1, size // 200)
+            return max(1, size // BYTES_PER_LOCATION_EDIT)
 
         return 0
 

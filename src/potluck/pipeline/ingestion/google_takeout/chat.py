@@ -120,8 +120,8 @@ def ingest_chat_messages(
 
                 yield message
                 total_messages += 1
-            except Exception as e:
-                logger.warning(f"Failed to parse message: {e}")
+            except (KeyError, ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse message (invalid data): {e}")
                 skipped_messages += 1
 
     logger.info(
@@ -170,8 +170,10 @@ def _parse_thread(group_dir: Path, group_info_file: Path) -> ChatThread | None:
                 # For named groups, use the group name
                 if thread_type == ThreadType.GROUP:
                     thread_name = group_data.get("name") or thread_name
-        except Exception as e:
-            logger.debug(f"Could not parse group_info.json: {e}")
+        except PipelineError as e:
+            logger.warning(
+                f"Could not parse group_info.json: {e}. Thread will have incomplete metadata."
+            )
 
     return ChatThread(
         id=thread_id,
@@ -281,10 +283,8 @@ def _parse_chat_timestamp(date_str: str | None) -> datetime | None:
                 return dt
             except ValueError:
                 continue
-    except Exception:
-        pass
-
-    logger.debug(f"Could not parse chat timestamp: {date_str}")
+    except (ValueError, TypeError, AttributeError) as e:
+        logger.debug(f"Could not parse chat timestamp '{date_str}': {e}")
     return None
 
 
