@@ -239,6 +239,49 @@ class TestEdgeCases:
             # Should not crash, just no locations from labeled places
             assert isinstance(entities, list)
 
+    def test_nested_point_format(self) -> None:
+        """Parse Timeline Edits with nested point structure.
+
+        Real Google Takeout exports (as of late 2024) use a nested format:
+        position.point.latE7 instead of position.latE7
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            timeline_dir = Path(tmpdir) / "Takeout" / "Timeline"
+            timeline_dir.mkdir(parents=True)
+
+            # Create timeline edits with nested point structure
+            edits = timeline_dir / "Timeline Edits.json"
+            edits.write_text("""{
+              "timelineEdits": [{
+                "deviceId": "-1234567890",
+                "rawSignal": {
+                  "signal": {
+                    "position": {
+                      "point": {
+                        "latE7": 377746689,
+                        "lngE7": -1224077150
+                      },
+                      "accuracyMm": 100000,
+                      "timestamp": "2025-01-04T05:46:15.808Z"
+                    }
+                  }
+                }
+              }]
+            }""")
+
+            entities = list(ingest_location_visits(Path(tmpdir)))
+            visits = [e for e in entities if isinstance(e, LocationVisit)]
+
+            assert len(visits) == 1
+            visit = visits[0]
+
+            # 377746689 / 10_000_000 = 37.7746689
+            assert abs(visit.latitude - 37.7746689) < 0.0001
+            # -1224077150 / 10_000_000 = -122.407715
+            assert abs(visit.longitude - (-122.407715)) < 0.0001
+            assert visit.accuracy_meters == 100.0  # 100000mm = 100m
+            assert visit.source_type == SourceType.GOOGLE_TAKEOUT
+
 
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""

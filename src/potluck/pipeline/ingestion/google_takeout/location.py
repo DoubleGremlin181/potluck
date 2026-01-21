@@ -112,8 +112,10 @@ def _process_takeout_timeline(
         signal = raw_signal.get("signal", {})
         position = signal.get("position", {})
 
-        lat_e7 = position.get("latE7")
-        lng_e7 = position.get("lngE7")
+        # Coordinates can be directly on position or nested under position.point
+        point = position.get("point", position)
+        lat_e7 = point.get("latE7")
+        lng_e7 = point.get("lngE7")
 
         if lat_e7 is None or lng_e7 is None:
             continue
