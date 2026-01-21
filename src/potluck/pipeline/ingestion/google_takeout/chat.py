@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from potluck.core.exceptions import PipelineError
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.messages import ChatMessage, ChatThread, ThreadType
@@ -75,7 +76,7 @@ def ingest_chat_messages(
         # Parse messages
         try:
             data = parse_json(messages_file)
-        except Exception as e:
+        except PipelineError as e:
             logger.warning(f"Failed to parse {messages_file}: {e}")
             continue
 
@@ -171,7 +172,7 @@ def _parse_thread(group_dir: Path, group_info_file: Path) -> ChatThread | None:
 
     return ChatThread(
         id=thread_id,
-        source_type=SourceType.GOOGLE_TAKEOUT.value,
+        source_type=SourceType.GOOGLE_TAKEOUT,
         source_id=source_id,
         thread_type=thread_type,
         name=thread_name,

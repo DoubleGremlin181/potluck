@@ -30,21 +30,6 @@ from potluck.pipeline.dtos import PipelineFilter
 
 logger = get_logger(__name__)
 
-# Mapping from Google's semantic types to LocationType
-SEMANTIC_TYPE_MAP: dict[str, LocationType] = {
-    "HOME": LocationType.HOME,
-    "WORK": LocationType.WORK,
-    "SCHOOL": LocationType.SCHOOL,
-    "GYM": LocationType.GYM,
-    "RESTAURANT": LocationType.RESTAURANT,
-    "STORE": LocationType.STORE,
-    "TRANSIT": LocationType.TRANSIT,
-    "AIRPORT": LocationType.AIRPORT,
-    "HOTEL": LocationType.HOTEL,
-    "ATTRACTION": LocationType.ATTRACTION,
-    "UNKNOWN": LocationType.UNKNOWN,
-}
-
 
 def ingest_location_visits(
     path: Path,

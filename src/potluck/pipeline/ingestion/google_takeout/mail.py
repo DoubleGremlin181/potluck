@@ -8,6 +8,7 @@ Gmail MBOX files include Gmail-specific headers:
 - X-Gmail-Labels: Comma-separated labels (e.g., "Inbox,Important,Starred")
 """
 
+import hashlib
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -194,8 +195,6 @@ def _create_email(
     # Create content hash from message_id or body
     content_hash = mbox_msg.message_id
     if not content_hash and body_text:
-        import hashlib
-
         content_hash = hashlib.sha256(body_text.encode()).hexdigest()
 
     return Email(

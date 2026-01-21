@@ -17,6 +17,15 @@ from potluck.core.logging import get_logger
 from potluck.models.base import BaseEntity, EntityType, SourceType
 from potluck.pipeline.dtos import DetectionResult, PipelineFilter
 from potluck.pipeline.ingestion.base import BaseIngestionStage
+from potluck.pipeline.ingestion.google_takeout.calendar import ingest_calendar_events
+from potluck.pipeline.ingestion.google_takeout.chat import ingest_chat_messages
+from potluck.pipeline.ingestion.google_takeout.chrome import (
+    ingest_bookmarks,
+    ingest_browsing_history,
+)
+from potluck.pipeline.ingestion.google_takeout.location import ingest_location_visits
+from potluck.pipeline.ingestion.google_takeout.mail import ingest_emails
+from potluck.pipeline.ingestion.google_takeout.photos import ingest_media
 from potluck.pipeline.ingestion.registry import register
 
 logger = get_logger(__name__)
@@ -137,46 +146,29 @@ class GoogleTakeoutStage(BaseIngestionStage):
 
         logger.info(f"Processing Google Takeout at {path} for types: {types_to_process}")
 
-        # Import helper modules lazily to avoid circular imports
-        # Each helper module provides a generator function for its entity type
-
         if EntityType.BROWSING_HISTORY in types_to_process:
-            from potluck.pipeline.ingestion.google_takeout.chrome import ingest_browsing_history
-
             yield from ingest_browsing_history(path, filters)
 
         if EntityType.BOOKMARK in types_to_process:
-            from potluck.pipeline.ingestion.google_takeout.chrome import ingest_bookmarks
-
             # BookmarkFolder extends SimpleEntity, not BaseEntity, but is valid for ingestion
             yield from ingest_bookmarks(path, filters)  # type: ignore[misc]
 
         if EntityType.CHAT_MESSAGE in types_to_process:
-            from potluck.pipeline.ingestion.google_takeout.chat import ingest_chat_messages
-
             # ChatThread extends SQLModel, not BaseEntity, but is valid for ingestion
             yield from ingest_chat_messages(path, filters)  # type: ignore[misc]
 
         if EntityType.CALENDAR_EVENT in types_to_process:
-            from potluck.pipeline.ingestion.google_takeout.calendar import ingest_calendar_events
-
             # EventParticipant extends SimpleEntity, not BaseEntity, but is valid for ingestion
             yield from ingest_calendar_events(path, filters)  # type: ignore[misc]
 
         if EntityType.LOCATION_VISIT in types_to_process:
-            from potluck.pipeline.ingestion.google_takeout.location import ingest_location_visits
-
             # Location, LocationVisit, LocationHistory are SQLModel, not BaseEntity
             yield from ingest_location_visits(path, filters)  # type: ignore[misc]
 
         if EntityType.MEDIA in types_to_process:
-            from potluck.pipeline.ingestion.google_takeout.photos import ingest_media
-
             yield from ingest_media(path, filters)
 
         if EntityType.EMAIL in types_to_process:
-            from potluck.pipeline.ingestion.google_takeout.mail import ingest_emails
-
             yield from ingest_emails(path, filters)
 
     # -------------------------------------------------------------------------
@@ -251,7 +243,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
             try:
                 content = ics_file.read_text(encoding="utf-8", errors="replace")
                 count += content.count("BEGIN:VEVENT")
-            except OSError:
+            except OSError as e:
+                logger.warning(f"Failed to read calendar file {ics_file}: {e}")
                 continue
         return count
 
@@ -283,7 +276,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
         try:
             content = bookmarks_file.read_text(encoding="utf-8", errors="replace")
             return content.lower().count("<a href=")
-        except OSError:
+        except OSError as e:
+            logger.warning(f"Failed to read bookmarks file {bookmarks_file}: {e}")
             return 0
 
     def _count_location_visits(self, path: Path) -> int:

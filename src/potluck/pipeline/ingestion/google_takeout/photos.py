@@ -241,6 +241,7 @@ def _create_media_entity(
         media_file: Path to the media file.
         metadata: Parsed metadata dict or None.
         occurred_at: Timestamp when the media was created.
+        photos_dir: Root Google Photos directory for album extraction.
 
     Returns:
         Media entity or None if creation fails.
@@ -266,7 +267,8 @@ def _create_media_entity(
     # Compute file hash for deduplication
     try:
         file_hash = compute_file_hash(media_file)
-    except (OSError, ValueError):
+    except (OSError, ValueError) as e:
+        logger.warning(f"Failed to compute hash for {media_file}: {e}")
         file_hash = None
 
     # Extract metadata fields
