@@ -100,7 +100,7 @@ class BaseIngestionStage(Stage[Path, Iterator[IngestableEntity]]):
     @abstractmethod
     def execute(
         self,
-        path: Path,
+        input_data: Path,
         entity_types: set[EntityType] | None = None,
         filters: PipelineFilter | None = None,
     ) -> Iterator[IngestableEntity]:
@@ -112,14 +112,14 @@ class BaseIngestionStage(Stage[Path, Iterator[IngestableEntity]]):
         For complex sources with multiple entity types, delegate to private
         methods per entity type for cleaner code organization:
 
-            def execute(self, path, entity_types, filters):
+            def execute(self, input_data, entity_types, filters):
                 if EntityType.MEDIA in entity_types:
-                    yield from self._ingest_media(path, filters)
+                    yield from self._ingest_media(input_data, filters)
                 if EntityType.EMAIL in entity_types:
-                    yield from self._ingest_emails(path, filters)
+                    yield from self._ingest_emails(input_data, filters)
 
         Args:
-            path: Path to the extracted source data.
+            input_data: Path to the extracted source data.
             entity_types: Set of entity types to ingest (None = all supported).
             filters: Optional date range filters.
 

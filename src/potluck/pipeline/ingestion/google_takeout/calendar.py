@@ -82,7 +82,7 @@ def _process_ics_file(
         CalendarEvent and EventParticipant entities.
     """
     try:
-        content = ics_file.read_bytes()
+        content = ics_file.read_text(encoding="utf-8")
         cal = Calendar.from_ical(content)
     except (OSError, ValueError) as e:
         logger.warning(f"Failed to parse ICS file {ics_file}: {e}")
