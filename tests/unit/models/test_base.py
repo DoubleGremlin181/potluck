@@ -45,6 +45,7 @@ class TestSourceType:
     def test_all_sources_defined(self) -> None:
         """All expected source types are defined."""
         expected = {
+            "android_timeline",
             "google_takeout",
             "reddit",
             "whatsapp",

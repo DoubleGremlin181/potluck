@@ -149,3 +149,18 @@ def temp_media_path(tmp_path: Path) -> Path:
     media_dir = tmp_path / "media"
     media_dir.mkdir()
     return media_dir
+
+
+# =============================================================================
+# Ingestion fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def google_takeout_fixtures_path() -> Path:
+    """Return path to Google Takeout test fixtures.
+
+    Provides a single source of truth for the fixtures path, eliminating
+    the need for module-level FIXTURES_PATH constants in test files.
+    """
+    return Path(__file__).parent / "fixtures" / "google_takeout"

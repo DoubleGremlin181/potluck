@@ -12,7 +12,7 @@ This guide explains how to export your data from Google and import it into Potlu
 
 Select the data types you want to import into Potluck:
 
-### Google Photos (Recommended)
+### Google Photos
 - Check **Google Photos**
 - Click "All photo albums included" to select specific albums if desired
 - Photos include metadata like location, date taken, and descriptions
@@ -21,7 +21,7 @@ Select the data types you want to import into Potluck:
 - Check **Mail**
 - By default, all mail is included
 - Click "All Mail data included" to select specific labels if desired
-- Format: MBOX (recommended for Potluck)
+- Format: MBOX
 
 ### Google Chat / Hangouts
 - Check **Google Chat**
@@ -48,9 +48,9 @@ Select the data types you want to import into Potluck:
 
 1. Click **Next step**
 2. Choose export settings:
-   - **Delivery method**: Download link via email (recommended)
+   - **Delivery method**: Download link via email
    - **Frequency**: Export once
-   - **File type**: .zip (recommended) or .tgz
+   - **File type**: .zip or .tgz
    - **File size**: 2 GB or larger (to avoid splitting into multiple files)
 
 ## Step 4: Create and Download Export

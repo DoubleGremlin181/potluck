@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
+from potluck.models.base import IngestableEntity, SourceType
 from potluck.models.utils import utc_now
 
 
@@ -31,13 +32,17 @@ class LocationType(str, Enum):
     OTHER = "other"
 
 
-class Location(SQLModel, table=True):
+class Location(SQLModel, IngestableEntity, table=True):
     """Named location with coordinates.
 
     Represents labeled places from Google Maps, manual entries, etc.
+    Inherits from IngestableEntity to allow proper typing for ingester yields.
     """
 
     __tablename__ = "locations"
+
+    # Forbid extra fields to catch bugs early
+    model_config = {"extra": "forbid"}
 
     # Search configuration - name is priority, address/city auto-discovered
     __searchable__: ClassVar[bool] = True
@@ -68,7 +73,7 @@ class Location(SQLModel, table=True):
         sa_column_kwargs={"onupdate": utc_now},
         description="When the location was last updated",
     )
-    source_type: str = Field(
+    source_type: SourceType = Field(
         description="Source of the location data",
     )
 
@@ -177,13 +182,17 @@ class Location(SQLModel, table=True):
     visits: list["LocationVisit"] = Relationship(back_populates="location")
 
 
-class LocationVisit(SQLModel, table=True):
+class LocationVisit(SQLModel, IngestableEntity, table=True):
     """Visit to a location with timing information.
 
     Tracks when the user was at a specific location.
+    Inherits from IngestableEntity to allow proper typing for ingester yields.
     """
 
     __tablename__ = "location_visits"
+
+    # Forbid extra fields to catch bugs early
+    model_config = {"extra": "forbid"}
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -196,7 +205,7 @@ class LocationVisit(SQLModel, table=True):
         index=True,
         description="The location visited (if matched)",
     )
-    source_type: str = Field(
+    source_type: SourceType = Field(
         description="Source of the visit data",
     )
 
@@ -229,6 +238,12 @@ class LocationVisit(SQLModel, table=True):
         default=None,
         description="Duration of visit in minutes",
     )
+    # occurred_at aliases started_at for consistent filtering/search
+    occurred_at: datetime | None = Field(
+        default=None,
+        index=True,
+        description="When the visit occurred (same as started_at, for search consistency)",
+    )
 
     # Place information (if location not matched)
     place_name: str | None = Field(
@@ -258,20 +273,24 @@ class LocationVisit(SQLModel, table=True):
     location: "Location" = Relationship(back_populates="visits")
 
 
-class LocationHistory(SQLModel, table=True):
+class LocationHistory(SQLModel, IngestableEntity, table=True):
     """Raw location history point from timeline data.
 
     Stores individual location pings from Google Timeline, etc.
+    Inherits from IngestableEntity to allow proper typing for ingester yields.
     """
 
     __tablename__ = "location_history"
+
+    # Forbid extra fields to catch bugs early
+    model_config = {"extra": "forbid"}
 
     id: UUID = Field(
         default_factory=uuid4,
         primary_key=True,
         description="Unique identifier",
     )
-    source_type: str = Field(
+    source_type: SourceType = Field(
         description="Source of the location data",
     )
 
@@ -305,6 +324,12 @@ class LocationHistory(SQLModel, table=True):
     timestamp: datetime = Field(
         index=True,
         description="When the location was recorded",
+    )
+    # occurred_at aliases timestamp for consistent filtering/search
+    occurred_at: datetime | None = Field(
+        default=None,
+        index=True,
+        description="When recorded (same as timestamp, for search consistency)",
     )
 
     # Velocity (if moving)

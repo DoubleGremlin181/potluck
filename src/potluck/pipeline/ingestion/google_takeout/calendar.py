@@ -8,7 +8,6 @@ and their participants.
 """
 
 import hashlib
-import json
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -17,7 +16,7 @@ from icalendar import Calendar
 from icalendar.cal import Component
 
 from potluck.core.logging import get_logger
-from potluck.models.base import EntityType, SourceType
+from potluck.models.base import SourceType
 from potluck.models.calendar import (
     CalendarEvent,
     EventParticipant,
@@ -212,14 +211,20 @@ def _parse_vevent(component: Component, calendar_name: str) -> CalendarEvent | N
     class_prop = _get_str(component, "class")
     visibility = _map_visibility(class_prop)
 
-    # Generate content hash from UID + calendar name
-    hash_content = f"{uid or ''}{calendar_name}{start_time.isoformat()}"
+    # Generate source_id from UID or fallback to content-based hash
+    source_id = uid
+    if source_id is None:
+        # Generate fallback from stable content
+        fallback_parts = [summary or "", start_time.isoformat(), calendar_name or ""]
+        source_id = hashlib.sha256("|".join(fallback_parts).encode()).hexdigest()[:32]
+
+    # Generate content hash from source_id + calendar name
+    hash_content = f"{source_id}{calendar_name}{start_time.isoformat()}"
     content_hash = hashlib.sha256(hash_content.encode()).hexdigest()
 
     return CalendarEvent(
-        entity_type=EntityType.CALENDAR_EVENT,
         source_type=SourceType.GOOGLE_TAKEOUT,
-        source_id=uid,
+        source_id=source_id,
         content_hash=content_hash,
         occurred_at=start_time,
         # Calendar-specific fields
@@ -242,12 +247,6 @@ def _parse_vevent(component: Component, calendar_name: str) -> CalendarEvent | N
         event_created_at=event_created_at,
         event_updated_at=event_updated_at,
         conference_url=url if url and _is_conference_url(url) else None,
-        content_json=json.dumps(
-            {
-                "organizer_email": organizer_email,
-                "location": location,
-            }
-        ),
     )
 
 

@@ -7,6 +7,8 @@ Handles importing data from Google Takeout archives including:
 - Gmail (emails)
 - Chrome History/Bookmarks
 - Location History (Timeline)
+
+Supports both extracted directories and compressed archives (.zip, .tgz, .tar.gz).
 """
 
 from collections.abc import Iterator
@@ -14,7 +16,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from potluck.core.logging import get_logger
-from potluck.models.base import BaseEntity, EntityType, SourceType
+from potluck.models.base import EntityType, IngestableEntity, SourceType
 from potluck.pipeline.dtos import DetectionResult, PipelineFilter
 from potluck.pipeline.ingestion.base import BaseIngestionStage
 from potluck.pipeline.ingestion.google_takeout.calendar import ingest_calendar_events
@@ -27,6 +29,7 @@ from potluck.pipeline.ingestion.google_takeout.location import ingest_location_v
 from potluck.pipeline.ingestion.google_takeout.mail import ingest_emails
 from potluck.pipeline.ingestion.google_takeout.photos import ingest_media
 from potluck.pipeline.ingestion.registry import register
+from potluck.pipeline.utils.archive import extracted
 
 logger = get_logger(__name__)
 
@@ -67,6 +70,22 @@ class GoogleTakeoutStage(BaseIngestionStage):
 
     def detect(self, path: Path) -> DetectionResult:
         """Scan the takeout and return available entity types with counts.
+
+        Supports both extracted directories and compressed archives.
+        For archives, extracts to a temporary directory for detection.
+
+        Args:
+            path: Path to the extracted takeout directory or archive file.
+
+        Returns:
+            DetectionResult with entity type counts and metadata.
+        """
+        # Handle archives by extracting to temp directory for detection
+        with extracted(path) as content_path:
+            return self._detect_from_path(content_path)
+
+    def _detect_from_path(self, path: Path) -> DetectionResult:
+        """Perform detection on an extracted path.
 
         Args:
             path: Path to the extracted takeout directory.
@@ -125,10 +144,33 @@ class GoogleTakeoutStage(BaseIngestionStage):
         path: Path,
         entity_types: set[EntityType] | None = None,
         filters: PipelineFilter | None = None,
-    ) -> Iterator[BaseEntity]:
+    ) -> Iterator[IngestableEntity]:
         """Yield entities from the Google Takeout archive.
 
+        Supports both extracted directories and compressed archives.
+        For archives, extracts to a temporary directory during processing.
+
         Routes to per-type ingestion methods based on requested entity types.
+
+        Args:
+            path: Path to the extracted takeout directory or archive file.
+            entity_types: Set of entity types to ingest (None = all supported).
+            filters: Optional date range filters.
+
+        Yields:
+            Entities of the requested types.
+        """
+        # Handle archives by extracting to temp directory
+        with extracted(path) as content_path:
+            yield from self._execute_from_path(content_path, entity_types, filters)
+
+    def _execute_from_path(
+        self,
+        path: Path,
+        entity_types: set[EntityType] | None = None,
+        filters: PipelineFilter | None = None,
+    ) -> Iterator[IngestableEntity]:
+        """Execute ingestion on an extracted path.
 
         Args:
             path: Path to the extracted takeout directory.
@@ -136,7 +178,7 @@ class GoogleTakeoutStage(BaseIngestionStage):
             filters: Optional date range filters.
 
         Yields:
-            Entities of the requested types.
+            Entities of the requested types, deduplicated by content_hash.
         """
         # Default to all supported types if none specified
         types_to_process = entity_types or self.SUPPORTED_ENTITY_TYPES
@@ -146,30 +188,43 @@ class GoogleTakeoutStage(BaseIngestionStage):
 
         logger.info(f"Processing Google Takeout at {path} for types: {types_to_process}")
 
+        # Track seen content hashes for in-memory deduplication
+        # Note: DB ON CONFLICT provides a safety net for duplicates that
+        # slip through (e.g., from separate ingestion runs)
+        seen_hashes: set[str] = set()
+
+        def deduplicate(
+            entities: Iterator[IngestableEntity],
+        ) -> Iterator[IngestableEntity]:
+            """Skip entities with duplicate content_hash."""
+            for entity in entities:
+                content_hash = getattr(entity, "content_hash", None)
+                if content_hash:
+                    if content_hash in seen_hashes:
+                        continue
+                    seen_hashes.add(content_hash)
+                yield entity
+
         if EntityType.BROWSING_HISTORY in types_to_process:
-            yield from ingest_browsing_history(path, filters)
+            yield from deduplicate(ingest_browsing_history(path, filters))
 
         if EntityType.BOOKMARK in types_to_process:
-            # BookmarkFolder extends SimpleEntity, not BaseEntity, but is valid for ingestion
-            yield from ingest_bookmarks(path, filters)  # type: ignore[misc]
+            yield from deduplicate(ingest_bookmarks(path, filters))
 
         if EntityType.CHAT_MESSAGE in types_to_process:
-            # ChatThread extends SQLModel, not BaseEntity, but is valid for ingestion
-            yield from ingest_chat_messages(path, filters)  # type: ignore[misc]
+            yield from deduplicate(ingest_chat_messages(path, filters))
 
         if EntityType.CALENDAR_EVENT in types_to_process:
-            # EventParticipant extends SimpleEntity, not BaseEntity, but is valid for ingestion
-            yield from ingest_calendar_events(path, filters)  # type: ignore[misc]
+            yield from deduplicate(ingest_calendar_events(path, filters))
 
         if EntityType.LOCATION_VISIT in types_to_process:
-            # Location, LocationVisit, LocationHistory are SQLModel, not BaseEntity
-            yield from ingest_location_visits(path, filters)  # type: ignore[misc]
+            yield from deduplicate(ingest_location_visits(path, filters))
 
         if EntityType.MEDIA in types_to_process:
-            yield from ingest_media(path, filters)
+            yield from deduplicate(ingest_media(path, filters))
 
         if EntityType.EMAIL in types_to_process:
-            yield from ingest_emails(path, filters)
+            yield from deduplicate(ingest_emails(path, filters))
 
     # -------------------------------------------------------------------------
     # Detection helper methods
@@ -281,14 +336,11 @@ class GoogleTakeoutStage(BaseIngestionStage):
             return 0
 
     def _count_location_visits(self, path: Path) -> int:
-        """Count location visits from Timeline data."""
-        # Check for Android Timeline export (Timeline.json)
-        timeline_file = path / "Timeline.json"
-        if timeline_file.exists():
-            # Estimate from file size (each segment ~500 bytes)
-            size = timeline_file.stat().st_size
-            return max(1, size // 500)
+        """Count location visits from Google Takeout Timeline data.
 
+        Note: Android Timeline export (Timeline.json at root) is handled
+        by the separate AndroidTimelineStage.
+        """
         # Check for Google Takeout Timeline
         timeline_dir = self._find_timeline_dir(path)
         if not timeline_dir:
@@ -306,70 +358,48 @@ class GoogleTakeoutStage(BaseIngestionStage):
     # Directory finding helpers
     # -------------------------------------------------------------------------
 
+    def _find_takeout_dir(self, path: Path, name: str, *alternate_names: str) -> Path | None:
+        """Find a directory within Takeout structure.
+
+        Checks both under Takeout/ prefix and at root level.
+        Supports alternate names (e.g., "Timeline" vs "Location History").
+
+        Args:
+            path: Base path to search from.
+            name: Primary directory name to find.
+            *alternate_names: Optional alternate names to check.
+
+        Returns:
+            Path to the directory if found, None otherwise.
+        """
+        all_names = [name, *alternate_names]
+        for dir_name in all_names:
+            candidates = [path / "Takeout" / dir_name, path / dir_name]
+            for candidate in candidates:
+                if candidate.is_dir():
+                    return candidate
+        return None
+
     def _find_google_photos_dir(self, path: Path) -> Path | None:
         """Find Google Photos directory in takeout."""
-        candidates = [
-            path / "Takeout" / "Google Photos",
-            path / "Google Photos",
-        ]
-        for candidate in candidates:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return self._find_takeout_dir(path, "Google Photos")
 
     def _find_google_chat_dir(self, path: Path) -> Path | None:
         """Find Google Chat directory in takeout."""
-        candidates = [
-            path / "Takeout" / "Google Chat",
-            path / "Google Chat",
-        ]
-        for candidate in candidates:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return self._find_takeout_dir(path, "Google Chat")
 
     def _find_gmail_dir(self, path: Path) -> Path | None:
         """Find Gmail directory in takeout."""
-        candidates = [
-            path / "Takeout" / "Mail",
-            path / "Mail",
-        ]
-        for candidate in candidates:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return self._find_takeout_dir(path, "Mail")
 
     def _find_calendar_dir(self, path: Path) -> Path | None:
         """Find Calendar directory in takeout."""
-        candidates = [
-            path / "Takeout" / "Calendar",
-            path / "Calendar",
-        ]
-        for candidate in candidates:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return self._find_takeout_dir(path, "Calendar")
 
     def _find_chrome_dir(self, path: Path) -> Path | None:
         """Find Chrome directory in takeout."""
-        candidates = [
-            path / "Takeout" / "Chrome",
-            path / "Chrome",
-        ]
-        for candidate in candidates:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return self._find_takeout_dir(path, "Chrome")
 
     def _find_timeline_dir(self, path: Path) -> Path | None:
         """Find Timeline directory in takeout."""
-        candidates = [
-            path / "Takeout" / "Timeline",
-            path / "Takeout" / "Location History",
-            path / "Timeline",
-            path / "Location History",
-        ]
-        for candidate in candidates:
-            if candidate.is_dir():
-                return candidate
-        return None
+        return self._find_takeout_dir(path, "Timeline", "Location History")

@@ -23,6 +23,9 @@ from potluck.pipeline.utils.parsers import parse_json
 
 logger = get_logger(__name__)
 
+# Constants
+HASH_PREFIX_LENGTH = 32  # Length of hash prefix for URL hashing
+
 
 def ingest_browsing_history(
     path: Path,
@@ -126,7 +129,7 @@ def _parse_history_entry(entry: dict[str, Any]) -> BrowsingHistory | None:
     domain = _extract_domain(url)
 
     # Compute URL hash for deduplication
-    url_hash = hashlib.sha256(url.encode()).hexdigest()[:32]
+    url_hash = hashlib.sha256(url.encode()).hexdigest()[:HASH_PREFIX_LENGTH]
 
     # Compute content hash for deduplication (url + timestamp)
     content = f"{url}|{time_usec}"
@@ -242,6 +245,14 @@ class _BookmarkHTMLParser(HTMLParser):
         self._current_text: str = ""
         self._position: int = 0
 
+    def error(self, message: str) -> None:
+        """Handle malformed HTML gracefully.
+
+        Bookmark HTML files from exports may have minor formatting issues.
+        We log the error but continue parsing rather than failing entirely.
+        """
+        logger.warning(f"HTML parsing error: {message}")
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         """Handle opening tags."""
         self._current_tag = tag.lower()
@@ -329,7 +340,7 @@ class _BookmarkHTMLParser(HTMLParser):
         domain = _extract_domain(url)
 
         # Compute URL hash
-        url_hash = hashlib.sha256(url.encode()).hexdigest()[:32]
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:HASH_PREFIX_LENGTH]
 
         # Compute content hash (url is unique identifier)
         content_hash = hashlib.sha256(url.encode()).hexdigest()

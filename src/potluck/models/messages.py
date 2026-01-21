@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import TimestampedEntity
+from potluck.models.base import IngestableEntity, TimestampedEntity
 from potluck.models.utils import utc_now
 
 
@@ -41,13 +41,17 @@ class ThreadType(str, Enum):
     COMMUNITY = "community"  # Community/forum
 
 
-class ChatThread(SQLModel, table=True):
+class ChatThread(SQLModel, IngestableEntity, table=True):
     """Conversation thread container for messaging platforms.
 
     Works across WhatsApp, Telegram, SMS, and other messaging services.
+    Inherits from IngestableEntity to allow proper typing for ingester yields.
     """
 
     __tablename__ = "chat_threads"
+
+    # Forbid extra fields to catch bugs early
+    model_config = {"extra": "forbid"}
 
     id: UUID = Field(
         default_factory=uuid4,

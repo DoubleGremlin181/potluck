@@ -21,6 +21,9 @@ from potluck.pipeline.utils.parsers import parse_datetime, parse_json
 
 logger = get_logger(__name__)
 
+# Constants
+HASH_PREFIX_LENGTH = 32  # Length of hash prefix for source_id generation
+
 
 def ingest_chat_messages(
     path: Path,
@@ -212,14 +215,13 @@ def _parse_message(msg_data: dict[str, Any], thread_id: Any) -> ChatMessage | No
     created_date = msg_data.get("created_date")
     occurred_at = _parse_chat_timestamp(created_date)
 
-    # Generate source_id from message data
-    # Use combination of thread, timestamp, and sender for uniqueness
-    source_id_parts = [str(thread_id), created_date or "", sender_email or sender_name or ""]
-    source_id = hashlib.sha256("|".join(source_id_parts).encode()).hexdigest()[:32]
+    # Generate source_id from stable message data (not thread_id which changes)
+    # Use combination of timestamp, sender, and content for idempotent identification
+    source_id_parts = [created_date or "", sender_email or sender_name or "", text or ""]
+    source_id = hashlib.sha256("|".join(source_id_parts).encode()).hexdigest()[:HASH_PREFIX_LENGTH]
 
-    # Compute content hash
-    content_hash_parts = [text, created_date or "", sender_email or ""]
-    content_hash = hashlib.sha256("|".join(content_hash_parts).encode()).hexdigest()
+    # Compute content hash from the same stable data
+    content_hash = hashlib.sha256("|".join(source_id_parts).encode()).hexdigest()
 
     return ChatMessage(
         source_type=SourceType.GOOGLE_TAKEOUT,

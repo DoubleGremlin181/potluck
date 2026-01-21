@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
 from potluck.models import get_entity_type_model_map
-from potluck.models.base import BaseEntity, EntityType, SourceType
+from potluck.models.base import EntityType, IngestableEntity, SourceType
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
 from potluck.pipeline.dtos import (
@@ -280,7 +280,7 @@ class PipelineOrchestrator:
     ) -> PipelineStats:
         """Ingest entities from the source."""
         stats = PipelineStats()
-        batch: list[BaseEntity] = []
+        batch: list[IngestableEntity] = []
         current = 0
         total = import_run.progress_total or 0
 
@@ -309,37 +309,39 @@ class PipelineOrchestrator:
 
         return stats
 
-    def _is_duplicate(self, entity: BaseEntity) -> bool:
+    def _is_duplicate(self, entity: IngestableEntity) -> bool:
         """Check if an entity is a duplicate by content hash."""
-        if entity.content_hash is None:
+        # Only entities with content_hash can be deduplicated
+        content_hash = getattr(entity, "content_hash", None)
+        if content_hash is None:
             return False
 
         # Check in-memory cache first (O(1) lookup)
-        if entity.content_hash in self._seen_hashes:
+        if content_hash in self._seen_hashes:
             return True
 
         # Query database for existing entity with same hash
         model_class = type(entity)
         if not hasattr(model_class, "__tablename__"):
-            self._seen_hashes.add(entity.content_hash)
+            self._seen_hashes.add(content_hash)
             return False
 
         stmt = (
-            select(model_class.content_hash)
-            .where(model_class.content_hash == entity.content_hash)
+            select(model_class.content_hash)  # type: ignore[attr-defined]
+            .where(model_class.content_hash == content_hash)  # type: ignore[attr-defined]
             .limit(1)
         )
 
         result = self.session.exec(stmt)
         existing = result.first()
         if existing is not None:
-            self._seen_hashes.add(entity.content_hash)
+            self._seen_hashes.add(content_hash)
             return True
 
-        self._seen_hashes.add(entity.content_hash)
+        self._seen_hashes.add(content_hash)
         return False
 
-    def _flush_batch(self, batch: list[BaseEntity], stats: PipelineStats) -> None:
+    def _flush_batch(self, batch: list[IngestableEntity], stats: PipelineStats) -> None:
         """Flush a batch of entities to the database and queue processing."""
         for entity in batch:
             self.session.add(entity)
@@ -355,9 +357,11 @@ class PipelineOrchestrator:
             # Track entity IDs for batch linker processing
             if entity_type not in self._entity_ids_by_type:
                 self._entity_ids_by_type[entity_type] = []
-            self._entity_ids_by_type[entity_type].append(str(entity.id))
+            entity_id = getattr(entity, "id", None)
+            if entity_id:
+                self._entity_ids_by_type[entity_type].append(str(entity_id))
 
-    def _get_entity_type(self, entity: BaseEntity) -> EntityType:
+    def _get_entity_type(self, entity: IngestableEntity) -> EntityType:
         """Determine EntityType from entity instance."""
         model_map = get_entity_type_model_map()
         for etype, model_class in model_map.items():
@@ -366,17 +370,21 @@ class PipelineOrchestrator:
         # Default fallback
         return EntityType.MEDIA
 
-    def _queue_entity_processing(self, entity: BaseEntity, entity_type: EntityType) -> None:
+    def _queue_entity_processing(self, entity: IngestableEntity, entity_type: EntityType) -> None:
         """Queue processing tasks for any entity type."""
         # Deferred import to avoid circular import with tasks module
         from potluck.pipeline.tasks.processing import run_entity_pipeline
 
+        entity_id = getattr(entity, "id", None)
+        if not entity_id:
+            return
+
         try:
-            run_entity_pipeline(entity_type.value, str(entity.id))
-            logger.debug(f"Queued processing for {entity_type.value} {entity.id}")
+            run_entity_pipeline(entity_type.value, str(entity_id))
+            logger.debug(f"Queued processing for {entity_type.value} {entity_id}")
         except Exception:
             logger.exception(
-                f"Failed to queue processing for {entity_type.value} {entity.id}. "
+                f"Failed to queue processing for {entity_type.value} {entity_id}. "
                 "This entity will need to be manually reprocessed."
             )
 

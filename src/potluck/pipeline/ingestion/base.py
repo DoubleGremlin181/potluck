@@ -8,14 +8,14 @@ from typing import Any, ClassVar
 
 from potluck.core.exceptions import ConfigurationError
 from potluck.core.logging import get_logger
-from potluck.models.base import BaseEntity, EntityType, SourceType
+from potluck.models.base import EntityType, IngestableEntity, SourceType
 from potluck.pipeline.base import Stage
 from potluck.pipeline.dtos import DetectionResult, PipelineFilter
 
 logger = get_logger(__name__)
 
 
-class BaseIngestionStage(Stage[Path, Iterator[BaseEntity]]):
+class BaseIngestionStage(Stage[Path, Iterator[IngestableEntity]]):
     """Abstract base class for data source ingestion stages.
 
     Each ingestion stage handles a specific data source (e.g., Google Takeout, Reddit).
@@ -103,7 +103,7 @@ class BaseIngestionStage(Stage[Path, Iterator[BaseEntity]]):
         path: Path,
         entity_types: set[EntityType] | None = None,
         filters: PipelineFilter | None = None,
-    ) -> Iterator[BaseEntity]:
+    ) -> Iterator[IngestableEntity]:
         """Yield entities from the source.
 
         This is the main ingestion method. It should iterate through the source
@@ -124,7 +124,7 @@ class BaseIngestionStage(Stage[Path, Iterator[BaseEntity]]):
             filters: Optional date range filters.
 
         Yields:
-            BaseEntity instances (Media, ChatMessage, Email, etc.)
+            IngestableEntity instances (Media, ChatMessage, Email, ChatThread, etc.)
         """
         ...
 

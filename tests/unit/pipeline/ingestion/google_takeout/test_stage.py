@@ -187,11 +187,15 @@ END:VCALENDAR"""
             assert EntityType.EMAIL in result.entity_counts
             assert result.entity_counts[EntityType.EMAIL] > 0
 
-    def test_detect_location_timeline_json(self) -> None:
-        """Detects Android Timeline export (Timeline.json)."""
+    def test_detect_location_timeline_edits(self) -> None:
+        """Detects Google Takeout Timeline Edits.json."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create Timeline.json at root (Android export format)
-            (Path(tmpdir) / "Timeline.json").write_text('{"semanticSegments": []}' + "x" * 1000)
+            # Create Timeline Edits.json (Google Takeout format)
+            timeline_dir = Path(tmpdir) / "Takeout" / "Timeline"
+            timeline_dir.mkdir(parents=True)
+            (timeline_dir / "Timeline Edits.json").write_text(
+                '{"timelineEdits": [' + '{"rawSignal": {}},' * 10 + "]}"
+            )
 
             stage = GoogleTakeoutStage()
             result = stage.detect(Path(tmpdir))

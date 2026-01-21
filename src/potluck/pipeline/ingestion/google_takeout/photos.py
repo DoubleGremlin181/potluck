@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from potluck.core.logging import get_logger
-from potluck.models.base import EntityType, SourceType
+from potluck.models.base import SourceType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.utils.hashing import compute_file_hash
@@ -315,7 +315,6 @@ def _create_media_entity(
             pass
 
     return Media(
-        entity_type=EntityType.MEDIA,
         source_type=SourceType.GOOGLE_TAKEOUT,
         source_id=str(media_file),
         content_hash=file_hash,

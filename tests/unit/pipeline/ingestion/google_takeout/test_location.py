@@ -1,4 +1,11 @@
-"""Tests for Location History ingestion."""
+"""Tests for Google Takeout Location History ingestion.
+
+Tests the location.py module which handles:
+- Timeline Edits.json (Google Takeout sparse timeline data)
+- Labeled places.json (GeoJSON format)
+
+Note: Android Timeline.json is handled by the separate AndroidTimelineStage.
+"""
 
 import tempfile
 from datetime import UTC, datetime
@@ -7,7 +14,6 @@ from pathlib import Path
 from potluck.models.base import SourceType
 from potluck.models.locations import (
     Location,
-    LocationHistory,
     LocationType,
     LocationVisit,
 )
@@ -15,8 +21,6 @@ from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.google_takeout.location import (
     _name_to_location_type,
     _parse_iso_timestamp,
-    _parse_lat_lng,
-    _semantic_type_to_place_name,
     ingest_location_visits,
 )
 
@@ -24,206 +28,139 @@ from potluck.pipeline.ingestion.google_takeout.location import (
 FIXTURES_PATH = Path(__file__).parent.parent.parent.parent.parent / "fixtures" / "google_takeout"
 
 
-class TestLocationIngestion:
-    """Tests for location history ingestion."""
+class TestTakeoutTimelineEdits:
+    """Tests for Google Takeout Timeline Edits.json parsing."""
 
-    def test_ingest_from_android_timeline(self) -> None:
-        """Ingest location data from Android Timeline.json."""
+    def test_ingest_timeline_edits(self) -> None:
+        """Ingest location visits from Timeline Edits.json."""
         entities = list(ingest_location_visits(FIXTURES_PATH))
 
-        # Separate entity types
         visits = [e for e in entities if isinstance(e, LocationVisit)]
-        history = [e for e in entities if isinstance(e, LocationHistory)]
-        locations = [e for e in entities if isinstance(e, Location)]
 
-        # Should have visits from Android timeline + Takeout timeline
-        assert len(visits) > 0
-        # Should have timeline path points
-        assert len(history) > 0
-        # Should have labeled places
-        assert len(locations) == 3
+        # Should have 2 visits from Timeline Edits.json
+        assert len(visits) == 2
 
-    def test_visit_from_home_segment(self) -> None:
-        """Home visit segment is parsed correctly."""
+    def test_first_edit_coordinates(self) -> None:
+        """First timeline edit has correct E7 coordinate conversion."""
         entities = list(ingest_location_visits(FIXTURES_PATH))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
-        # Find the home visit
-        home_visit = next(
-            (v for v in visits if v.place_name == "Home" and v.place_id == "ChIJabc123"),
+        # 407128000 / 10_000_000 = 40.7128
+        first_visit = next(
+            (v for v in visits if abs(v.latitude - 40.7128) < 0.0001),
             None,
         )
-        assert home_visit is not None
-        assert home_visit.latitude == 40.7128
-        assert home_visit.longitude == -74.0060
-        assert home_visit.confidence == 0.99
-        assert home_visit.duration_minutes == 90  # 1.5 hours
+        assert first_visit is not None
+        assert abs(first_visit.longitude - (-74.0060)) < 0.0001
+        assert first_visit.accuracy_meters == 10.0  # 10000mm -> 10m
 
-    def test_visit_from_work_segment(self) -> None:
-        """Work visit segment is parsed correctly."""
+    def test_second_edit_coordinates(self) -> None:
+        """Second timeline edit has correct coordinates."""
         entities = list(ingest_location_visits(FIXTURES_PATH))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
-        # Find the work visit
-        work_visit = next(
-            (v for v in visits if v.place_name == "Work" and v.place_id == "ChIJdef456"),
+        # 407589000 / 10_000_000 = 40.7589
+        second_visit = next(
+            (v for v in visits if abs(v.latitude - 40.7589) < 0.0001),
             None,
         )
-        assert work_visit is not None
-        assert work_visit.latitude == 40.7589
-        assert work_visit.longitude == -73.9851
-        assert work_visit.duration_minutes == 480  # 8 hours
+        assert second_visit is not None
+        assert abs(second_visit.longitude - (-73.9851)) < 0.0001
+        assert second_visit.accuracy_meters == 15.0  # 15000mm -> 15m
 
-    def test_activity_segment_parsing(self) -> None:
-        """Activity segments (travel) are parsed as visits."""
+    def test_source_type(self) -> None:
+        """All visits have GOOGLE_TAKEOUT source type."""
         entities = list(ingest_location_visits(FIXTURES_PATH))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
-        # Find the in-vehicle activity
-        travel = next((v for v in visits if v.activity_type == "IN_VEHICLE"), None)
-        assert travel is not None
-        assert travel.latitude == 40.7128
-        assert travel.longitude == -74.0060
-        assert travel.confidence == 0.85
-        assert travel.duration_minutes == 30
+        for visit in visits:
+            assert visit.source_type == SourceType.GOOGLE_TAKEOUT
 
-    def test_timeline_path_points(self) -> None:
-        """Timeline path points are parsed as LocationHistory."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
-        history = [e for e in entities if isinstance(e, LocationHistory)]
-
-        # Should have 3 path points
-        assert len(history) == 3
-
-        # Check first point
-        first_point = next(
-            (h for h in history if abs(h.latitude - 40.7589) < 0.001),
-            None,
-        )
-        assert first_point is not None
-        assert first_point.source_type == SourceType.GOOGLE_TAKEOUT
-
-    def test_takeout_timeline_edits(self) -> None:
-        """Takeout Timeline Edits.json is parsed correctly."""
-        # Use just the Timeline subdirectory to test Takeout format
-        timeline_dir = FIXTURES_PATH / "Timeline"
-        if not timeline_dir.exists():
-            return
-
+    def test_occurred_at_set(self) -> None:
+        """Visits have occurred_at field set for search consistency."""
         entities = list(ingest_location_visits(FIXTURES_PATH))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
-        # Find visits from E7 coordinates (Takeout format)
-        # These should have accuracy from accuracyMm
-        takeout_visits = [v for v in visits if v.accuracy_meters is not None]
-        assert len(takeout_visits) >= 2
+        for visit in visits:
+            assert visit.occurred_at is not None
+            assert visit.occurred_at == visit.started_at
 
-        # Check E7 coordinate conversion: 407128000 / 10_000_000 = 40.7128
-        takeout_visit = next(
-            (v for v in takeout_visits if abs(v.latitude - 40.7128) < 0.001),
-            None,
-        )
-        assert takeout_visit is not None
-        assert abs(takeout_visit.longitude - (-74.0060)) < 0.001
 
-    def test_labeled_places(self) -> None:
-        """Labeled places GeoJSON is parsed correctly."""
+class TestLabeledPlaces:
+    """Tests for labeled places GeoJSON parsing."""
+
+    def test_ingest_labeled_places(self) -> None:
+        """Ingest labeled places from GeoJSON."""
         entities = list(ingest_location_visits(FIXTURES_PATH))
         locations = [e for e in entities if isinstance(e, Location)]
 
+        # Should have 3 labeled places
         assert len(locations) == 3
 
-        # Find home location
+    def test_home_location(self) -> None:
+        """Home labeled place is parsed correctly."""
+        entities = list(ingest_location_visits(FIXTURES_PATH))
+        locations = [e for e in entities if isinstance(e, Location)]
+
         home = next((loc for loc in locations if loc.name == "Home"), None)
         assert home is not None
         assert home.latitude == 40.7128
         assert home.longitude == -74.0060
         assert home.location_type == LocationType.HOME
         assert "123 Main Street" in (home.address or "")
+        assert home.source_type == SourceType.GOOGLE_TAKEOUT
 
-        # Find work location
+    def test_work_location(self) -> None:
+        """Work labeled place is parsed correctly."""
+        entities = list(ingest_location_visits(FIXTURES_PATH))
+        locations = [e for e in entities if isinstance(e, Location)]
+
         work = next((loc for loc in locations if loc.name == "Work"), None)
         assert work is not None
+        assert work.latitude == 40.7589
+        assert work.longitude == -73.9851
         assert work.location_type == LocationType.WORK
 
-        # Find gym location
+    def test_gym_location(self) -> None:
+        """Fitness Center labeled place is parsed correctly."""
+        entities = list(ingest_location_visits(FIXTURES_PATH))
+        locations = [e for e in entities if isinstance(e, Location)]
+
         gym = next((loc for loc in locations if loc.name == "Fitness Center"), None)
         assert gym is not None
         assert gym.location_type == LocationType.GYM
 
-    def test_source_type(self) -> None:
-        """All entities have correct source type."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
 
-        for entity in entities:
-            assert entity.source_type == SourceType.GOOGLE_TAKEOUT
+class TestDateFilters:
+    """Tests for date range filtering."""
 
-    def test_date_filter_since(self) -> None:
+    def test_since_filter(self) -> None:
         """Date filter 'since' excludes earlier data."""
-        filters = PipelineFilter(since=datetime(2024, 1, 16, tzinfo=UTC))
+        # Timeline Edits are from 2024-01-16
+        filters = PipelineFilter(since=datetime(2024, 1, 16, 15, 0, tzinfo=UTC))
         entities = list(ingest_location_visits(FIXTURES_PATH, filters))
 
         visits = [e for e in entities if isinstance(e, LocationVisit)]
-        history = [e for e in entities if isinstance(e, LocationHistory)]
 
-        # Should exclude Jan 15 data
-        # Remaining: Jan 16 Takeout data + Jan 20 Android data
-        assert len(visits) >= 2  # Takeout visits + Jan 20 visit
-        assert len(history) == 0  # All timeline path is from Jan 15
+        # Should only get the 15:30 visit, not the 12:00 visit
+        assert len(visits) == 1
+        assert visits[0].started_at.hour == 15
 
-    def test_date_filter_until(self) -> None:
+    def test_until_filter(self) -> None:
         """Date filter 'until' excludes later data."""
-        filters = PipelineFilter(until=datetime(2024, 1, 16, tzinfo=UTC))
+        # Timeline Edits are from 2024-01-16
+        filters = PipelineFilter(until=datetime(2024, 1, 16, 13, 0, tzinfo=UTC))
         entities = list(ingest_location_visits(FIXTURES_PATH, filters))
 
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
-        # Should include only Jan 15 data
-        # All Jan 15 visits from Android timeline
-        jan_15_visits = [
-            v for v in visits if v.started_at and v.started_at.month == 1 and v.started_at.day == 15
-        ]
-        assert len(jan_15_visits) >= 3  # Home, travel, work
-
-    def test_empty_directory(self) -> None:
-        """Empty directory yields no entities."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            entities = list(ingest_location_visits(Path(tmpdir)))
-            assert entities == []
+        # Should only get the 12:00 visit, not the 15:30 visit
+        assert len(visits) == 1
+        assert visits[0].started_at.hour == 12
 
 
 class TestHelperFunctions:
     """Tests for location parsing helper functions."""
-
-    def test_parse_lat_lng_with_degrees(self) -> None:
-        """Parse coordinates with degree symbols."""
-        lat, lng = _parse_lat_lng("40.7128°, -74.0060°")
-        assert lat == 40.7128
-        assert lng == -74.0060
-
-    def test_parse_lat_lng_without_degrees(self) -> None:
-        """Parse coordinates without degree symbols."""
-        lat, lng = _parse_lat_lng("40.7128, -74.0060")
-        assert lat == 40.7128
-        assert lng == -74.0060
-
-    def test_parse_lat_lng_negative(self) -> None:
-        """Parse negative coordinates."""
-        lat, lng = _parse_lat_lng("-33.8688°, 151.2093°")
-        assert lat == -33.8688
-        assert lng == 151.2093
-
-    def test_parse_lat_lng_empty(self) -> None:
-        """Empty string returns None tuple."""
-        lat, lng = _parse_lat_lng("")
-        assert lat is None
-        assert lng is None
-
-    def test_parse_lat_lng_invalid(self) -> None:
-        """Invalid format returns None tuple."""
-        lat, lng = _parse_lat_lng("invalid")
-        assert lat is None
-        assert lng is None
 
     def test_parse_iso_timestamp(self) -> None:
         """Parse ISO timestamp with timezone."""
@@ -248,26 +185,59 @@ class TestHelperFunctions:
         """Invalid format returns None."""
         assert _parse_iso_timestamp("invalid") is None
 
-    def test_semantic_type_to_place_name(self) -> None:
-        """Convert semantic types to place names."""
-        assert _semantic_type_to_place_name("HOME") == "Home"
-        assert _semantic_type_to_place_name("WORK") == "Work"
-        assert _semantic_type_to_place_name("SCHOOL") == "School"
-        assert _semantic_type_to_place_name("UNKNOWN") is None
-        assert _semantic_type_to_place_name("RANDOM") is None
-
     def test_name_to_location_type(self) -> None:
         """Convert place names to location types."""
         assert _name_to_location_type("Home") == LocationType.HOME
         assert _name_to_location_type("My Home") == LocationType.HOME
         assert _name_to_location_type("Work") == LocationType.WORK
         assert _name_to_location_type("Office") == LocationType.WORK
+        assert _name_to_location_type("My Work") == LocationType.WORK
         assert _name_to_location_type("High School") == LocationType.SCHOOL
         assert _name_to_location_type("City Gym") == LocationType.GYM
         assert _name_to_location_type("Fitness Center") == LocationType.GYM
         assert _name_to_location_type("JFK Airport") == LocationType.AIRPORT
         assert _name_to_location_type("Marriott Hotel") == LocationType.HOTEL
         assert _name_to_location_type("Random Place") == LocationType.OTHER
+
+
+class TestEdgeCases:
+    """Tests for edge cases and error handling."""
+
+    def test_empty_directory(self) -> None:
+        """Empty directory yields no entities."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            entities = list(ingest_location_visits(Path(tmpdir)))
+            assert entities == []
+
+    def test_missing_timeline_dir(self) -> None:
+        """Missing Timeline directory is handled gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create only Maps directory, no Timeline
+            maps_dir = Path(tmpdir) / "Takeout" / "Maps" / "My labeled places"
+            maps_dir.mkdir(parents=True)
+
+            # Create empty labeled places
+            geojson = maps_dir / "Labeled places.json"
+            geojson.write_text('{"features": []}')
+
+            entities = list(ingest_location_visits(Path(tmpdir)))
+            # Should not crash, just no visits from timeline
+            assert isinstance(entities, list)
+
+    def test_missing_labeled_places_dir(self) -> None:
+        """Missing labeled places directory is handled gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create only Timeline directory, no Maps
+            timeline_dir = Path(tmpdir) / "Takeout" / "Timeline"
+            timeline_dir.mkdir(parents=True)
+
+            # Create empty timeline edits
+            edits = timeline_dir / "Timeline Edits.json"
+            edits.write_text('{"timelineEdits": []}')
+
+            entities = list(ingest_location_visits(Path(tmpdir)))
+            # Should not crash, just no locations from labeled places
+            assert isinstance(entities, list)
 
 
 class TestIntegrationWithStage:
@@ -288,11 +258,9 @@ class TestIntegrationWithStage:
             )
         )
 
-        # Should get visits, history, and locations
+        # Should get visits and locations from Google Takeout format
         visits = [e for e in entities if isinstance(e, LocationVisit)]
-        history = [e for e in entities if isinstance(e, LocationHistory)]
         locations = [e for e in entities if isinstance(e, Location)]
 
-        assert len(visits) > 0
-        assert len(history) > 0
-        assert len(locations) > 0
+        assert len(visits) == 2  # From Timeline Edits
+        assert len(locations) == 3  # From Labeled places

@@ -36,15 +36,7 @@ for _module_info in pkgutil.iter_modules([str(_ingestion_dir)]):
         and _module_info.name not in ("base", "registry")
         and _module_info.ispkg
     ):
-        try:
-            importlib.import_module(f".{_module_info.name}", __package__)
-        except ImportError as e:
-            # Log but don't fail - allow partial functionality
-            import logging
-
-            logging.getLogger(__name__).warning(
-                f"Failed to import ingestion module {_module_info.name}: {e}"
-            )
+        importlib.import_module(f".{_module_info.name}", __package__)
 
 __all__ = [
     # Registration
