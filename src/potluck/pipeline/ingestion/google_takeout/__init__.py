@@ -192,15 +192,35 @@ class GoogleTakeoutStage(BaseIngestionStage):
         # Note: DB ON CONFLICT provides a safety net for duplicates that
         # slip through (e.g., from separate ingestion runs)
         seen_hashes: set[str] = set()
+        # Track IDs of skipped entities so we can skip their dependents
+        skipped_entity_ids: set[str] = set()
 
         def deduplicate(
             entities: Iterator[IngestableEntity],
         ) -> Iterator[IngestableEntity]:
-            """Skip entities with duplicate content_hash."""
+            """Skip entities with duplicate content_hash and their dependents."""
             for entity in entities:
+                # Check if this entity references a skipped parent
+                # (e.g., EventParticipant referencing a skipped CalendarEvent)
+                fk_fields = ["event_id", "email_id", "thread_id", "folder_id", "parent_id"]
+                references_skipped = False
+                for field in fk_fields:
+                    fk_value = getattr(entity, field, None)
+                    if fk_value is not None and str(fk_value) in skipped_entity_ids:
+                        references_skipped = True
+                        break
+
+                if references_skipped:
+                    # Skip dependent entity whose parent was skipped
+                    continue
+
                 content_hash = getattr(entity, "content_hash", None)
                 if content_hash:
                     if content_hash in seen_hashes:
+                        # Track skipped entity ID so dependents are also skipped
+                        entity_id = getattr(entity, "id", None)
+                        if entity_id:
+                            skipped_entity_ids.add(str(entity_id))
                         continue
                     seen_hashes.add(content_hash)
                 yield entity

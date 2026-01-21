@@ -77,6 +77,8 @@ class PipelineOrchestrator:
         self._seen_hashes: set[str] = set()
         # Track entity IDs by type for batch linker processing
         self._entity_ids_by_type: dict[EntityType, list[str]] = {}
+        # Track IDs of entities skipped due to deduplication (for FK orphan prevention)
+        self._skipped_entity_ids: set[str] = set()
 
     def run(
         self,
@@ -104,6 +106,7 @@ class PipelineOrchestrator:
         # Clear caches for each new run
         self._seen_hashes.clear()
         self._entity_ids_by_type.clear()
+        self._skipped_entity_ids.clear()
 
         # Compute file hash for source-level deduplication
         file_hash = None
@@ -289,8 +292,20 @@ class PipelineOrchestrator:
 
             # Check for duplicate by content hash
             if self._is_duplicate(entity):
+                # Track the skipped entity ID to prevent FK orphans
+                entity_id = getattr(entity, "id", None)
+                if entity_id:
+                    self._skipped_entity_ids.add(str(entity_id))
                 stats.entities_skipped += 1
                 self._update_progress(current, total, import_run, "Skipping duplicate")
+                continue
+
+            # Check if this entity references a skipped parent entity
+            if self._references_skipped_entity(entity):
+                stats.entities_skipped += 1
+                self._update_progress(
+                    current, total, import_run, "Skipping orphan (parent skipped)"
+                )
                 continue
 
             # Add to batch
@@ -341,9 +356,88 @@ class PipelineOrchestrator:
         self._seen_hashes.add(content_hash)
         return False
 
+    def _references_skipped_entity(self, entity: IngestableEntity) -> bool:
+        """Check if an entity references a skipped parent entity via FK.
+
+        This prevents orphaned child entities when their parent was skipped
+        due to deduplication. For example, if a CalendarEvent was skipped,
+        its EventParticipants should also be skipped.
+
+        Common FK fields checked:
+        - event_id (EventParticipant -> CalendarEvent)
+        - email_id (EmailAttachment -> Email)
+        - thread_id (ChatMessage -> ChatThread)
+        - folder_id (Bookmark -> BookmarkFolder)
+        """
+        # Common foreign key field names that reference parent entities
+        fk_fields = ["event_id", "email_id", "thread_id", "folder_id", "parent_id"]
+
+        for field in fk_fields:
+            fk_value = getattr(entity, field, None)
+            if fk_value is not None and str(fk_value) in self._skipped_entity_ids:
+                return True
+
+        return False
+
+    def _sort_by_dependencies(self, batch: list[IngestableEntity]) -> list[IngestableEntity]:
+        """Sort entities by table dependency order for correct FK insertion.
+
+        Tables are prioritized such that parent tables (those referenced by
+        foreign keys) come before child tables. This ensures that when a batch
+        contains both CalendarEvent and EventParticipant, events are inserted
+        before their participants.
+
+        Priority order (lower = insert first):
+        - Primary entities: 0 (Media, CalendarEvent, Email, ChatThread, etc.)
+        - Dependent entities: 1 (EventParticipant, EmailAttachment, ChatMessage, etc.)
+        - Tertiary entities: 2 (BookmarkFolder before Bookmark)
+        """
+        # Define table names that must be inserted before their dependents
+        # Lower priority number = insert first
+        table_priority: dict[str, int] = {
+            # Primary entities (no in-batch dependencies)
+            "media": 0,
+            "calendar_events": 0,
+            "emails": 0,
+            "email_threads": 0,
+            "chat_threads": 0,
+            "locations": 0,
+            "people": 0,
+            "bookmark_folders": 0,
+            "tags": 0,
+            # Dependent entities (have FK to primary)
+            "event_participants": 1,
+            "email_attachments": 1,
+            "chat_messages": 1,
+            "chat_thread_participants": 1,
+            "location_visits": 1,
+            "location_history": 1,
+            "bookmarks": 1,
+            "tag_assignments": 1,
+            "person_aliases": 1,
+            "media_embeddings": 1,
+            "media_person_links": 1,
+            "face_encodings": 1,
+        }
+        default_priority = 0  # Entities not listed default to primary
+
+        def get_priority(entity: IngestableEntity) -> int:
+            tablename = getattr(type(entity), "__tablename__", "")
+            return table_priority.get(tablename, default_priority)
+
+        return sorted(batch, key=get_priority)
+
     def _flush_batch(self, batch: list[IngestableEntity], stats: PipelineStats) -> None:
-        """Flush a batch of entities to the database and queue processing."""
-        for entity in batch:
+        """Flush a batch of entities to the database and queue processing.
+
+        Entities are sorted by table dependency order before insertion to ensure
+        parent entities (like CalendarEvent) are inserted before child entities
+        (like EventParticipant) that have foreign key references to them.
+        """
+        # Sort batch by table dependency order
+        sorted_batch = self._sort_by_dependencies(batch)
+
+        for entity in sorted_batch:
             self.session.add(entity)
             stats.entities_created += 1
 

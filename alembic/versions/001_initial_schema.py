@@ -527,6 +527,7 @@ def upgrade() -> None:
         sa.Column("content_id", sa.String(), nullable=True),
         sa.Column("is_inline", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["email_id"], ["emails.id"]),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -786,6 +787,7 @@ def upgrade() -> None:
         "bookmark_folders",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("parent_id", sa.Uuid(), nullable=True),
@@ -1013,6 +1015,7 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(), nullable=False),
         sa.Column("ended_at", sa.DateTime(), nullable=True),
         sa.Column("duration_minutes", sa.Integer(), nullable=True),
+        sa.Column("occurred_at", sa.DateTime(), nullable=True),
         sa.Column("place_name", sa.String(), nullable=True),
         sa.Column("address", sa.String(), nullable=True),
         sa.Column("place_id", sa.String(), nullable=True),
@@ -1023,6 +1026,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_location_visits_location_id", "location_visits", ["location_id"])
     op.create_index("ix_location_visits_started_at", "location_visits", ["started_at"])
+    op.create_index("ix_location_visits_occurred_at", "location_visits", ["occurred_at"])
 
     op.create_table(
         "location_history",
@@ -1034,6 +1038,7 @@ def upgrade() -> None:
         sa.Column("accuracy_meters", sa.Float(), nullable=True),
         sa.Column("vertical_accuracy", sa.Float(), nullable=True),
         sa.Column("timestamp", sa.DateTime(), nullable=False),
+        sa.Column("occurred_at", sa.DateTime(), nullable=True),
         sa.Column("speed_mps", sa.Float(), nullable=True),
         sa.Column("heading", sa.Float(), nullable=True),
         sa.Column("device_id", sa.String(), nullable=True),
@@ -1041,6 +1046,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_location_history_timestamp", "location_history", ["timestamp"])
+    op.create_index("ix_location_history_occurred_at", "location_history", ["occurred_at"])
 
     # === Calendar tables ===
 
@@ -1139,6 +1145,7 @@ def upgrade() -> None:
         sa.Column("response_status", sa.String(), nullable=False),
         sa.Column("comment", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["event_id"], ["calendar_events.id"]),
         sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -1249,6 +1256,7 @@ def upgrade() -> None:
         "budgets",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
         sa.Column("year", sa.Integer(), nullable=False),
         sa.Column("month", sa.Integer(), nullable=False),
@@ -1342,17 +1350,13 @@ def upgrade() -> None:
         sa.Column("entity_type", sa.String(), nullable=False),
         sa.Column("entity_id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("is_automatic", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("confidence", sa.Float(), nullable=False, server_default="1.0"),
-        sa.Column("assigned_by", sa.String(), nullable=True),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["tag_id"], ["tags.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_tag_assignments_tag_id", "tag_assignments", ["tag_id"])
     op.create_index("ix_tag_assignments_entity_id", "tag_assignments", ["entity_id"])
-    op.create_index(
-        "ix_tag_assignments_entity_type_id", "tag_assignments", ["entity_type", "entity_id"]
-    )
+    op.create_index("ix_tag_assignments_entity_type", "tag_assignments", ["entity_type"])
 
     op.create_table(
         "tag_synonyms",
