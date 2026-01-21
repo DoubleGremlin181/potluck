@@ -3,10 +3,22 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from potluck.models.base import EntityType, SourceType
-from potluck.pipeline import detect_stage, list_stages
+from potluck.pipeline import detect_stage, list_stages, register
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
+
+
+@pytest.fixture(autouse=True)
+def ensure_stage_registered() -> None:
+    """Ensure GoogleTakeoutStage is registered before each test.
+
+    This handles cases where another test cleared the registry,
+    since the @register decorator only runs once at import time.
+    """
+    register(GoogleTakeoutStage)
 
 
 class TestGoogleTakeoutStageRegistration:

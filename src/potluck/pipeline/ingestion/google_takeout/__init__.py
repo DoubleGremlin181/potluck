@@ -16,7 +16,8 @@ from typing import ClassVar
 from potluck.core.logging import get_logger
 from potluck.models.base import BaseEntity, EntityType, SourceType
 from potluck.pipeline.dtos import DetectionResult, PipelineFilter
-from potluck.pipeline.ingestion import BaseIngestionStage, register
+from potluck.pipeline.ingestion.base import BaseIngestionStage
+from potluck.pipeline.ingestion.registry import register
 
 logger = get_logger(__name__)
 
