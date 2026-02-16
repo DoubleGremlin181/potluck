@@ -158,6 +158,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: potluck-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - potluck-redis:/data
     healthcheck:

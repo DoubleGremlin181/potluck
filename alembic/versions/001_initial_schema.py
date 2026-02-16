@@ -950,6 +950,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("person_id", sa.Uuid(), nullable=True),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("location_type", sa.String(), nullable=False),
@@ -973,6 +975,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["person_id"], ["people.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_index("ix_locations_content_hash", "locations", ["content_hash"])
     op.create_index("ix_locations_person_id", "locations", ["person_id"])
     op.create_index("ix_locations_city", "locations", ["city"])
     op.create_index("ix_locations_country", "locations", ["country"])
@@ -1009,6 +1012,8 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("location_id", sa.Uuid(), nullable=True),
         sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("latitude", sa.Float(), nullable=False),
         sa.Column("longitude", sa.Float(), nullable=False),
         sa.Column("accuracy_meters", sa.Float(), nullable=True),
@@ -1025,6 +1030,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_location_visits_location_id", "location_visits", ["location_id"])
+    op.create_index("ix_location_visits_content_hash", "location_visits", ["content_hash"])
     op.create_index("ix_location_visits_started_at", "location_visits", ["started_at"])
     op.create_index("ix_location_visits_occurred_at", "location_visits", ["occurred_at"])
 
@@ -1032,6 +1038,8 @@ def upgrade() -> None:
         "location_history",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("latitude", sa.Float(), nullable=False),
         sa.Column("longitude", sa.Float(), nullable=False),
         sa.Column("altitude", sa.Float(), nullable=True),
@@ -1045,6 +1053,7 @@ def upgrade() -> None:
         sa.Column("source", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_index("ix_location_history_content_hash", "location_history", ["content_hash"])
     op.create_index("ix_location_history_timestamp", "location_history", ["timestamp"])
     op.create_index("ix_location_history_occurred_at", "location_history", ["occurred_at"])
 

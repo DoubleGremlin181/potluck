@@ -1,11 +1,13 @@
 """Tests for PipelineOrchestrator deduplication and batch handling."""
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from potluck.models.base import EntityType, IngestableEntity, SourceType
 from potluck.models.browsing import Bookmark, BookmarkFolder, BrowsingHistory
 from potluck.models.calendar import CalendarEvent, EventParticipant, ResponseStatus
-from potluck.pipeline.orchestrator import PipelineOrchestrator
+from potluck.pipeline.orchestrator import PipelineOrchestrator, discover
 
 
 class MockSession:
@@ -266,3 +268,69 @@ class TestCacheClearOnRun:
         assert len(orchestrator._seen_hashes) == 0
         assert len(orchestrator._skipped_entity_ids) == 0
         assert len(orchestrator._entity_ids_by_type) == 0
+
+
+class TestContentPathParameter:
+    """Tests for content_path parameter that avoids double extraction."""
+
+    def test_discover_with_content_path_skips_extraction(self, tmp_path: Path) -> None:
+        """discover() with content_path uses it directly instead of extracting."""
+        # Create a fake source file (so path.exists() passes)
+        source_file = tmp_path / "test.tgz"
+        source_file.touch()
+
+        # Create a content directory
+        content_dir = tmp_path / "content"
+        content_dir.mkdir()
+
+        with (
+            patch("potluck.pipeline.orchestrator.extracted") as mock_extracted,
+            patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect,
+        ):
+            mock_detect.return_value = None
+
+            result = discover(source_file, content_path=content_dir)
+
+            # extracted() should NOT be called when content_path is provided
+            mock_extracted.assert_not_called()
+            assert result.source_path == source_file
+            assert result.available_entities == {}
+
+    def test_discover_without_content_path_extracts(self, tmp_path: Path) -> None:
+        """discover() without content_path uses extracted() context manager."""
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+
+        with patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect:
+            mock_detect.return_value = None
+
+            result = discover(source_dir)
+
+            # Should work fine (directory path, no extraction needed)
+            assert result.source_path == source_dir
+            assert result.available_entities == {}
+
+    def test_run_with_content_path_skips_extraction(self) -> None:
+        """PipelineOrchestrator.run() with content_path skips internal extraction."""
+        session = MockSession()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        mock_content = Path("/tmp/fake_content")
+
+        with (
+            patch("potluck.pipeline.orchestrator.extracted") as mock_extracted,
+            patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect,
+            patch.object(orchestrator, "_create_empty_result") as mock_empty,
+        ):
+            mock_detect.return_value = None
+            mock_empty.return_value = MagicMock()
+
+            orchestrator.run(
+                Path("/tmp/fake.tgz"),
+                content_path=mock_content,
+            )
+
+            # extracted() should NOT be called
+            mock_extracted.assert_not_called()
+            # detect_stage should still be called with original path
+            mock_detect.assert_called_once_with(Path("/tmp/fake.tgz"))

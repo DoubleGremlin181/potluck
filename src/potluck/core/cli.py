@@ -30,6 +30,7 @@ from potluck.pipeline import (
     ingest as pipeline_ingest,
 )
 from potluck.pipeline.processing.core.ml import MLModels
+from potluck.pipeline.utils.archive import extracted
 from potluck.web.app import run_web_server
 
 # Main CLI application
@@ -195,40 +196,45 @@ def ingest(
                 f"Could not auto-detect source type for: {path}\nUse --source to specify manually."
             )
 
-    # 2. Run discovery
-    result = discover(path)
+    # Wrap in a single extraction context to avoid double-extraction.
+    # Both discover() and ingest() reuse the same extracted content_path.
+    with extracted(path) as content_path:
+        # 2. Run discovery (reuses extraction)
+        result = discover(path, content_path=content_path)
 
-    # 3. Handle --dry-run
-    if dry_run:
-        if json_output:
-            _output_discovery_json(result)
+        # 3. Handle --dry-run
+        if dry_run:
+            if json_output:
+                _output_discovery_json(result)
+            else:
+                _display_discovery_table(result)
+            return
+
+        # 4. Select entity types (interactive or from flags)
+        types_to_ingest = _resolve_entity_types(
+            available=result.available_entities,
+            requested=entity_types,
+            interactive=not non_interactive,
+        )
+        if types_to_ingest is None:  # User quit
+            raise typer.Abort()
+
+        # 5. Build filter
+        filters: PipelineFilter | None = None
+        if since or until:
+            filters = PipelineFilter(since=since, until=until)
+
+        # 6. Validate date range (PipelineFilter already validates, but provide clearer error)
+        if filters and filters.since and filters.until and filters.since > filters.until:
+            raise typer.BadParameter("--since must be before --until")
+
+        # 7. Run based on mode
+        if async_mode:
+            _run_async_ingest(path, types_to_ingest, filters)
         else:
-            _display_discovery_table(result)
-        return
-
-    # 4. Select entity types (interactive or from flags)
-    types_to_ingest = _resolve_entity_types(
-        available=result.available_entities,
-        requested=entity_types,
-        interactive=not non_interactive,
-    )
-    if types_to_ingest is None:  # User quit
-        raise typer.Abort()
-
-    # 5. Build filter
-    filters: PipelineFilter | None = None
-    if since or until:
-        filters = PipelineFilter(since=since, until=until)
-
-    # 6. Validate date range (PipelineFilter already validates, but provide clearer error)
-    if filters and filters.since and filters.until and filters.since > filters.until:
-        raise typer.BadParameter("--since must be before --until")
-
-    # 7. Run based on mode
-    if async_mode:
-        _run_async_ingest(path, types_to_ingest, filters)
-    else:
-        _run_sync_ingest(path, types_to_ingest, filters, resume_failed, wait_for_processing)
+            _run_sync_ingest(
+                path, content_path, types_to_ingest, filters, resume_failed, wait_for_processing
+            )
 
 
 # -----------------------------------------------------------------------------
@@ -366,6 +372,7 @@ def _run_async_ingest(
 
 def _run_sync_ingest(
     path: Path,
+    content_path: Path,
     entity_types: set[EntityType],
     filters: PipelineFilter | None,
     resume_failed: bool,
@@ -396,6 +403,7 @@ def _run_sync_ingest(
                 filters=filters,
                 on_progress=on_progress,
                 resume_failed=resume_failed,
+                content_path=content_path,
             )
 
     # Display results

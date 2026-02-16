@@ -87,16 +87,20 @@ class PipelineOrchestrator:
         filters: PipelineFilter | None = None,
         import_source: ImportSource | None = None,
         resume_failed: bool = False,
+        content_path: Path | None = None,
     ) -> PipelineResult:
         """Run the pipeline for a path.
 
         Args:
-            path: Path to the source file or directory.
+            path: Path to the source file or directory (used for hashing and detection).
             entity_types: Entity types to ingest (None = all available).
             filters: Optional date range filters.
             import_source: Optional existing ImportSource (created if None).
             resume_failed: If True, retry processing even if a previous run
                 completed. Default is False (skip if already processed).
+            content_path: Optional pre-extracted content path. When provided, skips
+                internal archive extraction. Use this when the caller manages the
+                extraction lifecycle.
 
         Returns:
             PipelineResult with statistics.
@@ -127,86 +131,103 @@ class PipelineOrchestrator:
                     ),
                 )
 
-        # Extract archive if needed and run discovery + ingestion
-        with extracted(path) as content_path:
-            # Level 1: Detect source type from filename
-            stage_cls = detect_stage(path)
-
-            if stage_cls is None:
-                logger.warning(f"No ingestion stage found for: {path}")
-                return self._create_empty_result(path, file_hash, "No stage matched")
-
-            # Level 2: Detect available entities
-            stage = stage_cls()
-            detection = stage.detect(content_path)
-            discovery = DiscoveryResult(
-                source_path=path,
-                stage=stage_cls,
-                available_entities=detection.entity_counts,
-                metadata=detection.metadata,
+        if content_path is not None:
+            return self._run_inner(
+                path, content_path, entity_types, filters, import_source, file_hash
             )
 
-            if not discovery.has_content:
-                logger.warning(f"No ingestable content found in: {path}")
-                return self._create_empty_result(path, file_hash, "No content found")
+        # Extract archive if needed and run discovery + ingestion
+        with extracted(path) as cp:
+            return self._run_inner(path, cp, entity_types, filters, import_source, file_hash)
 
-            # Create or get import source
-            if import_source is None:
-                import_source = self._create_import_source(discovery)
+    def _run_inner(
+        self,
+        path: Path,
+        content_path: Path,
+        entity_types: set[EntityType] | None,
+        filters: PipelineFilter | None,
+        import_source: ImportSource | None,
+        file_hash: str | None,
+    ) -> PipelineResult:
+        """Inner pipeline logic operating on already-extracted content."""
+        # Level 1: Detect source type from filename
+        stage_cls = detect_stage(path)
 
-            # Create import run
-            import_run = self._create_import_run(import_source, file_hash)
+        if stage_cls is None:
+            logger.warning(f"No ingestion stage found for: {path}")
+            return self._create_empty_result(path, file_hash, "No stage matched")
 
-            # Determine entity types to ingest
-            types_to_ingest = entity_types or set(discovery.available_entities.keys())
-            types_to_ingest = types_to_ingest & set(discovery.available_entities.keys())
+        # Level 2: Detect available entities
+        stage = stage_cls()
+        detection = stage.detect(content_path)
+        discovery = DiscoveryResult(
+            source_path=path,
+            stage=stage_cls,
+            available_entities=detection.entity_counts,
+            metadata=detection.metadata,
+        )
 
-            if not types_to_ingest:
-                logger.warning("No matching entity types to ingest")
-                import_run.status = ImportStatus.COMPLETED
-                import_run.completed_at = utc_now()
-                self.session.commit()
-                return PipelineResult(import_run=import_run, stats=PipelineStats())
+        if not discovery.has_content:
+            logger.warning(f"No ingestable content found in: {path}")
+            return self._create_empty_result(path, file_hash, "No content found")
 
-            # Calculate total expected entities
-            total_expected = sum(discovery.available_entities.get(et, 0) for et in types_to_ingest)
-            import_run.entities_found = total_expected
-            import_run.progress_total = total_expected
-            import_run.status = ImportStatus.RUNNING
+        # Create or get import source
+        if import_source is None:
+            import_source = self._create_import_source(discovery)
+
+        # Create import run
+        import_run = self._create_import_run(import_source, file_hash)
+
+        # Determine entity types to ingest
+        types_to_ingest = entity_types or set(discovery.available_entities.keys())
+        types_to_ingest = types_to_ingest & set(discovery.available_entities.keys())
+
+        if not types_to_ingest:
+            logger.warning("No matching entity types to ingest")
+            import_run.status = ImportStatus.COMPLETED
+            import_run.completed_at = utc_now()
+            self.session.commit()
+            return PipelineResult(import_run=import_run, stats=PipelineStats())
+
+        # Calculate total expected entities
+        total_expected = sum(discovery.available_entities.get(et, 0) for et in types_to_ingest)
+        import_run.entities_found = total_expected
+        import_run.progress_total = total_expected
+        import_run.status = ImportStatus.RUNNING
+        self.session.commit()
+
+        try:
+            # Run ingestion
+            stats = self._ingest_entities(
+                stage=stage,
+                content_path=content_path,
+                entity_types=types_to_ingest,
+                filters=filters,
+                import_run=import_run,
+            )
+
+            # Mark as completed
+            import_run.status = ImportStatus.COMPLETED
+            import_run.completed_at = utc_now()
+            import_run.entities_created = stats.entities_created
+            import_run.entities_updated = stats.entities_updated
+            import_run.entities_skipped = stats.entities_skipped
+            import_run.entities_failed = stats.entities_failed
             self.session.commit()
 
-            try:
-                # Run ingestion
-                stats = self._ingest_entities(
-                    stage=stage,
-                    content_path=content_path,
-                    entity_types=types_to_ingest,
-                    filters=filters,
-                    import_run=import_run,
-                )
+            # Queue batch linkers if entities were created
+            if stats.entities_created > 0:
+                self._queue_linkers(import_run)
 
-                # Mark as completed
-                import_run.status = ImportStatus.COMPLETED
-                import_run.completed_at = utc_now()
-                import_run.entities_created = stats.entities_created
-                import_run.entities_updated = stats.entities_updated
-                import_run.entities_skipped = stats.entities_skipped
-                import_run.entities_failed = stats.entities_failed
-                self.session.commit()
+            return PipelineResult(import_run=import_run, stats=stats)
 
-                # Queue batch linkers if entities were created
-                if stats.entities_created > 0:
-                    self._queue_linkers(import_run)
-
-                return PipelineResult(import_run=import_run, stats=stats)
-
-            except Exception as e:
-                logger.exception(f"Pipeline failed: {e}")
-                import_run.status = ImportStatus.FAILED
-                import_run.error_message = str(e)
-                import_run.completed_at = utc_now()
-                self.session.commit()
-                raise
+        except Exception as e:
+            logger.exception(f"Pipeline failed: {e}")
+            import_run.status = ImportStatus.FAILED
+            import_run.error_message = str(e)
+            import_run.completed_at = utc_now()
+            self.session.commit()
+            raise
 
     def _find_completed_run(self, file_hash: str) -> ImportRun | None:
         """Find a completed import run for the given file hash."""
@@ -443,9 +464,14 @@ class PipelineOrchestrator:
 
         self.session.commit()
 
-        # Queue processing for all entity types
+        # Queue processing for primary entity types only (those in the model map).
+        # Dependent entities (EventParticipant, LocationHistory, etc.) don't need
+        # individual processing pipelines.
         for entity in batch:
             entity_type = self._get_entity_type(entity)
+            if entity_type is None:
+                continue
+
             self._queue_entity_processing(entity, entity_type)
 
             # Track entity IDs for batch linker processing
@@ -455,18 +481,17 @@ class PipelineOrchestrator:
             if entity_id:
                 self._entity_ids_by_type[entity_type].append(str(entity_id))
 
-    def _get_entity_type(self, entity: IngestableEntity) -> EntityType:
-        """Determine EntityType from entity instance."""
+    def _get_entity_type(self, entity: IngestableEntity) -> EntityType | None:
+        """Determine EntityType from entity instance.
+
+        Returns None for dependent entities (e.g. EventParticipant, LocationHistory)
+        that don't have their own EntityType and don't need individual processing.
+        """
         model_map = get_entity_type_model_map()
         for etype, model_class in model_map.items():
             if isinstance(entity, model_class):
                 return etype
-        # Default fallback - log warning as this may indicate missing model mapping
-        logger.warning(
-            f"Unknown entity type for {type(entity).__name__}, defaulting to MEDIA. "
-            "This may indicate a missing entry in get_entity_type_model_map()."
-        )
-        return EntityType.MEDIA
+        return None
 
     def _queue_entity_processing(self, entity: IngestableEntity, entity_type: EntityType) -> None:
         """Queue processing tasks for any entity type."""
@@ -528,14 +553,18 @@ class PipelineOrchestrator:
                 )
 
 
-def discover(path: Path) -> DiscoveryResult:
+def discover(path: Path, content_path: Path | None = None) -> DiscoveryResult:
     """Discover source type and available entities for a path.
 
     This is a convenience function for previewing what can be imported
     without actually running the pipeline.
 
     Args:
-        path: Path to source file or directory.
+        path: Path to source file or directory (used for stage detection and metadata).
+        content_path: Optional pre-extracted content path. When provided, skips
+            internal archive extraction. Use this when the caller manages the
+            extraction lifecycle (e.g., CLI wrapping multiple operations in a
+            single ``extracted()`` context).
 
     Returns:
         DiscoveryResult with source type and entity counts.
@@ -546,12 +575,12 @@ def discover(path: Path) -> DiscoveryResult:
     if not path.exists():
         raise IngestionError(f"Path not found: {path}")
 
-    with extracted(path) as content_path:
+    def _discover_inner(cp: Path) -> DiscoveryResult:
         stage_cls = detect_stage(path)
 
         if stage_cls is not None:
             stage = stage_cls()
-            detection = stage.detect(content_path)
+            detection = stage.detect(cp)
             return DiscoveryResult(
                 source_path=path,
                 stage=stage_cls,
@@ -565,6 +594,12 @@ def discover(path: Path) -> DiscoveryResult:
             available_entities={},
         )
 
+    if content_path is not None:
+        return _discover_inner(content_path)
+
+    with extracted(path) as cp:
+        return _discover_inner(cp)
+
 
 def ingest(
     path: Path,
@@ -573,6 +608,7 @@ def ingest(
     filters: PipelineFilter | None = None,
     on_progress: ProgressCallback | None = None,
     resume_failed: bool = False,
+    content_path: Path | None = None,
 ) -> PipelineResult:
     """Run the pipeline for a path.
 
@@ -581,12 +617,14 @@ def ingest(
     and batch linkers are queued after import completes.
 
     Args:
-        path: Path to source file or directory.
+        path: Path to source file or directory (used for hashing and detection).
         session: Database session.
         entity_types: Entity types to ingest (None = all available).
         filters: Optional date range filters.
         on_progress: Optional progress callback (current, total, message).
         resume_failed: If True, retry failed entities from previous runs.
+        content_path: Optional pre-extracted content path. When provided, skips
+            internal archive extraction.
 
     Returns:
         PipelineResult with import run and statistics.
@@ -600,4 +638,5 @@ def ingest(
         entity_types=entity_types,
         filters=filters,
         resume_failed=resume_failed,
+        content_path=content_path,
     )
