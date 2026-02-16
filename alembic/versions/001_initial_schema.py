@@ -867,8 +867,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-        # source_type is nullable for FlexibleEntity (user-created content)
-        sa.Column("source_type", sa.String(), nullable=True),
+        sa.Column("source_type", sa.String(), nullable=False, server_default="manual"),
         sa.Column("source_id", sa.String(), nullable=True),
         sa.Column("occurred_at", sa.DateTime(), nullable=True),
         sa.Column("content_hash", sa.String(), nullable=True),
