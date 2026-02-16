@@ -2,7 +2,7 @@
 
 KnowledgeNotes store useful information as searchable text. They can be:
 - Created manually by users or LLMs within Potluck (source_type=MANUAL)
-- Imported from external sources like Obsidian vaults or text files (source_type=TEXT_FILES)
+- Imported from external sources like Obsidian vaults or text files (source_type=GENERIC)
 
 Think of it as an LLM memory function - capturing insights, facts, and
 relationships that don't have a hard tie to a source but can benefit

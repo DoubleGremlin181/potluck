@@ -67,7 +67,7 @@ class TestTextFileIngestion:
 
         notes = [e for e in entities if isinstance(e, KnowledgeNote)]
         assert len(notes) == 2
-        assert all(n.source_type == SourceType.TEXT_FILES for n in notes)
+        assert all(n.source_type == SourceType.GENERIC for n in notes)
         assert all(n.created_by == "import" for n in notes)
 
     def test_relative_source_id(self, tmp_path: Path) -> None:

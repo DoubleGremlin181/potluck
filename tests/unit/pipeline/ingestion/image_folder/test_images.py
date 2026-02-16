@@ -85,7 +85,7 @@ class TestImageIngestion:
 
         media_entities = [e for e in entities if isinstance(e, Media)]
         assert len(media_entities) == 2
-        assert all(m.source_type == SourceType.IMAGE_FOLDER for m in media_entities)
+        assert all(m.source_type == SourceType.GENERIC for m in media_entities)
 
     def test_media_fields(self, tmp_path: Path) -> None:
         """Media entity fields are populated correctly."""

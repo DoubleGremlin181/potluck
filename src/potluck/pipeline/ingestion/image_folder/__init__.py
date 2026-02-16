@@ -24,7 +24,7 @@ class ImageFolderStage(BaseIngestionStage):
     Scans any directory recursively for images, videos, and audio files.
     """
 
-    SOURCE_TYPE: ClassVar[SourceType] = SourceType.IMAGE_FOLDER
+    SOURCE_TYPE: ClassVar[SourceType] = SourceType.GENERIC
 
     FILENAME_PATTERNS: ClassVar[list[str]] = [
         r"photos",

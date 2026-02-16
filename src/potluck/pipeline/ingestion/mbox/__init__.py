@@ -30,7 +30,7 @@ class MboxStage(BaseIngestionStage):
     MBOX files (e.g., Thunderbird profile directories).
     """
 
-    SOURCE_TYPE: ClassVar[SourceType] = SourceType.MBOX
+    SOURCE_TYPE: ClassVar[SourceType] = SourceType.GENERIC
 
     FILENAME_PATTERNS: ClassVar[list[str]] = [
         r".*\.mbox",  # Standard .mbox files

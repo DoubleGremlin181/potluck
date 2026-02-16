@@ -112,7 +112,7 @@ def ingest_emails(
     for root_id, stats in thread_stats.items():
         thread = EmailThread(
             id=uuid4(),
-            source_type=SourceType.MBOX,
+            source_type=SourceType.GENERIC,
             source_id=f"mbox_thread_{root_id}",
             content_hash=hashlib.sha256(root_id.encode()).hexdigest(),
             subject=stats.subject,
@@ -309,7 +309,7 @@ def _create_email(
 
     return Email(
         id=uuid4(),
-        source_type=SourceType.MBOX,
+        source_type=SourceType.GENERIC,
         source_id=mbox_msg.message_id or f"mbox_{uuid4().hex[:12]}",
         content_hash=content_hash,
         occurred_at=mbox_msg.date,

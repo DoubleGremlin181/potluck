@@ -129,7 +129,7 @@ def _process_file(file_path: Path, base_path: Path) -> KnowledgeNote | None:
         relative_path = file_path.name
 
     return KnowledgeNote(
-        source_type=SourceType.TEXT_FILES,
+        source_type=SourceType.GENERIC,
         source_id=relative_path,
         content_hash=compute_content_hash(content_body),
         content=content_body,

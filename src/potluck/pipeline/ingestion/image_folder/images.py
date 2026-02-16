@@ -123,7 +123,7 @@ def _process_file(
         pass
 
     return Media(
-        source_type=SourceType.IMAGE_FOLDER,
+        source_type=SourceType.GENERIC,
         source_id=str(file_path),
         content_hash=file_hash,
         occurred_at=occurred_at,

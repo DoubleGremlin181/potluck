@@ -32,7 +32,7 @@ class TextFilesStage(BaseIngestionStage):
     Detects Obsidian vaults by the presence of a .obsidian/ directory.
     """
 
-    SOURCE_TYPE: ClassVar[SourceType] = SourceType.TEXT_FILES
+    SOURCE_TYPE: ClassVar[SourceType] = SourceType.GENERIC
 
     FILENAME_PATTERNS: ClassVar[list[str]] = [
         r"notes",

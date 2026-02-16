@@ -34,10 +34,7 @@ class SourceType(str, Enum):
     REDDIT = "reddit"
     WHATSAPP = "whatsapp"
     YNAB = "ynab"
-    IMAGE_FOLDER = "image_folder"  # Generic image/media folder import
-    TEXT_FILES = "text_files"  # Plain text / Markdown / Obsidian vault import
-    MBOX = "mbox"  # MBOX email files (Thunderbird, Apple Mail, etc.)
-    GENERIC = "generic"  # Bulk import of generic files
+    GENERIC = "generic"  # Generic file-based imports (images, text, MBOX, etc.)
     MANUAL = "manual"  # User-created content within Potluck (notes, annotations)
 
 

@@ -101,7 +101,7 @@ class TestMboxEmailIngestion:
         assert alice_email.from_address == "alice@example.com"
         assert alice_email.from_name == "Alice Smith"
         assert alice_email.subject == "Project Update"
-        assert alice_email.source_type == SourceType.MBOX
+        assert alice_email.source_type == SourceType.GENERIC
         assert alice_email.body_text is not None
         assert "project update" in alice_email.body_text.lower()
 
