@@ -12,6 +12,7 @@ from potluck.pipeline.ingestion.google_takeout.mail import (
     _parse_gmail_labels,
     ingest_emails,
 )
+from potluck.pipeline.utils.parsers import parse_mbox
 
 
 class TestEmailIngestion:
@@ -373,6 +374,103 @@ Email with encoded subject.
 
             entities = list(ingest_emails(Path(tmpdir)))
             assert entities == []
+
+
+class TestHeadersOnlyMode:
+    """Tests for headers_only parsing mode used in the memory-efficient first pass."""
+
+    def test_headers_only_skips_body(self, google_takeout_fixtures_path: Path) -> None:
+        """headers_only=True skips body content."""
+        mbox_file = google_takeout_fixtures_path / "Mail" / "test.mbox"
+        messages = list(parse_mbox(mbox_file, headers_only=True))
+
+        # Should still parse all messages
+        assert len(messages) == 4
+
+        # Bodies should be None
+        for msg in messages:
+            assert msg.body_plain is None
+            assert msg.body_html is None
+
+    def test_headers_only_preserves_headers(self, google_takeout_fixtures_path: Path) -> None:
+        """headers_only=True still parses all header fields correctly."""
+        mbox_file = google_takeout_fixtures_path / "Mail" / "test.mbox"
+        messages = list(parse_mbox(mbox_file, headers_only=True))
+
+        # First message should have all header fields
+        msg = messages[0]
+        assert msg.subject == "Meeting Tomorrow"
+        assert msg.from_address == "john.doe@example.com"
+        assert msg.from_name == "John Doe"
+        assert msg.date is not None
+        assert msg.message_id == "msg001@example.com"
+        assert "jane.smith@example.com" in msg.to_addresses
+        assert "bob@example.com" in msg.cc_addresses
+        assert msg.headers.get("X-GM-THRID") == "1234567890123456789"
+        assert msg.headers.get("X-Gmail-Labels") == "Inbox,Important"
+
+    def test_headers_only_skips_attachments(self, google_takeout_fixtures_path: Path) -> None:
+        """headers_only=True skips attachment parsing."""
+        mbox_file = google_takeout_fixtures_path / "Mail" / "test.mbox"
+        messages = list(parse_mbox(mbox_file, headers_only=True))
+
+        # The multipart message (Weekly Report) should have no attachments
+        report_msg = next(m for m in messages if m.subject == "Weekly Report")
+        assert len(report_msg.attachments) == 0
+
+    def test_full_parse_has_attachment_metadata(self, google_takeout_fixtures_path: Path) -> None:
+        """Full parse stores attachment metadata without binary content."""
+        mbox_file = google_takeout_fixtures_path / "Mail" / "test.mbox"
+        messages = list(parse_mbox(mbox_file))
+
+        report_msg = next(m for m in messages if m.subject == "Weekly Report")
+        assert len(report_msg.attachments) == 1
+        att = report_msg.attachments[0]
+        assert att.filename == "report.pdf"
+        assert att.content_type == "application/pdf"
+        assert att.size > 0
+        # Binary content should NOT be stored (memory optimization)
+        assert att.content == b""
+
+
+class TestTwoPassIngestion:
+    """Tests for the memory-efficient two-pass ingestion approach."""
+
+    def test_threads_yielded_before_emails(self, google_takeout_fixtures_path: Path) -> None:
+        """Threads are yielded before any emails (required for FK integrity)."""
+        entities = list(ingest_emails(google_takeout_fixtures_path))
+
+        first_email_idx = next(i for i, e in enumerate(entities) if isinstance(e, Email))
+        last_thread_idx = max(i for i, e in enumerate(entities) if isinstance(e, EmailThread))
+
+        assert last_thread_idx < first_email_idx, "All threads must be yielded before any emails"
+
+    def test_thread_stats_accurate(self, google_takeout_fixtures_path: Path) -> None:
+        """Thread statistics are accurate from the first pass."""
+        entities = list(ingest_emails(google_takeout_fixtures_path))
+        threads = [e for e in entities if isinstance(e, EmailThread)]
+
+        # Find the thread with 2 emails (Meeting Tomorrow thread)
+        meeting_thread = next(
+            t for t in threads if t.source_id and "1234567890123456789" in t.source_id
+        )
+        assert meeting_thread.email_count == 2
+        assert meeting_thread.participant_count >= 2
+        assert meeting_thread.first_email_at is not None
+        assert meeting_thread.last_email_at is not None
+        assert meeting_thread.first_email_at <= meeting_thread.last_email_at
+
+    def test_email_thread_linkage(self, google_takeout_fixtures_path: Path) -> None:
+        """Every email with a thread ID is linked to the correct thread."""
+        entities = list(ingest_emails(google_takeout_fixtures_path))
+        threads = {t.id: t for t in entities if isinstance(t, EmailThread)}
+        emails = [e for e in entities if isinstance(e, Email)]
+
+        for email in emails:
+            if email.thread_id is not None:
+                assert email.thread_id in threads, (
+                    f"Email '{email.subject}' references non-existent thread"
+                )
 
 
 class TestIntegrationWithStage:

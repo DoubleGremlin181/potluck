@@ -50,9 +50,14 @@ def ingest_emails(
     Gmail-specific headers (X-GM-THRID, X-Gmail-Labels) are used for
     threading and labeling.
 
-    Uses two-pass processing to ensure accurate thread statistics:
-    1. First pass: Collect all emails and track stats per thread
-    2. Second pass: Yield threads with correct stats, then yield emails
+    Uses a memory-efficient two-pass approach:
+    1. First pass (headers only): Gather lightweight thread statistics
+       without decoding message bodies or attachments.
+    2. Second pass (full parse): Yield EmailThread entities first, then
+       stream Email entities one at a time.
+
+    This keeps memory usage at O(unique_threads) instead of O(all_emails),
+    which is critical for large mailboxes (multi-GB mbox files).
 
     Args:
         path: Path to the extracted takeout directory.
@@ -66,36 +71,32 @@ def ingest_emails(
         logger.debug("No Mail directory found")
         return
 
-    logger.info(f"Processing Gmail at {mail_dir}")
+    mbox_files = sorted(mail_dir.glob("*.mbox"))
+    if not mbox_files:
+        logger.debug("No .mbox files found in Mail directory")
+        return
 
-    # Track thread stats and data during first pass
+    logger.info(f"Processing Gmail at {mail_dir} ({len(mbox_files)} mbox file(s))")
+
+    # --- First pass: lightweight header-only scan for thread statistics ---
     thread_stats: dict[str, _ThreadStats] = {}
-    thread_data: dict[str, MboxMessage] = {}  # First message for each thread
-    collected_emails: list[tuple[MboxMessage, str | None]] = []
 
-    # First pass: Collect all emails and track thread statistics
-    for mbox_file in sorted(mail_dir.glob("*.mbox")):
-        logger.debug(f"Processing MBOX file: {mbox_file.name}")
+    for mbox_file in mbox_files:
+        logger.debug(f"First pass (headers): {mbox_file.name}")
 
-        for mbox_msg in parse_mbox(mbox_file):
-            # Get occurred_at from email date
+        for mbox_msg in parse_mbox(mbox_file, headers_only=True):
             occurred_at = mbox_msg.date
 
-            # Apply date filters
-            if filters and occurred_at:
-                if filters.since and occurred_at < filters.since:
-                    continue
-                if filters.until and occurred_at >= filters.until:
-                    continue
+            if not _passes_date_filter(occurred_at, filters):
+                continue
 
-            # Get Gmail thread ID
             thread_id = mbox_msg.headers.get("X-GM-THRID")
-
-            # Track thread statistics
             if thread_id:
                 if thread_id not in thread_stats:
-                    thread_stats[thread_id] = _ThreadStats()
-                    thread_data[thread_id] = mbox_msg
+                    thread_stats[thread_id] = _ThreadStats(
+                        subject=mbox_msg.subject,
+                        labels_header=mbox_msg.headers.get("X-Gmail-Labels", ""),
+                    )
 
                 stats = thread_stats[thread_id]
                 stats.count += 1
@@ -105,40 +106,66 @@ def ingest_emails(
                     if stats.last_at is None or occurred_at > stats.last_at:
                         stats.last_at = occurred_at
 
-                # Track participants
                 if mbox_msg.from_address:
                     stats.participants.add(mbox_msg.from_address)
                 stats.participants.update(mbox_msg.to_addresses)
                 stats.participants.update(mbox_msg.cc_addresses)
 
-            collected_emails.append((mbox_msg, thread_id))
+    logger.info(f"First pass complete: {len(thread_stats)} threads discovered")
 
-    # Second pass: Yield threads with accurate statistics
+    # --- Yield threads with accurate statistics ---
     threads: dict[str, EmailThread] = {}
-    for thread_id, first_msg in thread_data.items():
-        stats = thread_stats[thread_id]
-        thread = _create_thread_with_stats(first_msg, thread_id, stats)
+    for thread_id, stats in thread_stats.items():
+        thread = _create_thread_from_stats(thread_id, stats)
         threads[thread_id] = thread
         yield thread
 
-    # Yield all emails
-    for mbox_msg, thread_id in collected_emails:
-        parent_thread = threads.get(thread_id) if thread_id else None
-        email = _create_email(mbox_msg, parent_thread)
-        if email:
-            yield email
+    # --- Second pass: stream emails one at a time (full parse) ---
+    for mbox_file in mbox_files:
+        logger.debug(f"Second pass (emails): {mbox_file.name}")
+
+        for mbox_msg in parse_mbox(mbox_file):
+            occurred_at = mbox_msg.date
+
+            if not _passes_date_filter(occurred_at, filters):
+                continue
+
+            thread_id = mbox_msg.headers.get("X-GM-THRID")
+            parent_thread = threads.get(thread_id) if thread_id else None
+            email_entity = _create_email(mbox_msg, parent_thread)
+            if email_entity:
+                yield email_entity
+
+
+def _passes_date_filter(occurred_at: datetime | None, filters: PipelineFilter | None) -> bool:
+    """Check if a timestamp passes the date filter."""
+    if not filters or not occurred_at:
+        return True
+    if filters.since and occurred_at < filters.since:
+        return False
+    return not (filters.until and occurred_at >= filters.until)
 
 
 class _ThreadStats:
-    """Statistics for a thread collected during first pass."""
+    """Lightweight statistics for a thread collected during first pass.
 
-    __slots__ = ("count", "first_at", "last_at", "participants")
+    Only stores scalar values and a set of participant addresses — no
+    MboxMessage objects or body content.
+    """
 
-    def __init__(self) -> None:
+    __slots__ = ("count", "first_at", "last_at", "participants", "subject", "labels_header")
+
+    def __init__(
+        self,
+        subject: str | None = None,
+        labels_header: str = "",
+    ) -> None:
         self.count: int = 0
         self.first_at: datetime | None = None
         self.last_at: datetime | None = None
         self.participants: set[str] = set()
+        self.subject: str | None = subject
+        self.labels_header: str = labels_header
 
 
 def _find_mail_dir(path: Path) -> Path | None:
@@ -153,23 +180,20 @@ def _find_mail_dir(path: Path) -> Path | None:
     return None
 
 
-def _create_thread_with_stats(
-    mbox_msg: MboxMessage,
+def _create_thread_from_stats(
     thread_id: str,
     stats: _ThreadStats,
 ) -> EmailThread:
-    """Create an EmailThread entity with accurate statistics.
+    """Create an EmailThread entity from lightweight thread statistics.
 
     Args:
-        mbox_msg: First email message in the thread (for subject, labels).
         thread_id: Gmail thread ID.
-        stats: Collected statistics for the thread.
+        stats: Collected statistics for the thread (includes subject and labels).
 
     Returns:
         EmailThread entity with accurate counts and timestamps.
     """
-    # Parse labels from first message
-    labels = _parse_gmail_labels(mbox_msg.headers.get("X-Gmail-Labels", ""))
+    labels = _parse_gmail_labels(stats.labels_header)
 
     return EmailThread(
         id=uuid4(),
@@ -177,7 +201,7 @@ def _create_thread_with_stats(
         source_id=f"gmail_thread_{thread_id}",
         content_hash=thread_id,
         # Thread metadata
-        subject=mbox_msg.subject,
+        subject=stats.subject,
         participant_count=len(stats.participants),
         participant_emails=json.dumps(sorted(stats.participants)) if stats.participants else None,
         # Thread statistics (accurate from first pass)
