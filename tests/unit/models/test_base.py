@@ -47,7 +47,10 @@ class TestSourceType:
         expected = {
             "android_timeline",
             "google_takeout",
+            "image_folder",
+            "mbox",
             "reddit",
+            "text_files",
             "whatsapp",
             "ynab",
             "generic",
