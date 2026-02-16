@@ -12,16 +12,13 @@ from potluck.pipeline.ingestion.google_takeout.chat import (
     ingest_chat_messages,
 )
 
-# Path to test fixtures
-FIXTURES_PATH = Path(__file__).parent.parent.parent.parent.parent / "fixtures" / "google_takeout"
-
 
 class TestChatIngestion:
     """Tests for Google Chat ingestion."""
 
-    def test_ingest_chat_from_fixtures(self) -> None:
+    def test_ingest_chat_from_fixtures(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest chat messages from fixture files."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
 
         # Separate threads and messages
         threads = [e for e in entities if isinstance(e, ChatThread)]
@@ -33,9 +30,9 @@ class TestChatIngestion:
         # Should have 7 messages total (4 in DM + 3 in Space)
         assert len(messages) == 7
 
-    def test_dm_thread_properties(self) -> None:
+    def test_dm_thread_properties(self, google_takeout_fixtures_path: Path) -> None:
         """DM threads have correct type and no name."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
         threads = [e for e in entities if isinstance(e, ChatThread)]
 
         # Find the DM thread
@@ -45,9 +42,9 @@ class TestChatIngestion:
         assert dm_thread.name is None
         assert dm_thread.participant_count == 2
 
-    def test_space_thread_properties(self) -> None:
+    def test_space_thread_properties(self, google_takeout_fixtures_path: Path) -> None:
         """Space threads have correct type and name."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
         threads = [e for e in entities if isinstance(e, ChatThread)]
 
         # Find the Space thread
@@ -57,9 +54,9 @@ class TestChatIngestion:
         assert space_thread.name == "Tech Team"
         assert space_thread.participant_count == 3
 
-    def test_message_content(self) -> None:
+    def test_message_content(self, google_takeout_fixtures_path: Path) -> None:
         """Messages have correct content and sender info."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
         # Find a specific message
@@ -69,9 +66,9 @@ class TestChatIngestion:
         assert hey_msg.content == "Hey! How's it going?"
         assert hey_msg.source_type == SourceType.GOOGLE_TAKEOUT
 
-    def test_message_timestamps(self) -> None:
+    def test_message_timestamps(self, google_takeout_fixtures_path: Path) -> None:
         """Messages have correctly parsed timestamps."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
         # Find message from Jan 1, 2024
@@ -83,9 +80,9 @@ class TestChatIngestion:
         assert hey_msg.occurred_at.day == 1
         assert hey_msg.occurred_at.hour == 10
 
-    def test_attachment_only_message(self) -> None:
+    def test_attachment_only_message(self, google_takeout_fixtures_path: Path) -> None:
         """Messages with only attachments create placeholder text."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
         # Find attachment message
@@ -93,10 +90,10 @@ class TestChatIngestion:
         assert attach_msg is not None
         assert attach_msg.content == "[1 attachment(s)]"
 
-    def test_date_filter_since(self) -> None:
+    def test_date_filter_since(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'since' excludes earlier messages."""
         filters = PipelineFilter(since=datetime(2024, 1, 2, tzinfo=UTC))
-        entities = list(ingest_chat_messages(FIXTURES_PATH, filters))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path, filters))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
         # Should exclude messages from Jan 1 and Dec 31 2023
@@ -108,27 +105,27 @@ class TestChatIngestion:
             assert msg.occurred_at is not None
             assert msg.occurred_at >= filters.since  # type: ignore[operator]
 
-    def test_date_filter_until(self) -> None:
+    def test_date_filter_until(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'until' excludes later messages."""
         filters = PipelineFilter(until=datetime(2024, 1, 2, tzinfo=UTC))
-        entities = list(ingest_chat_messages(FIXTURES_PATH, filters))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path, filters))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
         # Should include only Jan 1 and Dec 31 2023 messages
         # That's 3 messages (2 on Jan 1 from DM + 1 on Dec 31)
         assert len(messages) == 3
 
-    def test_content_hash_uniqueness(self) -> None:
+    def test_content_hash_uniqueness(self, google_takeout_fixtures_path: Path) -> None:
         """Each message has a unique content hash."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
         hashes = [m.content_hash for m in messages]
         assert len(hashes) == len(set(hashes))  # All unique
 
-    def test_sender_email_in_content_json(self) -> None:
+    def test_sender_email_in_content_json(self, google_takeout_fixtures_path: Path) -> None:
         """Sender email is stored in content_json for linking."""
-        entities = list(ingest_chat_messages(FIXTURES_PATH))
+        entities = list(ingest_chat_messages(google_takeout_fixtures_path))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
         # Find message with email
@@ -328,7 +325,7 @@ class TestChatEdgeCases:
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 
-    def test_stage_executes_chat_ingestion(self) -> None:
+    def test_stage_executes_chat_ingestion(self, google_takeout_fixtures_path: Path) -> None:
         """Stage correctly routes to chat ingestion."""
         from potluck.models.base import EntityType
         from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
@@ -338,7 +335,7 @@ class TestIntegrationWithStage:
         # Execute for chat messages only
         entities = list(
             stage.execute(
-                FIXTURES_PATH,
+                google_takeout_fixtures_path,
                 entity_types={EntityType.CHAT_MESSAGE},
             )
         )

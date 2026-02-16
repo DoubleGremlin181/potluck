@@ -7,6 +7,7 @@ This is a richer format than Google Takeout's Timeline data, containing:
 - Place information with confidence scores
 """
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -19,9 +20,6 @@ from potluck.pipeline.ingestion.base import BaseIngestionStage
 from potluck.pipeline.ingestion.registry import register
 
 logger = get_logger(__name__)
-
-# Constants for detection estimation
-BYTES_PER_SEGMENT = 500  # Approximate bytes per semantic segment
 
 
 @register
@@ -65,10 +63,15 @@ class AndroidTimelineStage(BaseIngestionStage):
             timeline_file = path
 
         if timeline_file.exists() and timeline_file.is_file():
-            # Estimate count from file size
-            size = timeline_file.stat().st_size
-            estimated_count = max(1, size // BYTES_PER_SEGMENT)
-            entity_counts[EntityType.LOCATION_VISIT] = estimated_count
+            try:
+                data = json.loads(timeline_file.read_text(encoding="utf-8"))
+                count = len(data.get("semanticSegments", []))
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.warning(f"Failed to parse {timeline_file}: {e}")
+                count = 0
+
+            if count > 0:
+                entity_counts[EntityType.LOCATION_VISIT] = count
 
             metadata["source"] = "Android Timeline"
             metadata["file"] = timeline_file.name

@@ -28,34 +28,6 @@ from potluck.pipeline.utils.hashing import compute_file_hash
 logger = get_logger(__name__)
 
 # Media file extensions supported by Google Photos
-MEDIA_EXTENSIONS = {
-    # Images
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".webp",
-    ".heic",
-    ".heif",
-    ".bmp",
-    ".tiff",
-    ".tif",
-    ".raw",
-    ".cr2",
-    ".nef",
-    ".arw",
-    # Videos
-    ".mp4",
-    ".mov",
-    ".avi",
-    ".mkv",
-    ".webm",
-    ".m4v",
-    ".3gp",
-    ".mpg",
-    ".mpeg",
-}
-
 IMAGE_EXTENSIONS = {
     ".jpg",
     ".jpeg",
@@ -84,6 +56,8 @@ VIDEO_EXTENSIONS = {
     ".mpg",
     ".mpeg",
 }
+
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
 def ingest_media(

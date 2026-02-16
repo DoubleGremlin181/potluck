@@ -13,16 +13,13 @@ from potluck.pipeline.ingestion.google_takeout.mail import (
     ingest_emails,
 )
 
-# Path to test fixtures
-FIXTURES_PATH = Path(__file__).parent.parent.parent.parent.parent / "fixtures" / "google_takeout"
-
 
 class TestEmailIngestion:
     """Tests for Gmail email ingestion."""
 
-    def test_ingest_emails_from_fixtures(self) -> None:
+    def test_ingest_emails_from_fixtures(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest emails from fixture files."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
 
         # Separate entity types
         emails = [e for e in entities if isinstance(e, Email)]
@@ -32,9 +29,9 @@ class TestEmailIngestion:
         assert len(emails) == 4
         assert len(threads) == 3
 
-    def test_email_basic_fields(self) -> None:
+    def test_email_basic_fields(self, google_takeout_fixtures_path: Path) -> None:
         """Email has correct basic fields."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Find the first email
@@ -50,9 +47,9 @@ class TestEmailIngestion:
         assert "bob@example.com" in (meeting_email.cc_addresses or "")
         assert "Let's meet tomorrow" in (meeting_email.body_text or "")
 
-    def test_email_threading(self) -> None:
+    def test_email_threading(self, google_takeout_fixtures_path: Path) -> None:
         """Reply email has correct in_reply_to and references."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Find the reply email
@@ -66,9 +63,9 @@ class TestEmailIngestion:
         # Should be linked to a thread
         assert reply_email.thread_id is not None
 
-    def test_thread_creation(self) -> None:
+    def test_thread_creation(self, google_takeout_fixtures_path: Path) -> None:
         """Thread has correct metadata."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         threads = [e for e in entities if isinstance(e, EmailThread)]
 
         # Find thread by source_id
@@ -80,9 +77,9 @@ class TestEmailIngestion:
         assert meeting_thread.subject == "Meeting Tomorrow"
         assert meeting_thread.participant_count >= 2  # john + jane at minimum
 
-    def test_gmail_labels(self) -> None:
+    def test_gmail_labels(self, google_takeout_fixtures_path: Path) -> None:
         """Email labels are parsed correctly."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Find starred email
@@ -101,9 +98,9 @@ class TestEmailIngestion:
         assert important_email is not None
         assert important_email.subject == "Meeting Tomorrow"
 
-    def test_spam_email(self) -> None:
+    def test_spam_email(self, google_takeout_fixtures_path: Path) -> None:
         """Spam email has correct folder and flags."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Find spam email
@@ -116,9 +113,9 @@ class TestEmailIngestion:
         assert spam_email.is_spam is True
         assert spam_email.is_read is False  # has Unread label
 
-    def test_sent_email(self) -> None:
+    def test_sent_email(self, google_takeout_fixtures_path: Path) -> None:
         """Sent email has correct folder."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Find sent email
@@ -130,9 +127,9 @@ class TestEmailIngestion:
         assert sent_email.folder == EmailFolder.SENT
         assert sent_email.is_sent is True
 
-    def test_email_with_attachment(self) -> None:
+    def test_email_with_attachment(self, google_takeout_fixtures_path: Path) -> None:
         """Email with attachment has correct attachment count."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Find email with attachment
@@ -144,16 +141,16 @@ class TestEmailIngestion:
         assert report_email.attachment_count == 1
         assert report_email.has_attachments is True
 
-    def test_source_type(self) -> None:
+    def test_source_type(self, google_takeout_fixtures_path: Path) -> None:
         """All entities have correct source type."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
 
         for entity in entities:
             assert entity.source_type == SourceType.GOOGLE_TAKEOUT
 
-    def test_timestamp(self) -> None:
+    def test_timestamp(self, google_takeout_fixtures_path: Path) -> None:
         """Email has correct timestamp."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         meeting_email = next(
@@ -166,10 +163,10 @@ class TestEmailIngestion:
         assert meeting_email.occurred_at.month == 1
         assert meeting_email.occurred_at.day == 16
 
-    def test_date_filter_since(self) -> None:
+    def test_date_filter_since(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'since' excludes earlier emails."""
         filters = PipelineFilter(since=datetime(2024, 1, 17, tzinfo=UTC))
-        entities = list(ingest_emails(FIXTURES_PATH, filters))
+        entities = list(ingest_emails(google_takeout_fixtures_path, filters))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Should only include Jan 17+ emails
@@ -181,10 +178,10 @@ class TestEmailIngestion:
         jan_16_emails = [e for e in emails if e.subject and "Meeting" in e.subject]
         assert len(jan_16_emails) == 0
 
-    def test_date_filter_until(self) -> None:
+    def test_date_filter_until(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'until' excludes later emails."""
         filters = PipelineFilter(until=datetime(2024, 1, 17, tzinfo=UTC))
-        entities = list(ingest_emails(FIXTURES_PATH, filters))
+        entities = list(ingest_emails(google_takeout_fixtures_path, filters))
         emails = [e for e in entities if isinstance(e, Email)]
 
         # Should exclude Jan 17+ emails
@@ -202,9 +199,9 @@ class TestEmailIngestion:
             entities = list(ingest_emails(Path(tmpdir)))
             assert entities == []
 
-    def test_snippet_creation(self) -> None:
+    def test_snippet_creation(self, google_takeout_fixtures_path: Path) -> None:
         """Email has snippet from body text."""
-        entities = list(ingest_emails(FIXTURES_PATH))
+        entities = list(ingest_emails(google_takeout_fixtures_path))
         emails = [e for e in entities if isinstance(e, Email)]
 
         meeting_email = next(
@@ -381,7 +378,7 @@ Email with encoded subject.
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 
-    def test_stage_executes_email_ingestion(self) -> None:
+    def test_stage_executes_email_ingestion(self, google_takeout_fixtures_path: Path) -> None:
         """Stage correctly routes to email ingestion."""
         from potluck.models.base import EntityType
         from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
@@ -391,7 +388,7 @@ class TestIntegrationWithStage:
         # Execute for email only
         entities = list(
             stage.execute(
-                FIXTURES_PATH,
+                google_takeout_fixtures_path,
                 entity_types={EntityType.EMAIL},
             )
         )

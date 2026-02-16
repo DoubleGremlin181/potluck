@@ -1,6 +1,5 @@
 """Core infrastructure for Potluck."""
 
-from potluck.core.cli import app as cli_app
 from potluck.core.config import Settings, get_settings
 from potluck.core.exceptions import (
     ConfigurationError,
@@ -11,8 +10,6 @@ from potluck.core.exceptions import (
 from potluck.core.logging import get_logger, setup_logging
 
 __all__ = [
-    # CLI
-    "cli_app",
     # Config
     "Settings",
     "get_settings",

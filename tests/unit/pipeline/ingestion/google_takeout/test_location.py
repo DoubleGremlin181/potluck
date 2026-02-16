@@ -24,25 +24,22 @@ from potluck.pipeline.ingestion.google_takeout.location import (
     ingest_location_visits,
 )
 
-# Path to test fixtures
-FIXTURES_PATH = Path(__file__).parent.parent.parent.parent.parent / "fixtures" / "google_takeout"
-
 
 class TestTakeoutTimelineEdits:
     """Tests for Google Takeout Timeline Edits.json parsing."""
 
-    def test_ingest_timeline_edits(self) -> None:
+    def test_ingest_timeline_edits(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest location visits from Timeline Edits.json."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
 
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
         # Should have 2 visits from Timeline Edits.json
         assert len(visits) == 2
 
-    def test_first_edit_coordinates(self) -> None:
+    def test_first_edit_coordinates(self, google_takeout_fixtures_path: Path) -> None:
         """First timeline edit has correct E7 coordinate conversion."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
         # 407128000 / 10_000_000 = 40.7128
@@ -54,9 +51,9 @@ class TestTakeoutTimelineEdits:
         assert abs(first_visit.longitude - (-74.0060)) < 0.0001
         assert first_visit.accuracy_meters == 10.0  # 10000mm -> 10m
 
-    def test_second_edit_coordinates(self) -> None:
+    def test_second_edit_coordinates(self, google_takeout_fixtures_path: Path) -> None:
         """Second timeline edit has correct coordinates."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
         # 407589000 / 10_000_000 = 40.7589
@@ -68,17 +65,17 @@ class TestTakeoutTimelineEdits:
         assert abs(second_visit.longitude - (-73.9851)) < 0.0001
         assert second_visit.accuracy_meters == 15.0  # 15000mm -> 15m
 
-    def test_source_type(self) -> None:
+    def test_source_type(self, google_takeout_fixtures_path: Path) -> None:
         """All visits have GOOGLE_TAKEOUT source type."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
         for visit in visits:
             assert visit.source_type == SourceType.GOOGLE_TAKEOUT
 
-    def test_occurred_at_set(self) -> None:
+    def test_occurred_at_set(self, google_takeout_fixtures_path: Path) -> None:
         """Visits have occurred_at field set for search consistency."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
         for visit in visits:
@@ -89,17 +86,17 @@ class TestTakeoutTimelineEdits:
 class TestLabeledPlaces:
     """Tests for labeled places GeoJSON parsing."""
 
-    def test_ingest_labeled_places(self) -> None:
+    def test_ingest_labeled_places(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest labeled places from GeoJSON."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         locations = [e for e in entities if isinstance(e, Location)]
 
         # Should have 3 labeled places
         assert len(locations) == 3
 
-    def test_home_location(self) -> None:
+    def test_home_location(self, google_takeout_fixtures_path: Path) -> None:
         """Home labeled place is parsed correctly."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         locations = [e for e in entities if isinstance(e, Location)]
 
         home = next((loc for loc in locations if loc.name == "Home"), None)
@@ -110,9 +107,9 @@ class TestLabeledPlaces:
         assert "123 Main Street" in (home.address or "")
         assert home.source_type == SourceType.GOOGLE_TAKEOUT
 
-    def test_work_location(self) -> None:
+    def test_work_location(self, google_takeout_fixtures_path: Path) -> None:
         """Work labeled place is parsed correctly."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         locations = [e for e in entities if isinstance(e, Location)]
 
         work = next((loc for loc in locations if loc.name == "Work"), None)
@@ -121,9 +118,9 @@ class TestLabeledPlaces:
         assert work.longitude == -73.9851
         assert work.location_type == LocationType.WORK
 
-    def test_gym_location(self) -> None:
+    def test_gym_location(self, google_takeout_fixtures_path: Path) -> None:
         """Fitness Center labeled place is parsed correctly."""
-        entities = list(ingest_location_visits(FIXTURES_PATH))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path))
         locations = [e for e in entities if isinstance(e, Location)]
 
         gym = next((loc for loc in locations if loc.name == "Fitness Center"), None)
@@ -134,11 +131,11 @@ class TestLabeledPlaces:
 class TestDateFilters:
     """Tests for date range filtering."""
 
-    def test_since_filter(self) -> None:
+    def test_since_filter(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'since' excludes earlier data."""
         # Timeline Edits are from 2024-01-16
         filters = PipelineFilter(since=datetime(2024, 1, 16, 15, 0, tzinfo=UTC))
-        entities = list(ingest_location_visits(FIXTURES_PATH, filters))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path, filters))
 
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
@@ -146,11 +143,11 @@ class TestDateFilters:
         assert len(visits) == 1
         assert visits[0].started_at.hour == 15
 
-    def test_until_filter(self) -> None:
+    def test_until_filter(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'until' excludes later data."""
         # Timeline Edits are from 2024-01-16
         filters = PipelineFilter(until=datetime(2024, 1, 16, 13, 0, tzinfo=UTC))
-        entities = list(ingest_location_visits(FIXTURES_PATH, filters))
+        entities = list(ingest_location_visits(google_takeout_fixtures_path, filters))
 
         visits = [e for e in entities if isinstance(e, LocationVisit)]
 
@@ -286,7 +283,7 @@ class TestEdgeCases:
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 
-    def test_stage_executes_location_ingestion(self) -> None:
+    def test_stage_executes_location_ingestion(self, google_takeout_fixtures_path: Path) -> None:
         """Stage correctly routes to location ingestion."""
         from potluck.models.base import EntityType
         from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
@@ -296,7 +293,7 @@ class TestIntegrationWithStage:
         # Execute for location visits only
         entities = list(
             stage.execute(
-                FIXTURES_PATH,
+                google_takeout_fixtures_path,
                 entity_types={EntityType.LOCATION_VISIT},
             )
         )

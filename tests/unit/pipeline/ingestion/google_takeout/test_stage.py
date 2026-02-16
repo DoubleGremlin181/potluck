@@ -1,5 +1,6 @@
 """Tests for GoogleTakeoutStage detection and routing."""
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -108,14 +109,15 @@ class TestGoogleTakeoutStageDetectionCounts:
         with tempfile.TemporaryDirectory() as tmpdir:
             chrome_dir = Path(tmpdir) / "Takeout" / "Chrome"
             chrome_dir.mkdir(parents=True)
-            # Create a ~2KB file (should detect ~10 entries)
-            (chrome_dir / "BrowserHistory.json").write_text('{"Browser History": []}' + "x" * 2000)
+            (chrome_dir / "BrowserHistory.json").write_text(
+                '{"Browser History": [{"url": "https://example.com"}, {"url": "https://test.com"}]}'
+            )
 
             stage = GoogleTakeoutStage()
             result = stage.detect(Path(tmpdir))
 
             assert EntityType.BROWSING_HISTORY in result.entity_counts
-            assert result.entity_counts[EntityType.BROWSING_HISTORY] > 0
+            assert result.entity_counts[EntityType.BROWSING_HISTORY] == 2
 
     def test_detect_chrome_bookmarks(self) -> None:
         """Detects Chrome bookmarks."""
@@ -164,28 +166,34 @@ END:VCALENDAR"""
         with tempfile.TemporaryDirectory() as tmpdir:
             chat_dir = Path(tmpdir) / "Takeout" / "Google Chat" / "Groups" / "DM abc123"
             chat_dir.mkdir(parents=True)
-            # Create a messages.json file (~1KB = ~2 messages estimate)
-            (chat_dir / "messages.json").write_text('{"messages": []}' + "x" * 1000)
+            (chat_dir / "messages.json").write_text(
+                '{"messages": [{"text": "hello"}, {"text": "world"}, {"text": "!"}]}'
+            )
 
             stage = GoogleTakeoutStage()
             result = stage.detect(Path(tmpdir))
 
             assert EntityType.CHAT_MESSAGE in result.entity_counts
-            assert result.entity_counts[EntityType.CHAT_MESSAGE] > 0
+            assert result.entity_counts[EntityType.CHAT_MESSAGE] == 3
 
     def test_detect_gmail(self) -> None:
         """Detects Gmail mbox files."""
         with tempfile.TemporaryDirectory() as tmpdir:
             mail_dir = Path(tmpdir) / "Takeout" / "Mail"
             mail_dir.mkdir(parents=True)
-            # Create a ~20KB file (should detect ~2 messages)
-            (mail_dir / "All mail Including Spam and Trash.mbox").write_text("x" * 20000)
+            mbox_content = (
+                "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+                "Subject: Test 1\n\nBody 1\n\n"
+                "From sender@example.com Tue Jan  2 00:00:00 2024\n"
+                "Subject: Test 2\n\nBody 2\n"
+            )
+            (mail_dir / "All mail Including Spam and Trash.mbox").write_text(mbox_content)
 
             stage = GoogleTakeoutStage()
             result = stage.detect(Path(tmpdir))
 
             assert EntityType.EMAIL in result.entity_counts
-            assert result.entity_counts[EntityType.EMAIL] > 0
+            assert result.entity_counts[EntityType.EMAIL] == 2
 
     def test_detect_location_timeline_edits(self) -> None:
         """Detects Google Takeout Timeline Edits.json."""
@@ -193,15 +201,14 @@ END:VCALENDAR"""
             # Create Timeline Edits.json (Google Takeout format)
             timeline_dir = Path(tmpdir) / "Takeout" / "Timeline"
             timeline_dir.mkdir(parents=True)
-            (timeline_dir / "Timeline Edits.json").write_text(
-                '{"timelineEdits": [' + '{"rawSignal": {}},' * 10 + "]}"
-            )
+            edits: list[dict[str, dict[str, str]]] = [{"rawSignal": {}} for _ in range(10)]
+            (timeline_dir / "Timeline Edits.json").write_text(json.dumps({"timelineEdits": edits}))
 
             stage = GoogleTakeoutStage()
             result = stage.detect(Path(tmpdir))
 
             assert EntityType.LOCATION_VISIT in result.entity_counts
-            assert result.entity_counts[EntityType.LOCATION_VISIT] > 0
+            assert result.entity_counts[EntityType.LOCATION_VISIT] == 10
 
     def test_detect_multiple_entity_types(self) -> None:
         """Detects multiple entity types in same takeout."""

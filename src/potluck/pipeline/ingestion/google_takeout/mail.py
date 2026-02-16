@@ -11,6 +11,7 @@ Gmail MBOX files include Gmail-specific headers:
 import hashlib
 import json
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -134,8 +135,6 @@ class _ThreadStats:
     __slots__ = ("count", "first_at", "last_at", "participants")
 
     def __init__(self) -> None:
-        from datetime import datetime
-
         self.count: int = 0
         self.first_at: datetime | None = None
         self.last_at: datetime | None = None

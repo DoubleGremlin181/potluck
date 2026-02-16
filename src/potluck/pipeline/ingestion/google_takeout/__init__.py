@@ -11,6 +11,7 @@ Handles importing data from Google Takeout archives including:
 Supports both extracted directories and compressed archives (.zip, .tgz, .tar.gz).
 """
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -32,13 +33,6 @@ from potluck.pipeline.ingestion.registry import register
 from potluck.pipeline.utils.archive import extracted
 
 logger = get_logger(__name__)
-
-# Estimation constants for entity count approximation from file sizes
-# These are rough averages used during detection phase before full parsing
-BYTES_PER_CHAT_MESSAGE = 500  # Average size of a Google Chat message JSON
-BYTES_PER_EMAIL = 10_000  # Average size of an email in MBOX format (10KB)
-BYTES_PER_HISTORY_ENTRY = 200  # Average size of a browser history JSON entry
-BYTES_PER_LOCATION_EDIT = 200  # Average size of a Timeline Edit entry
 
 
 @register
@@ -287,27 +281,35 @@ class GoogleTakeoutStage(BaseIngestionStage):
         return count
 
     def _count_chat_messages(self, path: Path) -> int:
-        """Count chat message files in Google Chat directory."""
+        """Count chat messages by parsing messages.json files."""
         chat_dir = self._find_google_chat_dir(path)
         if not chat_dir:
             return 0
 
         count = 0
         for messages_file in chat_dir.rglob("messages.json"):
-            size = messages_file.stat().st_size
-            count += max(1, size // BYTES_PER_CHAT_MESSAGE)
+            try:
+                data = json.loads(messages_file.read_text(encoding="utf-8"))
+                count += len(data.get("messages", []))
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.warning(f"Failed to parse {messages_file}: {e}")
         return count
 
     def _count_emails(self, path: Path) -> int:
-        """Count emails in Gmail mbox files."""
+        """Count emails in Gmail mbox files by counting 'From ' separators."""
         mail_dir = self._find_gmail_dir(path)
         if not mail_dir:
             return 0
 
         count = 0
         for mbox_file in mail_dir.rglob("*.mbox"):
-            size = mbox_file.stat().st_size
-            count += max(1, size // BYTES_PER_EMAIL)
+            try:
+                with mbox_file.open("r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        if line.startswith("From "):
+                            count += 1
+            except OSError as e:
+                logger.warning(f"Failed to read {mbox_file}: {e}")
         return count
 
     def _count_calendar_events(self, path: Path) -> int:
@@ -328,7 +330,7 @@ class GoogleTakeoutStage(BaseIngestionStage):
         return count
 
     def _count_browsing_history(self, path: Path) -> int:
-        """Count browsing history entries."""
+        """Count browsing history entries by parsing BrowserHistory.json."""
         chrome_dir = self._find_chrome_dir(path)
         if not chrome_dir:
             return 0
@@ -337,8 +339,12 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if not history_file.exists():
             return 0
 
-        size = history_file.stat().st_size
-        return max(1, size // BYTES_PER_HISTORY_ENTRY)
+        try:
+            data = json.loads(history_file.read_text(encoding="utf-8"))
+            return len(data.get("Browser History", []))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Failed to parse {history_file}: {e}")
+            return 0
 
     def _count_bookmarks(self, path: Path) -> int:
         """Count bookmarks in Chrome bookmarks file."""
@@ -359,22 +365,25 @@ class GoogleTakeoutStage(BaseIngestionStage):
             return 0
 
     def _count_location_visits(self, path: Path) -> int:
-        """Count location visits from Google Takeout Timeline data.
+        """Count location visits by parsing Timeline Edits.json.
 
         Note: Android Timeline export (Timeline.json at root) is handled
         by the separate AndroidTimelineStage.
         """
-        # Check for Google Takeout Timeline
         timeline_dir = self._find_timeline_dir(path)
         if not timeline_dir:
             return 0
 
         edits_file = timeline_dir / "Timeline Edits.json"
-        if edits_file.exists():
-            size = edits_file.stat().st_size
-            return max(1, size // BYTES_PER_LOCATION_EDIT)
+        if not edits_file.exists():
+            return 0
 
-        return 0
+        try:
+            data = json.loads(edits_file.read_text(encoding="utf-8"))
+            return len(data.get("timelineEdits", []))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Failed to parse {edits_file}: {e}")
+            return 0
 
     # -------------------------------------------------------------------------
     # Directory finding helpers

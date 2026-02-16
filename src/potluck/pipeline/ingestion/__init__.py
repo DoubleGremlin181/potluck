@@ -26,16 +26,13 @@ from potluck.pipeline.ingestion.registry import (
     register,
 )
 
-# Auto-discover all ingestion stage modules (packages with __init__.py)
-# This ensures @register decorators run when the ingestion module is imported
+# Auto-discover all ingestion stage packages (directories with __init__.py)
+# This ensures @register decorators run when the ingestion module is imported.
+# Only packages (ispkg=True) are imported — base.py and registry.py are plain
+# modules and are skipped automatically.
 _ingestion_dir = Path(__file__).parent
 for _module_info in pkgutil.iter_modules([str(_ingestion_dir)]):
-    # Skip private modules, base infrastructure, and non-packages
-    if (
-        not _module_info.name.startswith("_")
-        and _module_info.name not in ("base", "registry")
-        and _module_info.ispkg
-    ):
+    if _module_info.ispkg:
         importlib.import_module(f".{_module_info.name}", __package__)
 
 __all__ = [

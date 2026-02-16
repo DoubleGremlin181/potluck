@@ -13,16 +13,15 @@ from potluck.pipeline.ingestion.google_takeout.chrome import (
     ingest_browsing_history,
 )
 
-# Path to test fixtures
-FIXTURES_PATH = Path(__file__).parent.parent.parent.parent.parent / "fixtures" / "google_takeout"
-
 
 class TestBrowsingHistoryIngestion:
     """Tests for Chrome browsing history ingestion."""
 
-    def test_ingest_history_from_fixtures(self) -> None:
+    def test_ingest_history_from_fixtures(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest history from fixture files."""
-        entities: list[BrowsingHistory] = list(ingest_browsing_history(FIXTURES_PATH))
+        entities: list[BrowsingHistory] = list(
+            ingest_browsing_history(google_takeout_fixtures_path)
+        )
 
         # Should have 5 history entries
         assert len(entities) == 5
@@ -40,9 +39,11 @@ class TestBrowsingHistoryIngestion:
         assert first.transition_type == "LINK"
         assert first.favicon_url == "https://www.google.com/favicon.ico"
 
-    def test_ingest_history_parses_timestamps(self) -> None:
+    def test_ingest_history_parses_timestamps(self, google_takeout_fixtures_path: Path) -> None:
         """History entries have correct timestamps."""
-        entities: list[BrowsingHistory] = list(ingest_browsing_history(FIXTURES_PATH))
+        entities: list[BrowsingHistory] = list(
+            ingest_browsing_history(google_takeout_fixtures_path)
+        )
 
         # First entry: 1704067200000000 usec = 2024-01-01 00:00:00 UTC
         first = entities[0]
@@ -51,10 +52,14 @@ class TestBrowsingHistoryIngestion:
         assert first.occurred_at.month == 1
         assert first.occurred_at.day == 1
 
-    def test_ingest_history_with_date_filter_since(self) -> None:
+    def test_ingest_history_with_date_filter_since(
+        self, google_takeout_fixtures_path: Path
+    ) -> None:
         """Date filter 'since' excludes earlier entries."""
         filters = PipelineFilter(since=datetime(2024, 1, 2, tzinfo=UTC))
-        entities: list[BrowsingHistory] = list(ingest_browsing_history(FIXTURES_PATH, filters))
+        entities: list[BrowsingHistory] = list(
+            ingest_browsing_history(google_takeout_fixtures_path, filters)
+        )
 
         # Should exclude first entry (Jan 1) and last entry (2023)
         assert len(entities) == 3
@@ -65,17 +70,23 @@ class TestBrowsingHistoryIngestion:
             assert filters.since is not None
             assert e.occurred_at >= filters.since
 
-    def test_ingest_history_with_date_filter_until(self) -> None:
+    def test_ingest_history_with_date_filter_until(
+        self, google_takeout_fixtures_path: Path
+    ) -> None:
         """Date filter 'until' excludes later entries."""
         filters = PipelineFilter(until=datetime(2024, 1, 3, tzinfo=UTC))
-        entities: list[BrowsingHistory] = list(ingest_browsing_history(FIXTURES_PATH, filters))
+        entities: list[BrowsingHistory] = list(
+            ingest_browsing_history(google_takeout_fixtures_path, filters)
+        )
 
         # Should include entries before Jan 3 (Jan 1, Jan 2, and 2023 entry)
         assert len(entities) == 3
 
-    def test_ingest_history_computes_hashes(self) -> None:
+    def test_ingest_history_computes_hashes(self, google_takeout_fixtures_path: Path) -> None:
         """History entries have content and URL hashes."""
-        entities: list[BrowsingHistory] = list(ingest_browsing_history(FIXTURES_PATH))
+        entities: list[BrowsingHistory] = list(
+            ingest_browsing_history(google_takeout_fixtures_path)
+        )
 
         for e in entities:
             assert e.content_hash is not None
@@ -101,9 +112,9 @@ class TestBrowsingHistoryIngestion:
 class TestBookmarksIngestion:
     """Tests for Chrome bookmarks ingestion."""
 
-    def test_ingest_bookmarks_from_fixtures(self) -> None:
+    def test_ingest_bookmarks_from_fixtures(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest bookmarks from fixture files."""
-        entities = list(ingest_bookmarks(FIXTURES_PATH))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path))
 
         # Separate folders and bookmarks
         folders = [e for e in entities if isinstance(e, BookmarkFolder)]
@@ -115,9 +126,9 @@ class TestBookmarksIngestion:
         # Should have 7 bookmarks
         assert len(bookmarks) == 7
 
-    def test_ingest_bookmarks_folder_hierarchy(self) -> None:
+    def test_ingest_bookmarks_folder_hierarchy(self, google_takeout_fixtures_path: Path) -> None:
         """Bookmarks folders have correct parent relationships."""
-        entities = list(ingest_bookmarks(FIXTURES_PATH))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path))
         folders = [e for e in entities if isinstance(e, BookmarkFolder)]
 
         # Find folders by name
@@ -138,9 +149,9 @@ class TestBookmarksIngestion:
         assert frameworks.parent_id == development.id
         assert frameworks.full_path == "Bookmark Bar/Development/Frameworks"
 
-    def test_ingest_bookmarks_folder_path(self) -> None:
+    def test_ingest_bookmarks_folder_path(self, google_takeout_fixtures_path: Path) -> None:
         """Bookmarks have correct folder paths."""
-        entities = list(ingest_bookmarks(FIXTURES_PATH))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path))
         bookmarks = [e for e in entities if isinstance(e, Bookmark)]
 
         # Find bookmark by URL
@@ -154,9 +165,9 @@ class TestBookmarksIngestion:
         google = bookmark_by_url["https://www.google.com/"]
         assert google.folder_path == "Bookmark Bar"
 
-    def test_ingest_bookmarks_parses_timestamps(self) -> None:
+    def test_ingest_bookmarks_parses_timestamps(self, google_takeout_fixtures_path: Path) -> None:
         """Bookmarks have correct ADD_DATE timestamps."""
-        entities = list(ingest_bookmarks(FIXTURES_PATH))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path))
         bookmarks = [e for e in entities if isinstance(e, Bookmark)]
 
         # Find Google bookmark
@@ -168,9 +179,9 @@ class TestBookmarksIngestion:
         assert google.bookmarked_at.month == 1
         assert google.bookmarked_at.day == 1
 
-    def test_ingest_bookmarks_parses_icon(self) -> None:
+    def test_ingest_bookmarks_parses_icon(self, google_takeout_fixtures_path: Path) -> None:
         """Bookmarks parse icon attributes."""
-        entities = list(ingest_bookmarks(FIXTURES_PATH))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path))
         bookmarks = [e for e in entities if isinstance(e, Bookmark)]
 
         # Find Google bookmark (has ICON attribute)
@@ -182,22 +193,22 @@ class TestBookmarksIngestion:
         python_docs = next(b for b in bookmarks if "docs.python.org" in b.url)
         assert python_docs.icon_uri == "https://docs.python.org/favicon.ico"
 
-    def test_ingest_bookmarks_with_date_filter(self) -> None:
+    def test_ingest_bookmarks_with_date_filter(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter excludes bookmarks outside range."""
         filters = PipelineFilter(
             since=datetime(2024, 1, 1, tzinfo=UTC),
             until=datetime(2024, 1, 3, tzinfo=UTC),
         )
-        entities = list(ingest_bookmarks(FIXTURES_PATH, filters))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path, filters))
         bookmarks = [e for e in entities if isinstance(e, Bookmark)]
 
         # Should exclude Hacker News (2023) and bookmarks after Jan 3
         # Within range: Google (Jan 1), GitHub (Jan 2)
         assert len(bookmarks) == 2
 
-    def test_ingest_bookmarks_extracts_domain(self) -> None:
+    def test_ingest_bookmarks_extracts_domain(self, google_takeout_fixtures_path: Path) -> None:
         """Bookmarks have extracted domain."""
-        entities = list(ingest_bookmarks(FIXTURES_PATH))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path))
         bookmarks = [e for e in entities if isinstance(e, Bookmark)]
 
         google = next(b for b in bookmarks if "google.com" in b.url)
@@ -206,9 +217,9 @@ class TestBookmarksIngestion:
         github = next(b for b in bookmarks if "github.com" in b.url)
         assert github.domain == "github.com"
 
-    def test_ingest_bookmarks_computes_hashes(self) -> None:
+    def test_ingest_bookmarks_computes_hashes(self, google_takeout_fixtures_path: Path) -> None:
         """Bookmarks have content and URL hashes."""
-        entities = list(ingest_bookmarks(FIXTURES_PATH))
+        entities = list(ingest_bookmarks(google_takeout_fixtures_path))
         bookmarks = [e for e in entities if isinstance(e, Bookmark)]
 
         for b in bookmarks:
@@ -247,7 +258,7 @@ class TestExtractDomain:
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 
-    def test_stage_executes_chrome_ingestion(self) -> None:
+    def test_stage_executes_chrome_ingestion(self, google_takeout_fixtures_path: Path) -> None:
         """Stage correctly routes to Chrome ingestion."""
         from potluck.models.base import EntityType
         from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
@@ -257,7 +268,7 @@ class TestIntegrationWithStage:
         # Execute for browsing history only
         entities = list(
             stage.execute(
-                FIXTURES_PATH,
+                google_takeout_fixtures_path,
                 entity_types={EntityType.BROWSING_HISTORY},
             )
         )
@@ -266,7 +277,7 @@ class TestIntegrationWithStage:
         assert len(entities) == 5
         assert all(isinstance(e, BrowsingHistory) for e in entities)
 
-    def test_stage_executes_bookmarks_ingestion(self) -> None:
+    def test_stage_executes_bookmarks_ingestion(self, google_takeout_fixtures_path: Path) -> None:
         """Stage correctly routes to bookmarks ingestion."""
         from potluck.models.base import EntityType
         from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
@@ -276,7 +287,7 @@ class TestIntegrationWithStage:
         # Execute for bookmarks only
         entities = list(
             stage.execute(
-                FIXTURES_PATH,
+                google_takeout_fixtures_path,
                 entity_types={EntityType.BOOKMARK},
             )
         )

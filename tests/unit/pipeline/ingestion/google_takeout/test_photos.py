@@ -13,23 +13,20 @@ from potluck.pipeline.ingestion.google_takeout.photos import (
     ingest_media,
 )
 
-# Path to test fixtures
-FIXTURES_PATH = Path(__file__).parent.parent.parent.parent.parent / "fixtures" / "google_takeout"
-
 
 class TestPhotosIngestion:
     """Tests for Google Photos ingestion."""
 
-    def test_ingest_media_from_fixtures(self) -> None:
+    def test_ingest_media_from_fixtures(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest media from fixture files."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         # Should have 3 media files (2 images + 1 video)
         assert len(entities) == 3
 
-    def test_media_with_metadata(self) -> None:
+    def test_media_with_metadata(self, google_takeout_fixtures_path: Path) -> None:
         """Media with metadata has correct properties."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         # Find the image with metadata
         beach_img = next(
@@ -43,9 +40,9 @@ class TestPhotosIngestion:
         assert beach_img.altitude == 5.0
         assert beach_img.album_name == "Vacation 2024"
 
-    def test_media_timestamp(self) -> None:
+    def test_media_timestamp(self, google_takeout_fixtures_path: Path) -> None:
         """Media has correct timestamp from metadata."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         beach_img = next(
             (m for m in entities if "Beach Sunset" in (m.original_filename or "")),
@@ -57,9 +54,9 @@ class TestPhotosIngestion:
         assert beach_img.occurred_at.month == 1
         assert beach_img.occurred_at.day == 16
 
-    def test_media_without_metadata(self) -> None:
+    def test_media_without_metadata(self, google_takeout_fixtures_path: Path) -> None:
         """Media without metadata still has basic properties."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         # Find the image without metadata (IMG_002.png)
         no_meta = next(
@@ -75,9 +72,9 @@ class TestPhotosIngestion:
         # Should still have occurred_at from file mtime
         assert no_meta.occurred_at is not None
 
-    def test_video_media_type(self) -> None:
+    def test_video_media_type(self, google_takeout_fixtures_path: Path) -> None:
         """Video files have correct media type."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         video = next(
             (m for m in entities if m.media_type == MediaType.VIDEO),
@@ -88,43 +85,43 @@ class TestPhotosIngestion:
         assert video.original_filename == "Beach Waves.mp4"
         assert video.mime_type == "video/mp4"
 
-    def test_source_type(self) -> None:
+    def test_source_type(self, google_takeout_fixtures_path: Path) -> None:
         """All media have correct source type."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         for media in entities:
             assert media.source_type == SourceType.GOOGLE_TAKEOUT
 
-    def test_file_hash(self) -> None:
+    def test_file_hash(self, google_takeout_fixtures_path: Path) -> None:
         """Media has file hash computed."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         for media in entities:
             assert media.file_hash is not None
             # SHA256 hashes are 64 characters
             assert len(media.file_hash) == 64
 
-    def test_content_hash_uniqueness(self) -> None:
+    def test_content_hash_uniqueness(self, google_takeout_fixtures_path: Path) -> None:
         """Each media has a unique content hash."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         hashes = [m.content_hash for m in entities if m.content_hash]
         assert len(hashes) == len(set(hashes))
 
-    def test_date_filter_since(self) -> None:
+    def test_date_filter_since(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'since' excludes earlier media."""
         filters = PipelineFilter(since=datetime(2024, 1, 17, tzinfo=UTC))
-        entities = list(ingest_media(FIXTURES_PATH, filters))
+        entities = list(ingest_media(google_takeout_fixtures_path, filters))
 
         # Should only include media from Jan 17 onwards
         # The image without metadata will have recent file mtime, so may be included
         jan_16_media = [m for m in entities if "IMG_001" in (m.source_id or "")]
         assert len(jan_16_media) == 0, "Jan 16 image should be excluded"
 
-    def test_date_filter_until(self) -> None:
+    def test_date_filter_until(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'until' excludes later media."""
         filters = PipelineFilter(until=datetime(2024, 1, 17, tzinfo=UTC))
-        entities = list(ingest_media(FIXTURES_PATH, filters))
+        entities = list(ingest_media(google_takeout_fixtures_path, filters))
 
         # Should exclude Jan 17 video
         jan_17_media = [m for m in entities if "VID_001" in (m.source_id or "")]
@@ -136,9 +133,9 @@ class TestPhotosIngestion:
             entities = list(ingest_media(Path(tmpdir)))
             assert entities == []
 
-    def test_geo_coordinates(self) -> None:
+    def test_geo_coordinates(self, google_takeout_fixtures_path: Path) -> None:
         """Media with geo data has correct coordinates."""
-        entities = list(ingest_media(FIXTURES_PATH))
+        entities = list(ingest_media(google_takeout_fixtures_path))
 
         beach_img = next(
             (m for m in entities if "Beach Sunset" in (m.original_filename or "")),
@@ -153,25 +150,31 @@ class TestPhotosIngestion:
 class TestHelperFunctions:
     """Tests for photo parsing helper functions."""
 
-    def test_load_metadata_json_suffix(self) -> None:
+    def test_load_metadata_json_suffix(self, google_takeout_fixtures_path: Path) -> None:
         """Load metadata from .json suffix file."""
-        media_file = FIXTURES_PATH / "Google Photos" / "Vacation 2024" / "IMG_001.jpg"
+        media_file = (
+            google_takeout_fixtures_path / "Google Photos" / "Vacation 2024" / "IMG_001.jpg"
+        )
         metadata = _load_metadata(media_file)
 
         assert metadata is not None
         assert metadata.get("title") == "Beach Sunset.jpg"
         assert metadata.get("description") == "Beautiful sunset at the beach"
 
-    def test_load_metadata_not_found(self) -> None:
+    def test_load_metadata_not_found(self, google_takeout_fixtures_path: Path) -> None:
         """Returns None when no metadata file exists."""
-        media_file = FIXTURES_PATH / "Google Photos" / "Vacation 2024" / "IMG_002.png"
+        media_file = (
+            google_takeout_fixtures_path / "Google Photos" / "Vacation 2024" / "IMG_002.png"
+        )
         metadata = _load_metadata(media_file)
 
         assert metadata is None
 
-    def test_get_occurred_at_from_metadata(self) -> None:
+    def test_get_occurred_at_from_metadata(self, google_takeout_fixtures_path: Path) -> None:
         """Get timestamp from photoTakenTime in metadata."""
-        media_file = FIXTURES_PATH / "Google Photos" / "Vacation 2024" / "IMG_001.jpg"
+        media_file = (
+            google_takeout_fixtures_path / "Google Photos" / "Vacation 2024" / "IMG_001.jpg"
+        )
         metadata = _load_metadata(media_file)
         occurred_at = _get_occurred_at(media_file, metadata)
 
@@ -180,9 +183,11 @@ class TestHelperFunctions:
         assert occurred_at.month == 1
         assert occurred_at.day == 16
 
-    def test_get_occurred_at_fallback_to_mtime(self) -> None:
+    def test_get_occurred_at_fallback_to_mtime(self, google_takeout_fixtures_path: Path) -> None:
         """Get timestamp from file mtime when no metadata."""
-        media_file = FIXTURES_PATH / "Google Photos" / "Vacation 2024" / "IMG_002.png"
+        media_file = (
+            google_takeout_fixtures_path / "Google Photos" / "Vacation 2024" / "IMG_002.png"
+        )
         occurred_at = _get_occurred_at(media_file, None)
 
         # Should return file mtime
@@ -192,7 +197,7 @@ class TestHelperFunctions:
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 
-    def test_stage_executes_media_ingestion(self) -> None:
+    def test_stage_executes_media_ingestion(self, google_takeout_fixtures_path: Path) -> None:
         """Stage correctly routes to media ingestion."""
         from potluck.models.base import EntityType
         from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
@@ -202,7 +207,7 @@ class TestIntegrationWithStage:
         # Execute for media only
         entities = list(
             stage.execute(
-                FIXTURES_PATH,
+                google_takeout_fixtures_path,
                 entity_types={EntityType.MEDIA},
             )
         )

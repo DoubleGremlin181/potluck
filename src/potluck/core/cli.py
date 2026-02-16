@@ -1,21 +1,36 @@
 """CLI infrastructure using Typer."""
 
-from __future__ import annotations
-
 import json
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from uuid import UUID
 
 import typer
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+from sqlmodel import Session, select
 
+from potluck.core.config import get_settings
+from potluck.db.session import get_engine
+from potluck.mcp.server import run_mcp_server
 from potluck.models.base import EntityType, SourceType
-
-if TYPE_CHECKING:
-    from potluck.pipeline import DiscoveryResult, PipelineFilter, PipelineStats
+from potluck.models.sources import ImportRun
+from potluck.pipeline import (
+    DiscoveryResult,
+    PipelineFilter,
+    PipelineStats,
+    detect_stage,
+    discover,
+    get_stage,
+    start_ingestion,
+)
+from potluck.pipeline import (
+    ingest as pipeline_ingest,
+)
+from potluck.pipeline.processing.core.ml import MLModels
+from potluck.web.app import run_web_server
 
 # Main CLI application
 app = typer.Typer(
@@ -31,8 +46,6 @@ _console = Console()
 @app.command()
 def mcp() -> None:
     """Start the MCP server (stdio transport for Claude Desktop)."""
-    from potluck.mcp.server import run_mcp_server
-
     run_mcp_server()
 
 
@@ -52,9 +65,6 @@ def web(
     ),
 ) -> None:
     """Start the web UI server."""
-    from potluck.core.config import get_settings
-    from potluck.web.app import run_web_server
-
     settings = get_settings()
     actual_host = host or settings.web_host
     actual_port = port or settings.web_port
@@ -84,10 +94,6 @@ def download_models(
 
     Models are cached locally and shared across all Potluck processes.
     """
-    # Late import to avoid circular dependency: core/__init__.py imports cli.py,
-    # and pipeline imports would trigger models/__init__.py which imports from core
-    from potluck.pipeline.processing.core.ml import MLModels
-
     typer.echo("Downloading ML models...")
     models = MLModels(device=device)
     models.download_all_models()
@@ -176,14 +182,6 @@ def ingest(
         potluck ingest ./Takeout -t media -t email  # Import specific types
         potluck ingest ./data --source google_takeout  # Force source type
     """
-    # Late imports to avoid circular dependencies
-    from potluck.pipeline import (
-        PipelineFilter,
-        detect_stage,
-        discover,
-        get_stage,
-    )
-
     # 1. Resolve source type
     if source:
         source_type = _validate_source_type(source)
@@ -359,8 +357,6 @@ def _run_async_ingest(
     filters: PipelineFilter | None,
 ) -> None:
     """Queue ingestion to Celery and return immediately."""
-    from potluck.pipeline import start_ingestion
-
     task_id, import_run_id = start_ingestion(path, list(entity_types))
 
     typer.echo("\nQueued ingestion job.")
@@ -376,11 +372,6 @@ def _run_sync_ingest(
     wait_for_processing: bool,
 ) -> None:
     """Run synchronous ingestion with progress bar."""
-    from sqlmodel import Session
-
-    from potluck.db.session import get_engine
-    from potluck.pipeline import ingest as pipeline_ingest
-
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -440,14 +431,6 @@ def _wait_for_processing(import_run_id: str) -> None:
     For MVP, this uses a simple spinner and checks ImportRun status.
     A future enhancement could track individual Celery task completion.
     """
-    import time
-    from uuid import UUID
-
-    from sqlmodel import Session, select
-
-    from potluck.db.session import get_engine
-    from potluck.models.sources import ImportRun
-
     _console.print("\nWaiting for processing to complete...")
 
     with Progress(

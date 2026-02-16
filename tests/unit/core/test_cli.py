@@ -106,10 +106,10 @@ class TestIngestCommand:
         test_file = tmp_path / "Timeline.json"
         test_file.write_text("{}")
 
-        # Mock at the location where it's used (inside the ingest function)
+        # Mock at the location where it's used (top-level import in cli module)
         with (
-            patch("potluck.pipeline.detect_stage") as mock_detect_stage,
-            patch("potluck.pipeline.discover") as mock_discover,
+            patch("potluck.core.cli.detect_stage") as mock_detect_stage,
+            patch("potluck.core.cli.discover") as mock_discover,
         ):
             # Mock stage detection
             mock_stage = MagicMock()
@@ -136,7 +136,7 @@ class TestIngestCommand:
         test_file = tmp_path / "unknown.txt"
         test_file.write_text("test")
 
-        with patch("potluck.pipeline.detect_stage") as mock_detect_stage:
+        with patch("potluck.core.cli.detect_stage") as mock_detect_stage:
             mock_detect_stage.return_value = None
 
             result = runner.invoke(app, ["ingest", str(test_file)], catch_exceptions=False)

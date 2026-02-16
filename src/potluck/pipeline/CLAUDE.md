@@ -15,7 +15,9 @@ pipeline/
 │   └── processing.py        # Pipeline functions, re-exports
 ├── ingestion/               # Data ingestion
 │   ├── base.py              # BaseIngestionStage
-│   └── registry.py          # Stage registration
+│   ├── registry.py          # Stage registration
+│   ├── google_takeout/      # Google Takeout stage (photos, chat, mail, calendar, chrome, location)
+│   └── android_timeline/    # Android Timeline stage (Timeline.json location data)
 ├── processing/              # Media processing (self-contained)
 │   ├── __init__.py          # Auto-discovery + exports
 │   ├── core/                # Base infrastructure
@@ -208,13 +210,22 @@ def run_my_processor(self, media_id: str) -> dict[str, Any]:
 
 ## Auto-Discovery
 
-The `processing/__init__.py` uses `pkgutil` to automatically discover and import
-all processor modules in the `processors/` subdirectory. This triggers Celery task
-registration:
+Both ingestion stages and processing processors use `pkgutil` auto-discovery.
+
+**Ingestion stages** (`ingestion/__init__.py`): Discovers all packages (directories
+with `__init__.py`) under `ingestion/`. Each package's `@register` decorator runs
+on import, registering the stage in the global registry:
 
 ```python
-import pkgutil
-processors_dir = Path(__file__).parent / "processors"
+for module_info in pkgutil.iter_modules([str(ingestion_dir)]):
+    if module_info.ispkg:  # Only packages, not base.py/registry.py
+        importlib.import_module(f".{module_info.name}", __package__)
+```
+
+**Processing processors** (`processing/__init__.py`): Discovers all modules in the
+`processors/` subdirectory. This triggers Celery task registration:
+
+```python
 for module_info in pkgutil.iter_modules([str(processors_dir)]):
     importlib.import_module(f".processors.{module_info.name}", __package__)
 ```

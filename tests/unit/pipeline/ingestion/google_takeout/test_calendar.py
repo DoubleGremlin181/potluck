@@ -21,16 +21,13 @@ from potluck.pipeline.ingestion.google_takeout.calendar import (
     ingest_calendar_events,
 )
 
-# Path to test fixtures
-FIXTURES_PATH = Path(__file__).parent.parent.parent.parent.parent / "fixtures" / "google_takeout"
-
 
 class TestCalendarIngestion:
     """Tests for Google Calendar ingestion."""
 
-    def test_ingest_calendar_from_fixtures(self) -> None:
+    def test_ingest_calendar_from_fixtures(self, google_takeout_fixtures_path: Path) -> None:
         """Ingest calendar events from fixture files."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
 
         # Separate events and participants
         events = [e for e in entities if isinstance(e, CalendarEvent)]
@@ -42,18 +39,18 @@ class TestCalendarIngestion:
         # Should have 3 participants (2 from event1, 1 from event3)
         assert len(participants) == 3
 
-    def test_calendar_name_from_header(self) -> None:
+    def test_calendar_name_from_header(self, google_takeout_fixtures_path: Path) -> None:
         """Calendar name is extracted from X-WR-CALNAME header."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # All events should have the calendar name from the header
         for event in events:
             assert event.calendar_name == "Test Calendar"
 
-    def test_timed_event_properties(self) -> None:
+    def test_timed_event_properties(self, google_takeout_fixtures_path: Path) -> None:
         """Timed events have correct time properties."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # Find the Team Standup event
@@ -65,9 +62,9 @@ class TestCalendarIngestion:
         assert standup.end_time.hour == 16  # 11 AM EST = 16:00 UTC
         assert standup.timezone == "America/New_York"
 
-    def test_all_day_event_properties(self) -> None:
+    def test_all_day_event_properties(self, google_takeout_fixtures_path: Path) -> None:
         """All-day events are correctly identified."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # Find the Company Holiday event
@@ -79,9 +76,9 @@ class TestCalendarIngestion:
         assert holiday.start_time.day == 20
         assert holiday.visibility == EventVisibility.PUBLIC
 
-    def test_recurring_event_properties(self) -> None:
+    def test_recurring_event_properties(self, google_takeout_fixtures_path: Path) -> None:
         """Recurring events have recurrence rule."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # Find the Weekly Sync event
@@ -92,9 +89,9 @@ class TestCalendarIngestion:
         assert "FREQ=WEEKLY" in weekly.recurrence_rule
         assert "BYDAY=MO" in weekly.recurrence_rule
 
-    def test_event_status_mapping(self) -> None:
+    def test_event_status_mapping(self, google_takeout_fixtures_path: Path) -> None:
         """Event status is correctly mapped."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # Find events by status
@@ -112,9 +109,9 @@ class TestCalendarIngestion:
         assert confirmed is not None
         assert confirmed.status == EventStatus.CONFIRMED
 
-    def test_organizer_info(self) -> None:
+    def test_organizer_info(self, google_takeout_fixtures_path: Path) -> None:
         """Organizer information is extracted correctly."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # Find the Team Standup event
@@ -123,9 +120,9 @@ class TestCalendarIngestion:
         assert standup.organizer_email == "john@example.com"
         assert standup.organizer_name == "John Doe"
 
-    def test_event_location_and_description(self) -> None:
+    def test_event_location_and_description(self, google_takeout_fixtures_path: Path) -> None:
         """Location and description are extracted."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         standup = next((e for e in events if e.summary == "Team Standup"), None)
@@ -133,18 +130,18 @@ class TestCalendarIngestion:
         assert standup.location_text == "Conference Room A"
         assert standup.description == "Daily standup meeting for the development team"
 
-    def test_conference_url_extraction(self) -> None:
+    def test_conference_url_extraction(self, google_takeout_fixtures_path: Path) -> None:
         """Conference URLs are extracted when present."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         standup = next((e for e in events if e.summary == "Team Standup"), None)
         assert standup is not None
         assert standup.conference_url == "https://meet.google.com/abc-defg-hij"
 
-    def test_event_timestamps(self) -> None:
+    def test_event_timestamps(self, google_takeout_fixtures_path: Path) -> None:
         """Created and updated timestamps are extracted."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         standup = next((e for e in events if e.summary == "Team Standup"), None)
@@ -155,9 +152,9 @@ class TestCalendarIngestion:
         assert standup.event_updated_at.month == 1
         assert standup.event_updated_at.day == 10
 
-    def test_participant_extraction(self) -> None:
+    def test_participant_extraction(self, google_takeout_fixtures_path: Path) -> None:
         """Participants are correctly extracted."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         participants = [e for e in entities if isinstance(e, EventParticipant)]
 
         # Find Jane's participation
@@ -174,26 +171,26 @@ class TestCalendarIngestion:
         assert bob.response_status == ResponseStatus.TENTATIVE
         assert bob.is_optional is True
 
-    def test_source_type(self) -> None:
+    def test_source_type(self, google_takeout_fixtures_path: Path) -> None:
         """Events have correct source type."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         for event in events:
             assert event.source_type == SourceType.GOOGLE_TAKEOUT
 
-    def test_content_hash_uniqueness(self) -> None:
+    def test_content_hash_uniqueness(self, google_takeout_fixtures_path: Path) -> None:
         """Each event has a unique content hash."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         hashes = [e.content_hash for e in events]
         assert len(hashes) == len(set(hashes))  # All unique
 
-    def test_date_filter_since(self) -> None:
+    def test_date_filter_since(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'since' excludes earlier events."""
         filters = PipelineFilter(since=datetime(2024, 1, 20, tzinfo=UTC))
-        entities = list(ingest_calendar_events(FIXTURES_PATH, filters))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path, filters))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # Should exclude Team Standup (Jan 15)
@@ -204,10 +201,10 @@ class TestCalendarIngestion:
         assert "Team Standup" not in summaries
         assert "Company Holiday" in summaries
 
-    def test_date_filter_until(self) -> None:
+    def test_date_filter_until(self, google_takeout_fixtures_path: Path) -> None:
         """Date filter 'until' excludes later events."""
         filters = PipelineFilter(until=datetime(2024, 1, 22, tzinfo=UTC))
-        entities = list(ingest_calendar_events(FIXTURES_PATH, filters))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path, filters))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         # Should include only Team Standup (Jan 15) and Company Holiday (Jan 20)
@@ -223,9 +220,9 @@ class TestCalendarIngestion:
             entities = list(ingest_calendar_events(Path(tmpdir)))
             assert entities == []
 
-    def test_ical_uid_as_source_id(self) -> None:
+    def test_ical_uid_as_source_id(self, google_takeout_fixtures_path: Path) -> None:
         """iCal UID is used as source_id."""
-        entities = list(ingest_calendar_events(FIXTURES_PATH))
+        entities = list(ingest_calendar_events(google_takeout_fixtures_path))
         events = [e for e in entities if isinstance(e, CalendarEvent)]
 
         standup = next((e for e in events if e.summary == "Team Standup"), None)
@@ -282,7 +279,7 @@ class TestHelperFunctions:
 class TestIntegrationWithStage:
     """Integration tests with GoogleTakeoutStage."""
 
-    def test_stage_executes_calendar_ingestion(self) -> None:
+    def test_stage_executes_calendar_ingestion(self, google_takeout_fixtures_path: Path) -> None:
         """Stage correctly routes to calendar ingestion."""
         from potluck.models.base import EntityType
         from potluck.pipeline.ingestion.google_takeout import GoogleTakeoutStage
@@ -292,7 +289,7 @@ class TestIntegrationWithStage:
         # Execute for calendar events only
         entities = list(
             stage.execute(
-                FIXTURES_PATH,
+                google_takeout_fixtures_path,
                 entity_types={EntityType.CALENDAR_EVENT},
             )
         )

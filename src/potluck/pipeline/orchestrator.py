@@ -470,7 +470,7 @@ class PipelineOrchestrator:
 
     def _queue_entity_processing(self, entity: IngestableEntity, entity_type: EntityType) -> None:
         """Queue processing tasks for any entity type."""
-        # Deferred import to avoid circular import with tasks module
+        # Deferred import: circular dependency via tasks/__init__.py → tasks/ingestion.py → orchestrator.py
         from potluck.pipeline.tasks.processing import run_entity_pipeline
 
         entity_id = getattr(entity, "id", None)
@@ -480,7 +480,7 @@ class PipelineOrchestrator:
         try:
             run_entity_pipeline(entity_type.value, str(entity_id))
             logger.debug(f"Queued processing for {entity_type.value} {entity_id}")
-        except Exception:
+        except (OSError, RuntimeError, ValueError, TypeError):
             logger.exception(
                 f"Failed to queue processing for {entity_type.value} {entity_id}. "
                 "This entity will need to be manually reprocessed."
@@ -488,7 +488,7 @@ class PipelineOrchestrator:
 
     def _queue_linkers(self, import_run: ImportRun) -> None:
         """Queue batch linkers for all imported entities."""
-        # Deferred import to avoid circular import with tasks module
+        # Deferred import: circular dependency via tasks/__init__.py → tasks/ingestion.py → orchestrator.py
         from potluck.pipeline.tasks.processing import run_linkers_batch
 
         # Convert to serializable format
@@ -500,7 +500,7 @@ class PipelineOrchestrator:
         try:
             run_linkers_batch(str(import_run.id), entity_ids_by_type)
             logger.debug(f"Queued batch linkers for import run {import_run.id}")
-        except Exception:
+        except (OSError, RuntimeError, ValueError, TypeError):
             logger.exception(
                 f"Failed to queue linkers for import run {import_run.id}. "
                 "Linking will need to be run manually."
