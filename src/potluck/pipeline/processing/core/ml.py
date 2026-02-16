@@ -270,7 +270,7 @@ class MLModels:
                 )
             else:
                 model = Blip2ForConditionalGeneration.from_pretrained(model_name)
-                model.to(self.device)
+                model.to(self.device)  # type: ignore[arg-type,unused-ignore]
 
             self._cache[cache_key] = (model, processor)
         result: tuple[Blip2ForConditionalGeneration, Blip2Processor] = self._cache[cache_key]
