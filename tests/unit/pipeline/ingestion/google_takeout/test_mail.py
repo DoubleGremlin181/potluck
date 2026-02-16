@@ -375,6 +375,34 @@ Email with encoded subject.
             entities = list(ingest_emails(Path(tmpdir)))
             assert entities == []
 
+    def test_email_with_nul_bytes_in_body(self) -> None:
+        """NUL bytes in email body are stripped (PostgreSQL rejects \\x00 in text)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mail_dir = Path(tmpdir) / "Mail"
+            mail_dir.mkdir(parents=True)
+
+            # Create MBOX with NUL bytes embedded in the body
+            mbox_content = (
+                "From - Mon Jan 15 10:00:00 2024\n"
+                "From: sender@example.com\n"
+                "Subject: NUL Test\n"
+                "To: recipient@example.com\n"
+                "Date: Mon, 15 Jan 2024 10:00:00 +0000\n"
+                "X-GM-THRID: 111222333\n"
+                "X-Gmail-Labels: Inbox\n"
+                "\n"
+                "Hello\x00World\x00\x00End\n"
+            )
+            (mail_dir / "Test.mbox").write_bytes(mbox_content.encode("utf-8"))
+
+            entities = list(ingest_emails(Path(tmpdir)))
+            emails = [e for e in entities if isinstance(e, Email)]
+
+            assert len(emails) == 1
+            assert emails[0].body_text is not None
+            assert "\x00" not in emails[0].body_text
+            assert "HelloWorldEnd" in emails[0].body_text
+
 
 class TestHeadersOnlyMode:
     """Tests for headers_only parsing mode used in the memory-efficient first pass."""

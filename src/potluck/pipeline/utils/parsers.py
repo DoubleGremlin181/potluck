@@ -489,7 +489,9 @@ def _get_text_content(part: Message) -> str | None:
             return None
 
         charset = part.get_content_charset() or "utf-8"
-        return payload.decode(charset, errors="replace")
+        text = payload.decode(charset, errors="replace")
+        # Strip NUL bytes — PostgreSQL text columns reject \x00
+        return text.replace("\x00", "")
     except (LookupError, UnicodeDecodeError, ValueError) as e:
         logger.debug(f"Could not extract text content from email part: {e}")
         return None
