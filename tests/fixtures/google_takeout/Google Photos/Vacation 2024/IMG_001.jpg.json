@@ -1,0 +1,27 @@
+{
+  "title": "Beach Sunset.jpg",
+  "description": "Beautiful sunset at the beach",
+  "photoTakenTime": {
+    "timestamp": "1705363200",
+    "formatted": "Jan 16, 2024, 12:00:00 AM UTC"
+  },
+  "geoData": {
+    "latitude": 25.7617,
+    "longitude": -80.1918,
+    "altitude": 5.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "people": [
+    {"name": "John Doe"}
+  ],
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceType": "ANDROID_PHONE"
+    }
+  },
+  "creationTime": {
+    "timestamp": "1705363200",
+    "formatted": "Jan 16, 2024, 12:00:00 AM UTC"
+  }
+}

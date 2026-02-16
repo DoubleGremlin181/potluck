@@ -1,0 +1,73 @@
+From sender@example.com Tue Jan 16 10:00:00 2024
+X-GM-THRID: 1234567890123456789
+X-Gmail-Labels: Inbox,Important
+Message-ID: <msg001@example.com>
+From: John Doe <john.doe@example.com>
+To: Jane Smith <jane.smith@example.com>
+Cc: Bob Wilson <bob@example.com>
+Subject: Meeting Tomorrow
+Date: Tue, 16 Jan 2024 10:00:00 -0500
+Content-Type: text/plain; charset=utf-8
+
+Hi Jane,
+
+Let's meet tomorrow at 3pm to discuss the project.
+
+Best,
+John
+
+From reply@example.com Tue Jan 16 14:30:00 2024
+X-GM-THRID: 1234567890123456789
+X-Gmail-Labels: Inbox,Starred
+Message-ID: <msg002@example.com>
+From: Jane Smith <jane.smith@example.com>
+To: John Doe <john.doe@example.com>
+Subject: Re: Meeting Tomorrow
+Date: Tue, 16 Jan 2024 14:30:00 -0500
+In-Reply-To: <msg001@example.com>
+References: <msg001@example.com>
+Content-Type: text/plain; charset=utf-8
+
+Hi John,
+
+3pm works great for me. See you then!
+
+Best,
+Jane
+
+From sent@example.com Wed Jan 17 09:00:00 2024
+X-GM-THRID: 9876543210987654321
+X-Gmail-Labels: Sent,"Custom Label"
+Message-ID: <msg003@example.com>
+From: Alice Brown <alice@example.com>
+To: Charlie Davis <charlie@example.com>
+Subject: Weekly Report
+Date: Wed, 17 Jan 2024 09:00:00 -0500
+Content-Type: multipart/mixed; boundary="boundary123"
+
+--boundary123
+Content-Type: text/plain; charset=utf-8
+
+Please find the weekly report attached.
+
+--boundary123
+Content-Type: application/pdf; name="report.pdf"
+Content-Disposition: attachment; filename="report.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5k
+b2JqCg==
+--boundary123--
+
+From spam@example.com Thu Jan 18 00:00:00 2024
+X-GM-THRID: 1111111111111111111
+X-Gmail-Labels: Spam,Unread
+Message-ID: <msg004@example.com>
+From: Spammer <spam@spammy.example.com>
+To: alice@example.com
+Subject: You won a prize!
+Date: Thu, 18 Jan 2024 00:00:00 -0500
+Content-Type: text/plain; charset=utf-8
+
+Click here to claim your prize!
+

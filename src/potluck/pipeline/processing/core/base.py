@@ -184,11 +184,11 @@ class BaseProcessor(Stage[SQLModel, StageResult]):
         return entity_type in cls.SUPPORTED_ENTITY_TYPES
 
     @abstractmethod
-    def execute(self, entity: SQLModel) -> StageResult:
+    def execute(self, input_data: SQLModel) -> StageResult:
         """Process a single entity.
 
         Args:
-            entity: The entity to process.
+            input_data: The entity to process.
 
         Returns:
             StageResult with extracted data or error information.
@@ -252,14 +252,14 @@ class BaseProcessor(Stage[SQLModel, StageResult]):
             results=results,
         )
 
-    def should_execute(self, entity: SQLModel) -> bool:
+    def should_execute(self, input_data: SQLModel) -> bool:
         """Check if this entity should be processed.
 
         Default returns True. Subclasses can override to skip certain entities
         (e.g., OCR processor skipping non-image media).
 
         Args:
-            entity: The entity to check.
+            input_data: The entity to check.
 
         Returns:
             True if the entity should be processed, False to skip.

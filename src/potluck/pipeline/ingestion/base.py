@@ -8,14 +8,14 @@ from typing import Any, ClassVar
 
 from potluck.core.exceptions import ConfigurationError
 from potluck.core.logging import get_logger
-from potluck.models.base import BaseEntity, EntityType, SourceType
+from potluck.models.base import EntityType, IngestableEntity, SourceType
 from potluck.pipeline.base import Stage
 from potluck.pipeline.dtos import DetectionResult, PipelineFilter
 
 logger = get_logger(__name__)
 
 
-class BaseIngestionStage(Stage[Path, Iterator[BaseEntity]]):
+class BaseIngestionStage(Stage[Path, Iterator[IngestableEntity]]):
     """Abstract base class for data source ingestion stages.
 
     Each ingestion stage handles a specific data source (e.g., Google Takeout, Reddit).
@@ -100,10 +100,10 @@ class BaseIngestionStage(Stage[Path, Iterator[BaseEntity]]):
     @abstractmethod
     def execute(
         self,
-        path: Path,
+        input_data: Path,
         entity_types: set[EntityType] | None = None,
         filters: PipelineFilter | None = None,
-    ) -> Iterator[BaseEntity]:
+    ) -> Iterator[IngestableEntity]:
         """Yield entities from the source.
 
         This is the main ingestion method. It should iterate through the source
@@ -112,19 +112,19 @@ class BaseIngestionStage(Stage[Path, Iterator[BaseEntity]]):
         For complex sources with multiple entity types, delegate to private
         methods per entity type for cleaner code organization:
 
-            def execute(self, path, entity_types, filters):
+            def execute(self, input_data, entity_types, filters):
                 if EntityType.MEDIA in entity_types:
-                    yield from self._ingest_media(path, filters)
+                    yield from self._ingest_media(input_data, filters)
                 if EntityType.EMAIL in entity_types:
-                    yield from self._ingest_emails(path, filters)
+                    yield from self._ingest_emails(input_data, filters)
 
         Args:
-            path: Path to the extracted source data.
+            input_data: Path to the extracted source data.
             entity_types: Set of entity types to ingest (None = all supported).
             filters: Optional date range filters.
 
         Yields:
-            BaseEntity instances (Media, ChatMessage, Email, etc.)
+            IngestableEntity instances (Media, ChatMessage, Email, ChatThread, etc.)
         """
         ...
 

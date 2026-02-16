@@ -6,6 +6,7 @@ from potluck.models.base import (
     BaseEntity,
     EntityType,
     GeolocatedEntity,
+    IngestableEntity,
     SimpleEntity,
     SourceType,
     TimestampedEntity,
@@ -139,6 +140,7 @@ def get_entity_type_model_map() -> dict[EntityType, type[SQLModel]]:
 __all__ = [
     # Base
     "BaseEntity",
+    "IngestableEntity",
     "SimpleEntity",
     "TimestampedEntity",
     "GeolocatedEntity",

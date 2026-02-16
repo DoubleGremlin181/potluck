@@ -10,10 +10,27 @@ from sqlmodel import Field, SQLModel
 from potluck.models.utils import IANATimezone, UTCDatetime, utc_now
 
 
+class IngestableEntity:
+    """Marker base class for all types that can be yielded by ingesters.
+
+    This class provides type safety for ingestion stage return types.
+    All entities that ingesters yield should inherit from this class,
+    either directly or through SimpleEntity/BaseEntity.
+
+    Usage:
+        - SimpleEntity and its subclasses inherit this automatically
+        - Standalone SQLModel classes (ChatThread, Location, etc.) should
+          also inherit from this for proper typing
+    """
+
+    pass
+
+
 class SourceType(str, Enum):
     """Enumeration of supported data ingestion sources."""
 
     GOOGLE_TAKEOUT = "google_takeout"
+    ANDROID_TIMELINE = "android_timeline"  # Android Timeline export (Timeline.json)
     REDDIT = "reddit"
     WHATSAPP = "whatsapp"
     YNAB = "ynab"
@@ -55,11 +72,13 @@ class TimestampPrecision(str, Enum):
     SECOND = "second"
 
 
-class SimpleEntity(SQLModel):
+class SimpleEntity(SQLModel, IngestableEntity):
     """Minimal base class for auxiliary entities.
 
     Provides id, created_at, and updated_at for entities that don't need
     full source tracking (e.g., link tables, embeddings, participants).
+
+    Inherits from IngestableEntity to allow proper typing for ingester yields.
 
     Search Configuration (class variables):
         __searchable__: Whether this entity type supports search. Default False.
@@ -69,6 +88,9 @@ class SimpleEntity(SQLModel):
     """
 
     __abstract__: ClassVar[bool] = True
+
+    # Forbid extra fields to catch bugs early (e.g., typos, removed fields)
+    model_config = {"extra": "forbid"}
 
     # Search configuration - subclasses override these
     __searchable__: ClassVar[bool] = False

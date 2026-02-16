@@ -1,0 +1,32 @@
+{
+  "messages": [
+    {
+      "creator": {
+        "name": "Bob Wilson",
+        "email": "bob@example.com"
+      },
+      "created_date": "Wednesday, January 3, 2024 at 02:00:00 PM UTC",
+      "text": "Team meeting at 3pm today!"
+    },
+    {
+      "creator": {
+        "name": "Jane Smith",
+        "email": "jane@example.com"
+      },
+      "created_date": "Wednesday, January 3, 2024 at 02:30:00 PM UTC",
+      "text": "Sounds good, I'll be there."
+    },
+    {
+      "creator": {
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "created_date": "Wednesday, January 3, 2024 at 03:00:00 PM UTC",
+      "attached_files": [
+        {
+          "name": "presentation.pdf"
+        }
+      ]
+    }
+  ]
+}

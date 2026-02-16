@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import ClassVar
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
@@ -11,8 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import TimestampedEntity
-from potluck.models.utils import utc_now
+from potluck.models.base import SimpleEntity, SourceType, TimestampedEntity
 
 
 class MessageType(str, Enum):
@@ -41,29 +40,16 @@ class ThreadType(str, Enum):
     COMMUNITY = "community"  # Community/forum
 
 
-class ChatThread(SQLModel, table=True):
+class ChatThread(SimpleEntity, table=True):
     """Conversation thread container for messaging platforms.
 
     Works across WhatsApp, Telegram, SMS, and other messaging services.
+    Inherits from SimpleEntity which provides id, created_at, updated_at fields.
     """
 
     __tablename__ = "chat_threads"
 
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the thread",
-    )
-    created_at: datetime = Field(
-        default_factory=utc_now,
-        description="When the thread was created in the database",
-    )
-    updated_at: datetime = Field(
-        default_factory=utc_now,
-        sa_column_kwargs={"onupdate": utc_now},
-        description="When the thread was last updated",
-    )
-    source_type: str = Field(
+    source_type: SourceType = Field(
         description="Source platform (e.g., whatsapp, telegram)",
     )
     source_id: str | None = Field(

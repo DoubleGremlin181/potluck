@@ -12,6 +12,10 @@ Public API:
     - BaseIngestionStage: Abstract base class for implementing stages
 """
 
+import importlib
+import pkgutil
+from pathlib import Path
+
 from potluck.pipeline.dtos import DetectionResult, PipelineFilter
 from potluck.pipeline.ingestion.base import BaseIngestionStage
 from potluck.pipeline.ingestion.registry import (
@@ -21,6 +25,15 @@ from potluck.pipeline.ingestion.registry import (
     list_stages,
     register,
 )
+
+# Auto-discover all ingestion stage packages (directories with __init__.py)
+# This ensures @register decorators run when the ingestion module is imported.
+# Only packages (ispkg=True) are imported — base.py and registry.py are plain
+# modules and are skipped automatically.
+_ingestion_dir = Path(__file__).parent
+for _module_info in pkgutil.iter_modules([str(_ingestion_dir)]):
+    if _module_info.ispkg:
+        importlib.import_module(f".{_module_info.name}", __package__)
 
 __all__ = [
     # Registration

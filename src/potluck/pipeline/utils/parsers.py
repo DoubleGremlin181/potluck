@@ -277,7 +277,7 @@ class MboxAttachment:
     """Size in bytes."""
 
 
-def parse_mbox(path: Path) -> Iterator[MboxMessage]:
+def parse_mbox(path: Path, *, headers_only: bool = False) -> Iterator[MboxMessage]:
     """Parse an MBOX file and yield parsed messages.
 
     Messages that fail to parse are logged and skipped. To track the number
@@ -285,6 +285,9 @@ def parse_mbox(path: Path) -> Iterator[MboxMessage]:
 
     Args:
         path: Path to the MBOX file.
+        headers_only: If True, skip body and attachment parsing. Useful for
+            lightweight passes that only need headers (subject, date,
+            addresses, Gmail labels, etc.).
 
     Yields:
         MboxMessage for each successfully parsed email in the file.
@@ -294,7 +297,7 @@ def parse_mbox(path: Path) -> Iterator[MboxMessage]:
     """
     try:
         mbox = mailbox.mbox(str(path))
-    except Exception as e:
+    except OSError as e:
         raise PipelineError(f"Could not open MBOX file {path}: {e}") from e
 
     skipped = 0
@@ -303,15 +306,16 @@ def parse_mbox(path: Path) -> Iterator[MboxMessage]:
         for idx, msg in enumerate(mbox):
             total += 1
             try:
-                yield _parse_email_message(msg)
-            except Exception as e:
+                yield _parse_email_message(msg, headers_only=headers_only)
+            except (KeyError, ValueError, TypeError, AttributeError) as e:
                 skipped += 1
                 # Include message index and any available identifiers for debugging
                 msg_id = msg.get("Message-ID", "<unknown>") if msg else "<unknown>"
                 subject = msg.get("Subject", "<no subject>")[:50] if msg else "<unknown>"
                 logger.warning(
                     f"Failed to parse email message {idx} "
-                    f"(Message-ID={msg_id}, Subject={subject!r}): {e}"
+                    f"(Message-ID={msg_id}, Subject={subject!r}): {e}",
+                    exc_info=True,
                 )
                 continue
     finally:
@@ -322,11 +326,12 @@ def parse_mbox(path: Path) -> Iterator[MboxMessage]:
             )
 
 
-def _parse_email_message(msg: Message) -> MboxMessage:
+def _parse_email_message(msg: Message, *, headers_only: bool = False) -> MboxMessage:
     """Parse a single email message.
 
     Args:
         msg: Email message object.
+        headers_only: If True, skip body and attachment parsing.
 
     Returns:
         Parsed MboxMessage.
@@ -361,6 +366,10 @@ def _parse_email_message(msg: Message) -> MboxMessage:
     # Headers
     for key in msg:
         result.headers[key] = msg.get(key, "")
+
+    # Skip body and attachment parsing in headers-only mode
+    if headers_only:
+        return result
 
     # Body and attachments
     if msg.is_multipart():
@@ -456,7 +465,8 @@ def _decode_header(header: str | None) -> str:
             else:
                 parts.append(content)
         return "".join(parts)
-    except Exception:
+    except (ValueError, LookupError, UnicodeDecodeError) as e:
+        logger.debug(f"Could not decode email header, using raw value: {e}")
         return str(header)
 
 
@@ -479,36 +489,37 @@ def _get_text_content(part: Message) -> str | None:
             return None
 
         charset = part.get_content_charset() or "utf-8"
-        return payload.decode(charset, errors="replace")
-    except Exception:
+        text = payload.decode(charset, errors="replace")
+        # Strip NUL bytes — PostgreSQL text columns reject \x00
+        return text.replace("\x00", "")
+    except (LookupError, UnicodeDecodeError, ValueError) as e:
+        logger.debug(f"Could not extract text content from email part: {e}")
         return None
 
 
 def _extract_attachment(part: Message, result: MboxMessage) -> None:
-    """Extract an attachment from an email part.
+    """Extract attachment metadata from an email part.
+
+    Only stores metadata (filename, content type, size) — not the raw binary
+    content. This keeps memory bounded when processing large mailboxes.
 
     Args:
         part: Email message part.
         result: MboxMessage to add attachment to.
     """
     try:
-        content = part.get_payload(decode=True)
-        if content is None:
-            return
-
-        # get_payload with decode=True returns bytes
-        if not isinstance(content, bytes):
-            return
-
         filename = part.get_filename()
         if filename:
             filename = _decode_header(filename)
 
+        # Determine size without keeping the full payload in memory
+        content = part.get_payload(decode=True)
+        size = len(content) if isinstance(content, bytes) else 0
+
         attachment = MboxAttachment(
             filename=filename,
             content_type=part.get_content_type(),
-            content=content,
-            size=len(content),
+            size=size,
         )
         result.attachments.append(attachment)
     except Exception as e:
