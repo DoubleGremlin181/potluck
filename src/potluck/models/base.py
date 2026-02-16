@@ -34,7 +34,10 @@ class SourceType(str, Enum):
     REDDIT = "reddit"
     WHATSAPP = "whatsapp"
     YNAB = "ynab"
-    GENERIC = "generic"  # Bulk import of generic files (images, markdown, MBOX)
+    IMAGE_FOLDER = "image_folder"  # Generic image/media folder import
+    TEXT_FILES = "text_files"  # Plain text / Markdown / Obsidian vault import
+    MBOX = "mbox"  # MBOX email files (Thunderbird, Apple Mail, etc.)
+    GENERIC = "generic"  # Bulk import of generic files
     MANUAL = "manual"  # User-created content within Potluck (notes, annotations)
 
 
@@ -57,6 +60,8 @@ class EntityType(str, Enum):
     LOCATION_VISIT = "location_visit"
     BROWSING_HISTORY = "browsing_history"
     BOOKMARK = "bookmark"
+    SUBSCRIPTION = "subscription"
+    BUDGET = "budget"
     PERSON = "person"
     TAG = "tag"
 

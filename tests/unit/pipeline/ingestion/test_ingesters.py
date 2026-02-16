@@ -58,6 +58,8 @@ class TestEntityType:
             "location_visit",
             "browsing_history",
             "bookmark",
+            "subscription",
+            "budget",
             "person",
             "tag",
         }

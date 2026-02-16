@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import SourceType, TimestampedEntity
+from potluck.models.base import IngestableEntity, SourceType, TimestampedEntity
 from potluck.models.utils import utc_now
 
 
@@ -423,7 +423,7 @@ class SocialComment(TimestampedEntity, table=True):
     post: "SocialPost" = Relationship(back_populates="comments")
 
 
-class Subscription(SQLModel, table=True):
+class Subscription(SQLModel, IngestableEntity, table=True):
     """Subscription to subreddits, channels, users, etc."""
 
     __tablename__ = "subscriptions"

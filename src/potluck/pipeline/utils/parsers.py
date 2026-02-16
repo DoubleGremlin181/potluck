@@ -73,6 +73,10 @@ def parse_datetime(value: str | int | float | None) -> datetime | None:
     if not value:
         return None
 
+    # Normalize common timezone suffixes to offset format
+    if value.endswith(" UTC"):
+        value = value[:-4] + "+00:00"
+
     # Try Unix timestamp as string
     try:
         ts = float(value)
