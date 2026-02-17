@@ -44,7 +44,7 @@ FOLDER_NAME_MAP: dict[str, EmailFolder] = {
 }
 
 # Subject prefixes to strip when determining thread subject
-_REPLY_PREFIX_RE = re.compile(r"^(Re|Fwd|FW|RE|Fw):\s*", re.IGNORECASE)
+_REPLY_PREFIX_RE = re.compile(r"^(Re|Fwd|Fw):\s*", re.IGNORECASE)
 
 # Files to skip when scanning directories for MBOX files
 _SKIP_EXTENSIONS = {".msf", ".dat", ".html", ".json", ".sqlite", ".db", ".sbd"}
@@ -292,6 +292,7 @@ def _create_email(
 ) -> Email | None:
     """Create an Email entity from a parsed MBOX message."""
     if not mbox_msg.from_address:
+        logger.debug(f"Skipping email without from_address: message_id={mbox_msg.message_id}")
         return None
 
     body_text = mbox_msg.body_plain or ""

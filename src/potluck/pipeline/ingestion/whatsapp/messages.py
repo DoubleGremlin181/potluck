@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.messages import ChatMessage, ChatThread, MessageType, ThreadType
@@ -33,9 +34,6 @@ WA_SKIP_MESSAGE_TYPES = {90, 91, 92, 93, 94, 95}
 # JID server types for chats we process
 WA_CHAT_SERVERS = {"s.whatsapp.net", "g.us"}
 
-# JID server types to skip
-WA_SKIP_SERVERS = {"newsletter", "broadcast", "lid"}
-
 # Batch size for streaming messages
 MESSAGE_BATCH_SIZE = 5000
 
@@ -58,15 +56,15 @@ def ingest_messages(
     Yields:
         ChatThread entities first, then ChatMessage entities.
     """
-    conn = _open_db(db_path)
+    conn = open_db(db_path)
     try:
         # Phase 1: Load chats and yield threads
-        chat_threads, chat_row_to_thread = _load_chats(conn)
+        chat_threads, chat_row_to_thread = load_chats(conn)
         yield from chat_threads
 
         # Phase 2: Stream messages in batches
         valid_chat_ids = set(chat_row_to_thread.keys())
-        yield from _stream_messages(conn, valid_chat_ids, chat_row_to_thread, filters)
+        yield from stream_messages(conn, valid_chat_ids, chat_row_to_thread, filters)
 
     finally:
         conn.close()
@@ -78,7 +76,7 @@ def count_messages(db_path: Path) -> tuple[int, int]:
     Returns:
         Tuple of (message_count, chat_count).
     """
-    conn = _open_db(db_path)
+    conn = open_db(db_path)
     try:
         cursor = conn.cursor()
 
@@ -105,12 +103,15 @@ def count_messages(db_path: Path) -> tuple[int, int]:
         conn.close()
 
 
-def _open_db(db_path: Path) -> sqlite3.Connection:
+def open_db(db_path: Path) -> sqlite3.Connection:
     """Open msgstore.db as read-only."""
-    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error as e:
+        raise IngestionError(f"Failed to open WhatsApp database {db_path}: {e}") from e
 
 
-def _load_chats(
+def load_chats(
     conn: sqlite3.Connection,
 ) -> tuple[list[ChatThread], dict[int, UUID]]:
     """Load chats from database and create ChatThread entities.
@@ -187,7 +188,7 @@ def _update_thread_stats(
                 thread.last_message_at = _ms_to_datetime(max_ts)
 
 
-def _stream_messages(
+def stream_messages(
     conn: sqlite3.Connection,
     valid_chat_ids: set[int],
     chat_row_to_thread: dict[int, UUID],
@@ -234,16 +235,8 @@ def _stream_messages(
 
             message_type = WA_MESSAGE_TYPE_MAP.get(msg_type, MessageType.OTHER)
 
-            # Build content hash from chat JID + timestamp + text
-            thread_source = next(
-                (
-                    jid
-                    for cid, tid in chat_row_to_thread.items()
-                    if tid == thread_id
-                    for jid in [str(cid)]
-                ),
-                str(chat_row_id),
-            )
+            # Build content hash from chat row ID + timestamp + text
+            thread_source = str(chat_row_id)
             content_hash = compute_content_hash(f"wa:{thread_source}:{timestamp}:{text_data or ''}")
 
             yield ChatMessage(

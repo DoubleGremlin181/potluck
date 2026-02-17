@@ -4,8 +4,6 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-import yaml
-
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.notes import KnowledgeNote
@@ -103,7 +101,8 @@ def _process_file(file_path: Path, base_path: Path) -> KnowledgeNote | None:
     # Check file size
     try:
         file_size = file_path.stat().st_size
-    except OSError:
+    except OSError as e:
+        logger.debug(f"Could not stat {file_path}: {e}")
         return None
 
     if file_size == 0:
@@ -139,15 +138,18 @@ def _process_file(file_path: Path, base_path: Path) -> KnowledgeNote | None:
 
 def _read_file(file_path: Path) -> str | None:
     """Read a text file with encoding fallback."""
-    for encoding in ("utf-8", "latin-1"):
-        try:
-            return file_path.read_text(encoding=encoding)
-        except UnicodeDecodeError:
-            continue
-        except OSError as e:
-            logger.warning(f"Failed to read {file_path}: {e}")
-            return None
-    return None
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        logger.debug(f"UTF-8 decode failed for {file_path}, falling back to latin-1")
+    except OSError as e:
+        logger.warning(f"Failed to read {file_path}: {e}")
+        return None
+    try:
+        return file_path.read_text(encoding="latin-1")
+    except OSError as e:
+        logger.warning(f"Failed to read {file_path}: {e}")
+        return None
 
 
 def _strip_front_matter(content: str) -> str:
@@ -156,26 +158,3 @@ def _strip_front_matter(content: str) -> str:
     if match:
         return content[match.end() :]
     return content
-
-
-def parse_front_matter(content: str) -> dict[str, object]:
-    """Parse YAML front matter from a text file.
-
-    Args:
-        content: Full file content.
-
-    Returns:
-        Parsed YAML as dict, or empty dict if no front matter.
-    """
-    match = _FRONT_MATTER_RE.match(content)
-    if not match:
-        return {}
-
-    try:
-        data = yaml.safe_load(match.group(1))
-        if isinstance(data, dict):
-            return data
-    except yaml.YAMLError as e:
-        logger.debug(f"Could not parse YAML front matter: {e}")
-
-    return {}

@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
+from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.financial import Budget
@@ -46,6 +47,11 @@ def ingest_budgets(plan_path: Path) -> Iterator[Budget]:
                 assigned = _parse_currency(row.get("Assigned"))
                 activity = _parse_currency(row.get("Activity"))
                 available = _parse_currency(row.get("Available"))
+                if assigned is None or activity is None or available is None:
+                    logger.warning(
+                        f"Skipping budget entry with unparseable currency: {category} {month_str}"
+                    )
+                    continue
 
                 # Activity is negative for spending in YNAB; spent should be positive
                 spent = -activity
@@ -64,4 +70,4 @@ def ingest_budgets(plan_path: Path) -> Iterator[Budget]:
                     available=available,
                 )
     except (OSError, UnicodeDecodeError) as e:
-        logger.warning(f"Failed to read Plan CSV {plan_path}: {e}")
+        raise IngestionError(f"Failed to read Plan CSV {plan_path}: {e}") from e

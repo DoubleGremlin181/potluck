@@ -1,14 +1,13 @@
 """Reddit comment ingestion from GDPR export."""
 
-import csv
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.social import Platform, SocialComment
 from potluck.pipeline.dtos import PipelineFilter
+from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
 from potluck.pipeline.utils.hashing import compute_content_hash
 from potluck.pipeline.utils.parsers import parse_datetime
 
@@ -37,7 +36,7 @@ def ingest_comments(
 
     logger.info(f"Processing Reddit comments at {comments_file}")
 
-    for row in _read_csv(comments_file):
+    for row in read_csv(comments_file):
         comment_id = row.get("id", "")
         if not comment_id:
             continue
@@ -70,9 +69,3 @@ def ingest_comments(
             post_title=link,
             is_saved=comment_id in saved_comment_ids,
         )
-
-
-def _read_csv(path: Path) -> Iterator[dict[str, Any]]:
-    """Read a Reddit CSV file using stdlib csv.DictReader."""
-    with path.open(encoding="utf-8", newline="") as f:
-        yield from csv.DictReader(f)

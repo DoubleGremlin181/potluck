@@ -72,4 +72,5 @@ class TextFilesStage(BaseIngestionStage):
         if EntityType.KNOWLEDGE_NOTE not in types_to_process:
             return
 
+        # KnowledgeNote has no occurred_at, so date filtering is not applicable
         yield from ingest_text_files(path)

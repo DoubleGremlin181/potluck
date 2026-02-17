@@ -16,10 +16,10 @@ from potluck.pipeline.ingestion.base import BaseIngestionStage
 from potluck.pipeline.ingestion.registry import register
 from potluck.pipeline.ingestion.whatsapp.media import count_media, ingest_media
 from potluck.pipeline.ingestion.whatsapp.messages import (
-    _load_chats,
-    _open_db,
-    _stream_messages,
     count_messages,
+    load_chats,
+    open_db,
+    stream_messages,
 )
 
 logger = get_logger(__name__)
@@ -60,7 +60,7 @@ class WhatsAppStage(BaseIngestionStage):
             entity_counts[EntityType.CHAT_MESSAGE] = msg_count
             metadata["chats"] = str(chat_count)
 
-        conn = _open_db(db_path)
+        conn = open_db(db_path)
         try:
             media_count = count_media(conn)
             if media_count > 0:
@@ -92,10 +92,10 @@ class WhatsAppStage(BaseIngestionStage):
         ) & self.SUPPORTED_ENTITY_TYPES
         backup_root = _find_backup_root(db_path)
 
-        conn = _open_db(db_path)
+        conn = open_db(db_path)
         try:
             # Phase 1: Load chats and yield threads
-            chat_threads, chat_row_to_thread = _load_chats(conn)
+            chat_threads, chat_row_to_thread = load_chats(conn)
             if EntityType.CHAT_MESSAGE in types_to_process:
                 yield from chat_threads
 
@@ -109,7 +109,7 @@ class WhatsAppStage(BaseIngestionStage):
             # Phase 3: Stream messages
             if EntityType.CHAT_MESSAGE in types_to_process:
                 valid_chat_ids = set(chat_row_to_thread.keys())
-                for message in _stream_messages(conn, valid_chat_ids, chat_row_to_thread, filters):
+                for message in stream_messages(conn, valid_chat_ids, chat_row_to_thread, filters):
                     # Link media to message if available
                     if message.source_id:
                         try:
@@ -117,8 +117,10 @@ class WhatsAppStage(BaseIngestionStage):
                             media_id = msg_to_media.get(msg_id)
                             if media_id:
                                 message.media_id = media_id
-                        except (ValueError, AttributeError):
-                            pass
+                        except (ValueError, AttributeError) as e:
+                            logger.debug(
+                                f"Could not link media to message {message.source_id}: {e}"
+                            )
                     yield message
 
         finally:

@@ -1,10 +1,12 @@
 """Tests for YNAB export ingester."""
 
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
 from potluck.models.base import EntityType, SourceType
 from potluck.models.financial import Account, Budget, Transaction, TransactionType
+from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.ynab import YNABStage
 from potluck.pipeline.ingestion.ynab.transactions import _parse_currency
 
@@ -218,3 +220,43 @@ class TestYNABEntityTypeFiltering:
         stage = YNABStage()
         entities = list(stage.execute(FIXTURES_DIR, {EntityType.BUDGET}))
         assert all(isinstance(e, Budget) for e in entities)
+
+
+class TestYNABDateFiltering:
+    """Tests for date range filtering on transactions."""
+
+    def test_since_filter(self) -> None:
+        """Transactions before 'since' date are excluded."""
+        stage = YNABStage()
+        # Dec 18 — should exclude the 3 transactions from Dec 15-17
+        # YNAB dates are parsed as naive datetimes (no timezone in CSV)
+        since = datetime(2025, 12, 18)
+        entities = list(
+            stage.execute(FIXTURES_DIR, {EntityType.TRANSACTION}, PipelineFilter(since=since))
+        )
+
+        transactions = [e for e in entities if isinstance(e, Transaction)]
+        assert all(t.occurred_at is not None and t.occurred_at >= since for t in transactions)
+        assert len(transactions) == 5  # Dec 18 (x2), Dec 19, Dec 20 (x2)
+
+    def test_until_filter(self) -> None:
+        """Transactions after 'until' date are excluded."""
+        stage = YNABStage()
+        # Dec 18 — should exclude transactions from Dec 18 onward
+        until = datetime(2025, 12, 18)
+        entities = list(
+            stage.execute(FIXTURES_DIR, {EntityType.TRANSACTION}, PipelineFilter(until=until))
+        )
+
+        transactions = [e for e in entities if isinstance(e, Transaction)]
+        assert all(t.occurred_at is not None and t.occurred_at < until for t in transactions)
+        assert len(transactions) == 3  # Dec 15, Dec 16, Dec 17
+
+
+class TestYNABInvalidCurrency:
+    """Tests for handling invalid currency values."""
+
+    def test_invalid_currency_returns_none(self) -> None:
+        """Unparseable currency values return None."""
+        assert _parse_currency("not-a-number") is None
+        assert _parse_currency("abc") is None

@@ -8,7 +8,6 @@ from potluck.pipeline.ingestion.text_files import TextFilesStage
 from potluck.pipeline.ingestion.text_files.notes import (
     _strip_front_matter,
     is_obsidian_vault,
-    parse_front_matter,
 )
 
 
@@ -184,18 +183,7 @@ class TestObsidianVault:
 
 
 class TestFrontMatterParsing:
-    """Tests for YAML front matter parsing."""
-
-    def test_parse_front_matter(self) -> None:
-        """YAML front matter is parsed correctly."""
-        content = "---\ntitle: Test\ntags: [a, b]\n---\n\nBody"
-        result = parse_front_matter(content)
-        assert result["title"] == "Test"
-        assert result["tags"] == ["a", "b"]
-
-    def test_no_front_matter(self) -> None:
-        """Files without front matter return empty dict."""
-        assert parse_front_matter("Just text") == {}
+    """Tests for YAML front matter stripping."""
 
     def test_strip_front_matter(self) -> None:
         """Front matter is stripped, body is returned."""

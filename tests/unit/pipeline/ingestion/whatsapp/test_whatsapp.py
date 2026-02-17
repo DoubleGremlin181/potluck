@@ -285,13 +285,13 @@ class TestWhatsAppMessages:
         entities = list(ingest_messages(tmp_path / "msgstore.db"))
         messages = [e for e in entities if isinstance(e, ChatMessage)]
 
-        # "Hi there!" is from_me=0 (our message)
-        my_msg = next(m for m in messages if m.content == "Hi there!")
-        assert my_msg.is_from_me is False
+        # "Hi there!" is from_me=0 (contact's message)
+        contact_msg = next(m for m in messages if m.content == "Hi there!")
+        assert contact_msg.is_from_me is False
 
-        # "Hello!" is from_me=1 (contact's message)
-        their_msg = next(m for m in messages if m.content == "Hello!")
-        assert their_msg.is_from_me is True
+        # "Hello!" is from_me=1 (our message)
+        our_msg = next(m for m in messages if m.content == "Hello!")
+        assert our_msg.is_from_me is True
 
     def test_starred_flag(self, tmp_path: Path) -> None:
         """Starred messages are marked correctly."""

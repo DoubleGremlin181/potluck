@@ -1,10 +1,13 @@
 """Tests for image/media folder ingester."""
 
+import os
 import struct
+from datetime import UTC, datetime
 from pathlib import Path
 
 from potluck.models.base import EntityType, SourceType
 from potluck.models.media import Media, MediaType
+from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.image_folder import ImageFolderStage
 from potluck.pipeline.ingestion.image_folder.images import _get_media_type
 
@@ -172,3 +175,48 @@ class TestMediaTypeDetection:
 
     def test_unknown_type(self) -> None:
         assert _get_media_type(".xyz") == MediaType.OTHER
+
+
+class TestImageFolderDateFiltering:
+    """Tests for date range filtering."""
+
+    def test_since_filter(self, tmp_path: Path) -> None:
+        """Images before 'since' date are excluded."""
+        old = tmp_path / "old.jpg"
+        new = tmp_path / "new.jpg"
+        _create_minimal_jpeg(old)
+        _create_minimal_jpeg(new)
+
+        # Set mtimes: old = 2023-01-01, new = 2024-06-01
+        old_ts = datetime(2023, 1, 1, tzinfo=UTC).timestamp()
+        new_ts = datetime(2024, 6, 1, tzinfo=UTC).timestamp()
+        os.utime(old, (old_ts, old_ts))
+        os.utime(new, (new_ts, new_ts))
+
+        stage = ImageFolderStage()
+        since = datetime(2024, 1, 1, tzinfo=UTC)
+        entities = list(stage.execute(tmp_path, filters=PipelineFilter(since=since)))
+
+        media = [e for e in entities if isinstance(e, Media)]
+        assert len(media) == 1
+        assert media[0].original_filename == "new.jpg"
+
+    def test_until_filter(self, tmp_path: Path) -> None:
+        """Images after 'until' date are excluded."""
+        old = tmp_path / "old.jpg"
+        new = tmp_path / "new.jpg"
+        _create_minimal_jpeg(old)
+        _create_minimal_jpeg(new)
+
+        old_ts = datetime(2023, 1, 1, tzinfo=UTC).timestamp()
+        new_ts = datetime(2024, 6, 1, tzinfo=UTC).timestamp()
+        os.utime(old, (old_ts, old_ts))
+        os.utime(new, (new_ts, new_ts))
+
+        stage = ImageFolderStage()
+        until = datetime(2024, 1, 1, tzinfo=UTC)
+        entities = list(stage.execute(tmp_path, filters=PipelineFilter(until=until)))
+
+        media = [e for e in entities if isinstance(e, Media)]
+        assert len(media) == 1
+        assert media[0].original_filename == "old.jpg"

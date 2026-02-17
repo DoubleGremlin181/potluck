@@ -1,14 +1,13 @@
 """Reddit post ingestion from GDPR export."""
 
-import csv
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.social import Platform, PostType, SocialPost
 from potluck.pipeline.dtos import PipelineFilter
+from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
 from potluck.pipeline.utils.hashing import compute_content_hash
 from potluck.pipeline.utils.parsers import parse_datetime
 
@@ -37,7 +36,7 @@ def ingest_posts(
 
     logger.info(f"Processing Reddit posts at {posts_file}")
 
-    for row in _read_csv(posts_file):
+    for row in read_csv(posts_file):
         post_id = row.get("id", "")
         if not post_id:
             continue
@@ -85,13 +84,3 @@ def ingest_posts(
             body=body if body else None,
             is_saved=post_id in saved_post_ids,
         )
-
-
-def _read_csv(path: Path) -> Iterator[dict[str, Any]]:
-    """Read a Reddit CSV file using stdlib csv.DictReader.
-
-    We use stdlib csv instead of Polars parse_csv because Reddit's date
-    format ('2023-06-15 14:30:00 UTC') confuses Polars' type inference.
-    """
-    with path.open(encoding="utf-8", newline="") as f:
-        yield from csv.DictReader(f)

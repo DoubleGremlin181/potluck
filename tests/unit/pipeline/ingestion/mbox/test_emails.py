@@ -1,9 +1,11 @@
 """Tests for MBOX email ingester."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from potluck.models.base import EntityType, SourceType
 from potluck.models.email import Email, EmailFolder, EmailThread
+from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.mbox import MboxStage
 from potluck.pipeline.ingestion.mbox.emails import (
     _infer_folder,
@@ -208,3 +210,55 @@ class TestFindMboxFiles:
         """Single file path returns just that file."""
         paths, folder_map = find_mbox_files(TEST_MBOX)
         assert paths == [TEST_MBOX]
+
+
+class TestMboxDateFiltering:
+    """Tests for date range filtering."""
+
+    def test_since_filter(self) -> None:
+        """Emails before 'since' date are excluded."""
+        stage = MboxStage()
+        # Jan 16 00:00 — should exclude the two Jan 15 emails
+        since = datetime(2024, 1, 16, tzinfo=UTC)
+        entities = list(stage.execute(TEST_MBOX, filters=PipelineFilter(since=since)))
+
+        emails = [e for e in entities if isinstance(e, Email)]
+        assert all(e.occurred_at is not None and e.occurred_at >= since for e in emails)
+        assert len(emails) == 2  # msg003 (Jan 16) and msg004 (Jan 17)
+
+    def test_until_filter(self) -> None:
+        """Emails after 'until' date are excluded."""
+        stage = MboxStage()
+        # Jan 16 00:00 — should exclude msg003 (Jan 16 09:00) and msg004 (Jan 17)
+        until = datetime(2024, 1, 16, tzinfo=UTC)
+        entities = list(stage.execute(TEST_MBOX, filters=PipelineFilter(until=until)))
+
+        emails = [e for e in entities if isinstance(e, Email)]
+        assert all(e.occurred_at is not None and e.occurred_at < until for e in emails)
+        assert len(emails) == 2  # msg001 and msg002 (both Jan 15)
+
+
+class TestMboxSkipNoFromAddress:
+    """Test that emails without from_address are skipped."""
+
+    def test_email_without_from_skipped(self, tmp_path: Path) -> None:
+        """Emails missing the From header are skipped."""
+        mbox_content = (
+            "From - Thu Jan 15 10:00:00 2024\n"
+            "Message-ID: <no-from@example.com>\n"
+            "To: bob@example.com\n"
+            "Subject: No From\n"
+            "Date: Mon, 15 Jan 2024 10:00:00 +0000\n"
+            'Content-Type: text/plain; charset="utf-8"\n'
+            "\n"
+            "This email has no From header.\n"
+            "\n"
+        )
+        mbox_file = tmp_path / "test.mbox"
+        mbox_file.write_text(mbox_content)
+
+        stage = MboxStage()
+        entities = list(stage.execute(mbox_file))
+
+        emails = [e for e in entities if isinstance(e, Email)]
+        assert len(emails) == 0

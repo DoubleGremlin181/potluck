@@ -5,6 +5,7 @@ Handles importing data from YNAB budget exports including:
 - Plan CSV — Monthly budget allocations
 """
 
+import csv
 from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -114,8 +115,6 @@ def _find_csv(path: Path, suffix: str) -> Path | None:
 
 def _count_csv_rows(csv_path: Path) -> int:
     """Count data rows in a CSV file (excluding header), handling BOM."""
-    import csv
-
     try:
         with csv_path.open(encoding="utf-8-sig", newline="") as f:
             reader = csv.reader(f)

@@ -88,8 +88,8 @@ def _process_file(
         try:
             mtime = file_path.stat().st_mtime
             occurred_at = datetime.fromtimestamp(mtime, tz=UTC)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.debug(f"Could not get mtime for {file_path}: {e}")
 
     # Apply date filters
     if filters and occurred_at:
@@ -108,7 +108,8 @@ def _process_file(
     # Get file size and MIME type
     try:
         file_size = file_path.stat().st_size
-    except OSError:
+    except OSError as e:
+        logger.debug(f"Could not stat {file_path}: {e}")
         file_size = None
 
     mime_type, _ = mimetypes.guess_type(str(file_path))
