@@ -5,6 +5,8 @@ import struct
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from potluck.models.base import EntityType, SourceType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import PipelineFilter
@@ -225,6 +227,7 @@ class TestImageFolderDateFiltering:
 class TestImageHashFailureSkipsFile:
     """Tests that hash failure skips the file entirely."""
 
+    @pytest.mark.skipif(os.getuid() == 0, reason="Root can read any file regardless of permissions")
     def test_unreadable_file_skipped(self, tmp_path: Path) -> None:
         """File that cannot be hashed is skipped (returns None), not yielded with None hash."""
         # Create a valid JPEG and then make it unreadable
