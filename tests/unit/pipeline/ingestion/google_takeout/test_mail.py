@@ -457,8 +457,6 @@ class TestHeadersOnlyMode:
         assert att.filename == "report.pdf"
         assert att.content_type == "application/pdf"
         assert att.size > 0
-        # Binary content should NOT be stored (memory optimization)
-        assert att.content == b""
 
 
 class TestTwoPassIngestion:

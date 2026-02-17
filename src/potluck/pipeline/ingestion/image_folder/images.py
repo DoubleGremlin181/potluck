@@ -98,18 +98,18 @@ def _process_file(
         if filters.until and occurred_at >= filters.until:
             return None
 
-    # Compute file hash
+    # Compute file hash — required for deduplication
     try:
         file_hash = compute_file_hash(file_path)
     except (OSError, ValueError) as e:
-        logger.warning(f"Failed to compute hash for {file_path}: {e}")
-        file_hash = None
+        logger.warning(f"Skipping {file_path}: failed to compute hash: {e}")
+        return None
 
     # Get file size and MIME type
     try:
         file_size = file_path.stat().st_size
     except OSError as e:
-        logger.debug(f"Could not stat {file_path}: {e}")
+        logger.warning(f"Could not stat {file_path}: {e}")
         file_size = None
 
     mime_type, _ = mimetypes.guess_type(str(file_path))
@@ -120,8 +120,8 @@ def _process_file(
         rel_path = file_path.relative_to(base_path)
         if len(rel_path.parts) > 1:
             album_name = str(Path(*rel_path.parts[:-1]))
-    except ValueError:
-        pass
+    except ValueError as e:
+        logger.debug(f"Could not compute album name for {file_path}: {e}")
 
     return Media(
         source_type=SourceType.GENERIC,
@@ -154,12 +154,17 @@ def _extract_exif_date(file_path: Path) -> datetime | None:
     try:
         with file_path.open("rb") as f:
             tags = exifread.process_file(f, stop_tag="EXIF DateTimeOriginal", details=False)
+    except OSError as e:
+        logger.debug(f"Could not read EXIF from {file_path}: {e}")
+        return None
 
-        date_tag = tags.get("EXIF DateTimeOriginal")
-        if not date_tag:
-            return None
+    date_tag = tags.get("EXIF DateTimeOriginal")
+    if not date_tag:
+        return None
 
+    try:
         # EXIF date format: "2024:01:15 10:30:00"
         return datetime.strptime(str(date_tag), "%Y:%m:%d %H:%M:%S").replace(tzinfo=UTC)
-    except (OSError, ValueError, KeyError):
+    except ValueError as e:
+        logger.debug(f"Could not parse EXIF date {date_tag!r} from {file_path}: {e}")
         return None

@@ -16,6 +16,7 @@ from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.email import Email, EmailFolder, EmailThread
 from potluck.pipeline.dtos import PipelineFilter
+from potluck.pipeline.utils.hashing import compute_content_hash
 from potluck.pipeline.utils.parsers import MboxMessage, parse_mbox
 
 logger = get_logger(__name__)
@@ -209,7 +210,8 @@ def _is_mbox_file(path: Path) -> bool:
         with path.open("r", encoding="utf-8", errors="replace") as f:
             first_line = f.readline()
             return first_line.startswith("From ")
-    except OSError:
+    except OSError as e:
+        logger.debug(f"Could not read {path} for MBOX detection: {e}")
         return False
 
 
@@ -265,11 +267,9 @@ def _find_thread_root(
 
 def _passes_date_filter(occurred_at: datetime | None, filters: PipelineFilter | None) -> bool:
     """Check if a timestamp passes the date filter."""
-    if not filters or not occurred_at:
+    if not filters:
         return True
-    if filters.since and occurred_at < filters.since:
-        return False
-    return not (filters.until and occurred_at >= filters.until)
+    return filters.passes(occurred_at)
 
 
 class _ThreadStats:
@@ -304,9 +304,12 @@ def _create_email(
     if mbox_msg.body_html:
         size_bytes = (size_bytes or 0) + len(mbox_msg.body_html.encode("utf-8"))
 
-    content_hash = mbox_msg.message_id
-    if not content_hash and body_text:
-        content_hash = hashlib.sha256(body_text.encode()).hexdigest()
+    if mbox_msg.message_id:
+        content_hash = compute_content_hash(f"mbox_email:{mbox_msg.message_id}")
+    elif body_text:
+        content_hash = compute_content_hash(body_text)
+    else:
+        content_hash = None
 
     return Email(
         id=uuid4(),

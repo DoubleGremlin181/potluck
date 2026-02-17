@@ -53,7 +53,6 @@ def ingest_comments(
         permalink = row.get("permalink", "")
         subreddit = row.get("subreddit", "")
         body = row.get("body")
-        link = row.get("link", "")
 
         yield SocialComment(
             source_type=SourceType.REDDIT,
@@ -66,6 +65,5 @@ def ingest_comments(
             is_own_comment=True,
             community_name=subreddit,
             body=body if body else None,
-            post_title=link,
             is_saved=comment_id in saved_comment_ids,
         )

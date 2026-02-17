@@ -274,9 +274,6 @@ class MboxAttachment:
     content_type: str | None = None
     """MIME content type."""
 
-    content: bytes = field(default_factory=bytes, repr=False)
-    """Attachment content."""
-
     size: int = 0
     """Size in bytes."""
 
@@ -311,7 +308,7 @@ def parse_mbox(path: Path, *, headers_only: bool = False) -> Iterator[MboxMessag
             total += 1
             try:
                 yield _parse_email_message(msg, headers_only=headers_only)
-            except (KeyError, ValueError, TypeError, AttributeError) as e:
+            except (KeyError, ValueError) as e:
                 skipped += 1
                 # Include message index and any available identifiers for debugging
                 msg_id = msg.get("Message-ID", "<unknown>") if msg else "<unknown>"
@@ -504,8 +501,8 @@ def _get_text_content(part: Message) -> str | None:
 def _extract_attachment(part: Message, result: MboxMessage) -> None:
     """Extract attachment metadata from an email part.
 
-    Only stores metadata (filename, content type, size) — not the raw binary
-    content. This keeps memory bounded when processing large mailboxes.
+    Only stores metadata (filename, content type, size). The payload is
+    decoded to measure its size but is not retained on the result.
 
     Args:
         part: Email message part.
@@ -526,8 +523,11 @@ def _extract_attachment(part: Message, result: MboxMessage) -> None:
             size=size,
         )
         result.attachments.append(attachment)
-    except Exception as e:
-        filename = part.get_filename() or "<unknown>"
+    except (LookupError, UnicodeDecodeError, ValueError, KeyError, TypeError) as e:
+        try:
+            filename = part.get_filename() or "<unknown>"
+        except (LookupError, UnicodeDecodeError, ValueError, TypeError):
+            filename = "<unknown>"
         logger.warning(
             f"Failed to extract attachment '{filename}' from email: {e}. "
             "This attachment will not be available in the imported data."

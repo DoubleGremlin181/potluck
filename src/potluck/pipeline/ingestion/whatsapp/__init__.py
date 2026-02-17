@@ -38,7 +38,6 @@ class WhatsAppStage(BaseIngestionStage):
     FILENAME_PATTERNS: ClassVar[list[str]] = [
         r"\d+_\d{8}-decrypted",  # "16506835325_20251222-decrypted" folder
         r"msgstore\.db",  # Direct database file
-        r"WhatsApp Chat.*\.zip",  # Standard text export (future)
     ]
 
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {

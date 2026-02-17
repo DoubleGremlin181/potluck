@@ -4,11 +4,15 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
+from potluck.core.exceptions import IngestionError
 from potluck.models.base import EntityType, SourceType
 from potluck.models.financial import Account, Budget, Transaction, TransactionType
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.ynab import YNABStage
 from potluck.pipeline.ingestion.ynab.transactions import _parse_currency
+from potluck.pipeline.utils.hashing import compute_content_hash
 
 FIXTURES_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "ynab"
 
@@ -260,3 +264,70 @@ class TestYNABInvalidCurrency:
         """Unparseable currency values return None."""
         assert _parse_currency("not-a-number") is None
         assert _parse_currency("abc") is None
+
+
+class TestYNABBudgetIngestionError:
+    """Tests for IngestionError wrapping on budget CSV read failure."""
+
+    def test_budget_csv_read_failure_raises_ingestion_error(self, tmp_path: Path) -> None:
+        """Unreadable Plan CSV raises IngestionError."""
+        from potluck.pipeline.ingestion.ynab.budget import ingest_budgets
+
+        bad_csv = tmp_path / "Plan.csv"
+        bad_csv.write_bytes(b"\x80\x81\x82")  # Invalid UTF-8
+
+        with pytest.raises(IngestionError, match="Failed to read Plan CSV"):
+            list(ingest_budgets(bad_csv))
+
+    def test_budget_missing_file_raises_ingestion_error(self, tmp_path: Path) -> None:
+        """Non-existent Plan CSV raises IngestionError."""
+        from potluck.pipeline.ingestion.ynab.budget import ingest_budgets
+
+        missing = tmp_path / "Plan.csv"
+
+        with pytest.raises(IngestionError, match="Failed to read Plan CSV"):
+            list(ingest_budgets(missing))
+
+
+class TestYNABBudgetContentHashAndSourceId:
+    """Tests for budget content_hash and source_id correctness."""
+
+    def test_budget_source_id_format(self) -> None:
+        """Budget source_id follows 'ynab_budget:YEAR:MONTH:CATEGORY' pattern."""
+        stage = YNABStage()
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.BUDGET}))
+        budgets = [e for e in entities if isinstance(e, Budget)]
+
+        for budget in budgets:
+            assert budget.source_id is not None
+            parts = budget.source_id.split(":")
+            assert parts[0] == "ynab_budget"
+            assert len(parts) == 4  # ynab_budget:year:month:category
+
+    def test_budget_content_hash_uses_compute_content_hash(self) -> None:
+        """Budget content_hash is computed from the source_id via compute_content_hash."""
+        stage = YNABStage()
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.BUDGET}))
+        budgets = [e for e in entities if isinstance(e, Budget)]
+
+        for budget in budgets:
+            assert budget.source_id is not None
+            expected_hash = compute_content_hash(budget.source_id)
+            assert budget.content_hash == expected_hash
+
+    def test_budget_content_hash_deterministic(self) -> None:
+        """Budget content hashes are deterministic across runs."""
+        stage = YNABStage()
+        entities1 = list(stage.execute(FIXTURES_DIR, {EntityType.BUDGET}))
+        entities2 = list(stage.execute(FIXTURES_DIR, {EntityType.BUDGET}))
+
+        budgets1 = sorted(
+            [e for e in entities1 if isinstance(e, Budget)],
+            key=lambda b: b.source_id or "",
+        )
+        budgets2 = sorted(
+            [e for e in entities2 if isinstance(e, Budget)],
+            key=lambda b: b.source_id or "",
+        )
+        for b1, b2 in zip(budgets1, budgets2, strict=True):
+            assert b1.content_hash == b2.content_hash

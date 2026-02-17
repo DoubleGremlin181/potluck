@@ -1,12 +1,13 @@
 """Reddit subscription ingestion from GDPR export."""
 
-import csv
 from collections.abc import Iterator
 from pathlib import Path
 
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.social import Platform, Subscription, SubscriptionType
+from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
+from potluck.pipeline.utils.hashing import compute_content_hash
 
 logger = get_logger(__name__)
 
@@ -27,17 +28,17 @@ def ingest_subscriptions(path: Path) -> Iterator[Subscription]:
 
     logger.info(f"Processing Reddit subscriptions at {subs_file}")
 
-    with subs_file.open(encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            subreddit = row.get("subreddit", "").strip()
-            if not subreddit:
-                continue
+    for row in read_csv(subs_file):
+        subreddit = row.get("subreddit", "").strip()
+        if not subreddit:
+            continue
 
-            yield Subscription(
-                source_type=SourceType.REDDIT,
-                platform=Platform.REDDIT,
-                subscription_type=SubscriptionType.SUBREDDIT,
-                target_name=subreddit,
-                target_url=f"https://reddit.com/r/{subreddit}",
-            )
+        yield Subscription(
+            source_type=SourceType.REDDIT,
+            source_id=f"reddit_sub:{subreddit}",
+            content_hash=compute_content_hash(f"reddit_sub:{subreddit}"),
+            platform=Platform.REDDIT,
+            subscription_type=SubscriptionType.SUBREDDIT,
+            target_name=subreddit,
+            target_url=f"https://reddit.com/r/{subreddit}",
+        )

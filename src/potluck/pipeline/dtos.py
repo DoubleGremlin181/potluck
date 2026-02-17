@@ -49,6 +49,17 @@ class PipelineFilter(BaseModel):
             raise ValueError("'since' must be before 'until'")
         return self
 
+    def passes(self, occurred_at: datetime | None) -> bool:
+        """Check if a timestamp falls within this filter's date range.
+
+        Returns True when there is no timestamp or no active filters.
+        """
+        if not occurred_at:
+            return True
+        if self.since and occurred_at < self.since:
+            return False
+        return not (self.until and occurred_at >= self.until)
+
 
 class StageResult(BaseModel):
     """Result of executing a single stage on one item."""

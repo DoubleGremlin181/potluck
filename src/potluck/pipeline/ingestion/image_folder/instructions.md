@@ -18,4 +18,4 @@ potluck ingest /path/to/photos --source image_folder
 
 - EXIF dates are extracted from images for accurate timestamps
 - Album names are inferred from subdirectory structure
-- Files are deduplicated by SHA256 hash
+- SHA256 hashes are computed for downstream deduplication

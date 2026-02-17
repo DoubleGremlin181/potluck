@@ -12,6 +12,7 @@ from potluck.pipeline.ingestion.mbox.emails import (
     _strip_reply_prefix,
     find_mbox_files,
 )
+from potluck.pipeline.utils.hashing import compute_content_hash
 
 FIXTURES_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "mbox"
 TEST_MBOX = FIXTURES_DIR / "test.mbox"
@@ -262,3 +263,47 @@ class TestMboxSkipNoFromAddress:
 
         emails = [e for e in entities if isinstance(e, Email)]
         assert len(emails) == 0
+
+
+class TestMboxContentHashUsesComputeContentHash:
+    """Tests that email content_hash uses compute_content_hash."""
+
+    def test_email_content_hash_matches_compute_content_hash(self) -> None:
+        """Email content_hash equals compute_content_hash('mbox_email:MESSAGE_ID')."""
+        stage = MboxStage()
+        entities = list(stage.execute(TEST_MBOX))
+        emails = [e for e in entities if isinstance(e, Email)]
+
+        for email_entity in emails:
+            assert email_entity.message_id is not None
+            expected = compute_content_hash(f"mbox_email:{email_entity.message_id}")
+            assert email_entity.content_hash == expected
+
+    def test_email_content_hash_deterministic(self) -> None:
+        """Email content hashes are deterministic across runs."""
+        stage = MboxStage()
+        entities1 = list(stage.execute(TEST_MBOX))
+        entities2 = list(stage.execute(TEST_MBOX))
+
+        emails1 = sorted(
+            [e for e in entities1 if isinstance(e, Email)],
+            key=lambda e: e.message_id or "",
+        )
+        emails2 = sorted(
+            [e for e in entities2 if isinstance(e, Email)],
+            key=lambda e: e.message_id or "",
+        )
+        for e1, e2 in zip(emails1, emails2, strict=True):
+            assert e1.content_hash == e2.content_hash
+
+    def test_email_content_hash_is_not_raw_message_id(self) -> None:
+        """Email content_hash is a SHA256 hex string, not the raw message_id."""
+        stage = MboxStage()
+        entities = list(stage.execute(TEST_MBOX))
+        emails = [e for e in entities if isinstance(e, Email)]
+
+        for email_entity in emails:
+            # content_hash should be a 64-char hex SHA256, not the message_id itself
+            assert email_entity.content_hash is not None
+            assert len(email_entity.content_hash) == 64
+            assert email_entity.content_hash != email_entity.message_id

@@ -702,7 +702,10 @@ def upgrade() -> None:
         "subscriptions",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("platform", sa.String(), nullable=False),
         sa.Column("subscription_type", sa.String(), nullable=False),
         sa.Column("target_id", sa.String(), nullable=True),
@@ -712,13 +715,11 @@ def upgrade() -> None:
         sa.Column("subscribed_at", sa.DateTime(), nullable=True),
         sa.Column("unsubscribed_at", sa.DateTime(), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("subscriber_count", sa.Integer(), nullable=True),
-        sa.Column("post_count", sa.Integer(), nullable=True),
-        sa.Column("notifications_enabled", sa.Boolean(), nullable=False, server_default="true"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_subscriptions_target_id", "subscriptions", ["target_id"])
     op.create_index("ix_subscriptions_target_name", "subscriptions", ["target_name"])
+    op.create_index("ix_subscriptions_content_hash", "subscriptions", ["content_hash"])
 
     # === Browsing tables ===
 
@@ -1266,6 +1267,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("year", sa.Integer(), nullable=False),
         sa.Column("month", sa.Integer(), nullable=False),
         sa.Column("category", sa.String(), nullable=False),
@@ -1281,6 +1284,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_budgets_year", "budgets", ["year"])
     op.create_index("ix_budgets_category", "budgets", ["category"])
+    op.create_index("ix_budgets_content_hash", "budgets", ["content_hash"])
 
     # === Entity links and tags tables ===
 

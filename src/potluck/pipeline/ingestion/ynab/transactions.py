@@ -20,7 +20,9 @@ logger = get_logger(__name__)
 def _parse_currency(value: str | None) -> Decimal | None:
     """Parse YNAB currency format ($1,234.56) to Decimal.
 
-    Returns None for unparseable values so callers can skip the entry.
+    Returns Decimal("0.00") for empty/None values (YNAB uses blank cells for
+    zero amounts). Returns None for genuinely unparseable values so callers
+    can skip the entry.
     """
     if not value:
         return Decimal("0.00")

@@ -91,7 +91,8 @@ def _should_skip(file_path: Path, base_path: Path) -> bool:
     try:
         rel_parts = file_path.relative_to(base_path).parts
     except ValueError:
-        rel_parts = file_path.parts
+        # Cannot compute relative path — don't skip
+        return False
 
     return any(part.startswith(".") or part in SKIP_DIRS for part in rel_parts)
 
@@ -102,7 +103,7 @@ def _process_file(file_path: Path, base_path: Path) -> KnowledgeNote | None:
     try:
         file_size = file_path.stat().st_size
     except OSError as e:
-        logger.debug(f"Could not stat {file_path}: {e}")
+        logger.warning(f"Could not stat {file_path}: {e}")
         return None
 
     if file_size == 0:

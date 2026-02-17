@@ -48,19 +48,4 @@ AUDIO_EXTENSIONS = frozenset(
     }
 )
 
-DOCUMENT_EXTENSIONS = frozenset(
-    {
-        ".pdf",
-        ".doc",
-        ".docx",
-        ".xls",
-        ".xlsx",
-        ".ppt",
-        ".pptx",
-        ".odt",
-        ".ods",
-        ".odp",
-    }
-)
-
 ALL_MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | AUDIO_EXTENSIONS

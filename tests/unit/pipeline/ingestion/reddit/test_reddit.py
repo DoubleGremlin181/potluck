@@ -5,10 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from potluck.core.exceptions import IngestionError
 from potluck.models.base import EntityType, SourceType
 from potluck.models.social import Platform, PostType, SocialComment, SocialPost, Subscription
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.reddit import RedditStage
+from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
+from potluck.pipeline.utils.hashing import compute_content_hash
 
 FIXTURES_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "reddit"
 
@@ -197,3 +200,64 @@ class TestRedditEntityTypeFiltering:
         stage = RedditStage()
         entities = list(stage.execute(FIXTURES_DIR, {entity_type}))
         assert len(entities) > 0
+
+
+class TestRedditCsvUtilsIngestionError:
+    """Tests for csv_utils IngestionError wrapping."""
+
+    def test_missing_csv_raises_ingestion_error(self, tmp_path: Path) -> None:
+        """Non-existent CSV raises IngestionError."""
+        missing = tmp_path / "nonexistent.csv"
+        with pytest.raises(IngestionError, match="Failed to read CSV"):
+            list(read_csv(missing))
+
+    def test_invalid_encoding_raises_ingestion_error(self, tmp_path: Path) -> None:
+        """CSV with invalid encoding raises IngestionError."""
+        bad_file = tmp_path / "bad.csv"
+        # Write binary content that is not valid UTF-8
+        bad_file.write_bytes(b"header\n\x80\x81\x82\n")
+        with pytest.raises(IngestionError, match="Failed to read CSV"):
+            list(read_csv(bad_file))
+
+
+class TestRedditSubscriptionSourceIdAndContentHash:
+    """Tests for subscription source_id and content_hash fields."""
+
+    def test_subscription_source_id_format(self) -> None:
+        """Subscription source_id follows 'reddit_sub:SUBREDDIT' pattern."""
+        stage = RedditStage()
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
+        subs = [e for e in entities if isinstance(e, Subscription)]
+
+        for sub in subs:
+            assert sub.source_id is not None
+            assert sub.source_id.startswith("reddit_sub:")
+            subreddit_name = sub.source_id.split(":", 1)[1]
+            assert subreddit_name == sub.target_name
+
+    def test_subscription_content_hash_uses_compute_content_hash(self) -> None:
+        """Subscription content_hash is computed from the source_id via compute_content_hash."""
+        stage = RedditStage()
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
+        subs = [e for e in entities if isinstance(e, Subscription)]
+
+        for sub in subs:
+            expected_hash = compute_content_hash(f"reddit_sub:{sub.target_name}")
+            assert sub.content_hash == expected_hash
+
+    def test_subscription_content_hash_deterministic(self) -> None:
+        """Subscription content hashes are deterministic across runs."""
+        stage = RedditStage()
+        entities1 = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
+        entities2 = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
+
+        subs1 = sorted(
+            [e for e in entities1 if isinstance(e, Subscription)],
+            key=lambda s: s.source_id or "",
+        )
+        subs2 = sorted(
+            [e for e in entities2 if isinstance(e, Subscription)],
+            key=lambda s: s.source_id or "",
+        )
+        for s1, s2 in zip(subs1, subs2, strict=True):
+            assert s1.content_hash == s2.content_hash

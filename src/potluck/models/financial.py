@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity
+from potluck.models.base import BaseEntity, TimestampedEntity
 
 
 class AccountType(str, Enum):
@@ -247,17 +247,14 @@ class Transaction(TimestampedEntity, table=True):
     )
 
 
-class Budget(SimpleEntity, table=True):
+class Budget(BaseEntity, table=True):
     """Budget allocation for a category/month (YNAB-style budgeting)."""
 
     __tablename__ = "budgets"
 
-    source_type: SourceType = Field(
-        description="The source system this budget was imported from",
-    )
-
     # Budget period
     year: int = Field(
+        ge=1,
         index=True,
         description="Budget year",
     )

@@ -68,7 +68,11 @@ class MboxStage(BaseIngestionStage):
         entity_types: set[EntityType] | None = None,
         filters: PipelineFilter | None = None,
     ) -> Iterator[IngestableEntity]:
-        """Yield Email and EmailThread entities from MBOX files."""
+        """Yield EmailThread and Email entities from MBOX files.
+
+        EmailThread entities are yielded first to satisfy FK constraints,
+        followed by Email entities linked to their threads.
+        """
         types_to_process = (
             entity_types or self.SUPPORTED_ENTITY_TYPES
         ) & self.SUPPORTED_ENTITY_TYPES

@@ -3,16 +3,15 @@
 from datetime import datetime
 from enum import Enum
 from typing import ClassVar
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import TSVECTOR
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import IngestableEntity, SourceType, TimestampedEntity
-from potluck.models.utils import utc_now
+from potluck.models.base import BaseEntity, TimestampedEntity
 
 
 class Platform(str, Enum):
@@ -423,23 +422,10 @@ class SocialComment(TimestampedEntity, table=True):
     post: "SocialPost" = Relationship(back_populates="comments")
 
 
-class Subscription(SQLModel, IngestableEntity, table=True):
+class Subscription(BaseEntity, table=True):
     """Subscription to subreddits, channels, users, etc."""
 
     __tablename__ = "subscriptions"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the subscription",
-    )
-    created_at: datetime = Field(
-        default_factory=utc_now,
-        description="When the subscription was recorded",
-    )
-    source_type: SourceType = Field(
-        description="The source system this subscription was imported from",
-    )
 
     # Platform information
     platform: Platform = Field(
@@ -480,20 +466,4 @@ class Subscription(SQLModel, IngestableEntity, table=True):
     is_active: bool = Field(
         default=True,
         description="Whether currently subscribed",
-    )
-
-    # Target statistics (at time of export)
-    subscriber_count: int | None = Field(
-        default=None,
-        description="Number of subscribers the target has",
-    )
-    post_count: int | None = Field(
-        default=None,
-        description="Number of posts in the community",
-    )
-
-    # Notification preferences
-    notifications_enabled: bool = Field(
-        default=True,
-        description="Whether notifications are enabled",
     )

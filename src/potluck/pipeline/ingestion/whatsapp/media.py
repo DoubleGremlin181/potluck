@@ -58,6 +58,9 @@ def ingest_media(
     cursor = conn.cursor()
     cursor.execute(query, list(valid_chat_ids))
 
+    skipped = 0
+    yielded = 0
+
     while True:
         batch = cursor.fetchmany(MEDIA_BATCH_SIZE)
         if not batch:
@@ -69,6 +72,7 @@ def ingest_media(
             # Resolve file path relative to backup root
             resolved_path = _resolve_media_path(backup_root, file_path_str)
             if resolved_path is None:
+                skipped += 1
                 continue
 
             # Determine media type from file extension
@@ -78,7 +82,8 @@ def ingest_media(
             # Get actual file size and hash
             try:
                 file_size = resolved_path.stat().st_size
-            except OSError:
+            except OSError as e:
+                logger.debug(f"stat() failed for {resolved_path}, using db size: {e}")
                 file_size = db_file_size
 
             if file_size == 0:
@@ -110,7 +115,11 @@ def ingest_media(
                 file_hash=file_hash,
             )
 
+            yielded += 1
             yield media, msg_row_id
+
+    if skipped > 0:
+        logger.warning(f"WhatsApp media: {skipped} files could not be resolved, {yielded} yielded")
 
 
 def count_media(conn: sqlite3.Connection) -> int:
@@ -139,9 +148,14 @@ def _resolve_media_path(backup_root: Path, file_path_str: str) -> Path | None:
     # Try just the filename in common WhatsApp media subdirectories
     filename = Path(file_path_str).name
     for subdir in ["Media", "media", "."]:
-        for media_dir in (backup_root / subdir).rglob(filename):
-            if media_dir.is_file():
-                return media_dir
+        subdir_path = backup_root / subdir
+        if not subdir_path.is_dir():
+            continue
+        matches = [p for p in subdir_path.rglob(filename) if p.is_file()]
+        if matches:
+            if len(matches) > 1:
+                logger.debug(f"Multiple matches for {filename} in {subdir_path}, using first")
+            return matches[0]
 
     logger.debug(f"Media file not found: {file_path_str}")
     return None

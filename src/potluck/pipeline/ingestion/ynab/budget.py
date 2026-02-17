@@ -10,6 +10,7 @@ from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.financial import Budget
 from potluck.pipeline.ingestion.ynab.transactions import _parse_currency
+from potluck.pipeline.utils.hashing import compute_content_hash
 
 logger = get_logger(__name__)
 
@@ -59,8 +60,12 @@ def ingest_budgets(plan_path: Path) -> Iterator[Budget]:
                 year = month_dt.year
                 month = month_dt.month
 
+                source_id = f"ynab_budget:{year}:{month}:{category}"
+
                 yield Budget(
                     source_type=SourceType.YNAB,
+                    source_id=source_id,
+                    content_hash=compute_content_hash(source_id),
                     year=year,
                     month=month,
                     category=category,

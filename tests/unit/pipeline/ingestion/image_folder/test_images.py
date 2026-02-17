@@ -220,3 +220,48 @@ class TestImageFolderDateFiltering:
         media = [e for e in entities if isinstance(e, Media)]
         assert len(media) == 1
         assert media[0].original_filename == "old.jpg"
+
+
+class TestImageHashFailureSkipsFile:
+    """Tests that hash failure skips the file entirely."""
+
+    def test_unreadable_file_skipped(self, tmp_path: Path) -> None:
+        """File that cannot be hashed is skipped (returns None), not yielded with None hash."""
+        # Create a valid JPEG and then make it unreadable
+        img = tmp_path / "unreadable.jpg"
+        _create_minimal_jpeg(img)
+
+        # Also create a normal readable image
+        good = tmp_path / "good.jpg"
+        _create_minimal_jpeg(good)
+
+        # Make the first file unreadable
+        img.chmod(0o000)
+
+        try:
+            stage = ImageFolderStage()
+            entities = list(stage.execute(tmp_path))
+            media = [e for e in entities if isinstance(e, Media)]
+
+            # The unreadable file should be skipped entirely
+            # Only the good file should be yielded
+            assert len(media) == 1
+            assert media[0].original_filename == "good.jpg"
+            # The yielded entity must have a non-None content_hash
+            assert media[0].content_hash is not None
+        finally:
+            # Restore permissions for cleanup
+            img.chmod(0o644)
+
+    def test_all_yielded_media_have_content_hash(self, tmp_path: Path) -> None:
+        """Every Media entity yielded has a non-None content_hash."""
+        _create_minimal_jpeg(tmp_path / "a.jpg")
+        _create_minimal_png(tmp_path / "b.png")
+
+        stage = ImageFolderStage()
+        entities = list(stage.execute(tmp_path))
+        media = [e for e in entities if isinstance(e, Media)]
+
+        assert len(media) == 2
+        for m in media:
+            assert m.content_hash is not None
