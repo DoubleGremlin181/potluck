@@ -250,7 +250,7 @@ class TestTableColumns:
         run_migrations: None,  # noqa: ARG002 - fixture runs migrations
         db_connection: psycopg2.extensions.connection,
     ) -> None:
-        """Verify knowledge_notes table has NOT NULL source_type with default (BaseEntity)."""
+        """Verify knowledge_notes table has nullable source_type (SimpleEntity)."""
         with db_connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -261,10 +261,7 @@ class TestTableColumns:
             )
             result = cursor.fetchone()
             assert result is not None, "source_type column not found"
-            assert result[1] == "NO", "source_type should be NOT NULL for BaseEntity"
-            assert result[2] is not None and "manual" in result[2], (
-                "source_type should default to 'manual'"
-            )
+            assert result[1] == "YES", "source_type should be nullable for SimpleEntity"
 
     def test_accounts_table_columns(
         self,
