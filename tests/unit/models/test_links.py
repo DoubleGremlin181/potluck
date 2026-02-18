@@ -64,6 +64,7 @@ class TestEntityLinkModels:
             "bookmark",
             "person",
             "tag",
+            "document",
         }
         actual = {t.value for t in EntityType}
         assert actual == expected

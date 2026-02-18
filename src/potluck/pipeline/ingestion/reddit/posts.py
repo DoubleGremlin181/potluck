@@ -7,9 +7,8 @@ from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.social import Platform, PostType, SocialPost
 from potluck.pipeline.dtos import PipelineFilter
-from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
 from potluck.pipeline.utils.hashing import compute_content_hash
-from potluck.pipeline.utils.parsers import parse_datetime
+from potluck.pipeline.utils.parsers import parse_csv
 
 logger = get_logger(__name__)
 
@@ -36,12 +35,12 @@ def ingest_posts(
 
     logger.info(f"Processing Reddit posts at {posts_file}")
 
-    for row in read_csv(posts_file):
-        post_id = row.get("id", "")
+    for row in parse_csv(posts_file, date_columns=["date"], try_parse_dates=False):
+        post_id = str(row.get("id", ""))
         if not post_id:
             continue
 
-        occurred_at = parse_datetime(row.get("date"))
+        occurred_at = row.get("date")
 
         # Apply date filters
         if filters and occurred_at:
@@ -50,10 +49,10 @@ def ingest_posts(
             if filters.until and occurred_at >= filters.until:
                 continue
 
-        permalink = row.get("permalink", "")
-        url = row.get("url", "")
-        subreddit = row.get("subreddit", "")
-        title = row.get("title", "")
+        permalink = str(row.get("permalink", ""))
+        url = str(row.get("url", ""))
+        subreddit = str(row.get("subreddit", ""))
+        title = str(row.get("title", ""))
         body = row.get("body")
 
         # Determine post type: if URL differs from permalink, it's a link post

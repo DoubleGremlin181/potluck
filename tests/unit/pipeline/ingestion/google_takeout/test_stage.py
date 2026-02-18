@@ -44,6 +44,7 @@ class TestGoogleTakeoutStageRegistration:
             EntityType.BROWSING_HISTORY,
             EntityType.BOOKMARK,
             EntityType.LOCATION_VISIT,
+            EntityType.DOCUMENT,
         }
         assert expected == GoogleTakeoutStage.SUPPORTED_ENTITY_TYPES
 

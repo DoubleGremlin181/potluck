@@ -3,10 +3,11 @@
 from pathlib import Path
 
 from potluck.models.base import EntityType, SourceType
-from potluck.models.notes import KnowledgeNote
+from potluck.models.documents import Document
 from potluck.pipeline.ingestion.text_files import TextFilesStage
-from potluck.pipeline.ingestion.text_files.notes import (
+from potluck.pipeline.ingestion.text_files.documents import (
     _strip_front_matter,
+    _strip_html_tags,
     is_obsidian_vault,
 )
 
@@ -23,8 +24,8 @@ class TestTextFilesDetection:
         stage = TextFilesStage()
         result = stage.detect(tmp_path)
 
-        assert EntityType.KNOWLEDGE_NOTE in result.entity_counts
-        assert result.entity_counts[EntityType.KNOWLEDGE_NOTE] == 2
+        assert EntityType.DOCUMENT in result.entity_counts
+        assert result.entity_counts[EntityType.DOCUMENT] == 2
 
     def test_detect_md_files(self, tmp_path: Path) -> None:
         """Detection counts .md files."""
@@ -34,7 +35,7 @@ class TestTextFilesDetection:
         stage = TextFilesStage()
         result = stage.detect(tmp_path)
 
-        assert result.entity_counts[EntityType.KNOWLEDGE_NOTE] == 2
+        assert result.entity_counts[EntityType.DOCUMENT] == 2
 
     def test_detect_obsidian_vault(self, tmp_path: Path) -> None:
         """Obsidian vaults are detected and labeled in metadata."""
@@ -57,17 +58,29 @@ class TestTextFileIngestion:
     """Tests for text file ingestion."""
 
     def test_ingest_simple_files(self, tmp_path: Path) -> None:
-        """Simple text files are ingested as KnowledgeNotes."""
+        """Simple text files are ingested as Documents."""
         (tmp_path / "note1.txt").write_text("First note content")
         (tmp_path / "note2.md").write_text("# Second Note\n\nMarkdown content")
 
         stage = TextFilesStage()
         entities = list(stage.execute(tmp_path))
 
-        notes = [e for e in entities if isinstance(e, KnowledgeNote)]
-        assert len(notes) == 2
-        assert all(n.source_type == SourceType.GENERIC for n in notes)
-        assert all(n.created_by == "import" for n in notes)
+        docs = [e for e in entities if isinstance(e, Document)]
+        assert len(docs) == 2
+        assert all(d.source_type == SourceType.GENERIC for d in docs)
+        assert all(d.file_extension is not None for d in docs)
+
+    def test_document_has_title_and_extension(self, tmp_path: Path) -> None:
+        """Documents have title from filename stem and file_extension."""
+        (tmp_path / "my-note.md").write_text("Some content")
+
+        stage = TextFilesStage()
+        entities = list(stage.execute(tmp_path))
+
+        docs = [e for e in entities if isinstance(e, Document)]
+        assert len(docs) == 1
+        assert docs[0].title == "my-note"
+        assert docs[0].file_extension == ".md"
 
     def test_relative_source_id(self, tmp_path: Path) -> None:
         """Source IDs use relative paths."""
@@ -78,9 +91,9 @@ class TestTextFileIngestion:
         stage = TextFilesStage()
         entities = list(stage.execute(tmp_path))
 
-        notes = [e for e in entities if isinstance(e, KnowledgeNote)]
-        assert len(notes) == 1
-        assert notes[0].source_id == "subfolder/deep.md"
+        docs = [e for e in entities if isinstance(e, Document)]
+        assert len(docs) == 1
+        assert docs[0].source_id == "subfolder/deep.md"
 
     def test_skip_empty_files(self, tmp_path: Path) -> None:
         """Empty files are skipped."""
@@ -113,9 +126,9 @@ class TestTextFileIngestion:
         stage = TextFilesStage()
         entities = list(stage.execute(tmp_path))
 
-        notes = [e for e in entities if isinstance(e, KnowledgeNote)]
-        assert len(notes) == 1
-        assert notes[0].source_id == "visible.md"
+        docs = [e for e in entities if isinstance(e, Document)]
+        assert len(docs) == 1
+        assert docs[0].source_id == "visible.md"
 
     def test_content_hash_deterministic(self, tmp_path: Path) -> None:
         """Content hashes are deterministic."""
@@ -125,9 +138,9 @@ class TestTextFileIngestion:
         entities1 = list(stage.execute(tmp_path))
         entities2 = list(stage.execute(tmp_path))
 
-        note1 = next(e for e in entities1 if isinstance(e, KnowledgeNote))
-        note2 = next(e for e in entities2 if isinstance(e, KnowledgeNote))
-        assert note1.content_hash == note2.content_hash
+        doc1 = next(e for e in entities1 if isinstance(e, Document))
+        doc2 = next(e for e in entities2 if isinstance(e, Document))
+        assert doc1.content_hash == doc2.content_hash
 
 
 class TestObsidianVault:
@@ -144,9 +157,9 @@ class TestObsidianVault:
         stage = TextFilesStage()
         entities = list(stage.execute(tmp_path))
 
-        notes = [e for e in entities if isinstance(e, KnowledgeNote)]
-        assert len(notes) == 1
-        assert notes[0].source_id == "my-note.md"
+        docs = [e for e in entities if isinstance(e, Document)]
+        assert len(docs) == 1
+        assert docs[0].source_id == "my-note.md"
 
     def test_skip_trash_directory(self, tmp_path: Path) -> None:
         """The .trash/ directory is skipped."""
@@ -176,10 +189,10 @@ class TestObsidianVault:
         stage = TextFilesStage()
         entities = list(stage.execute(tmp_path))
 
-        notes = [e for e in entities if isinstance(e, KnowledgeNote)]
-        assert len(notes) == 1
-        assert notes[0].content.strip() == "Actual content here."
-        assert "---" not in notes[0].content
+        docs = [e for e in entities if isinstance(e, Document)]
+        assert len(docs) == 1
+        assert docs[0].content.strip() == "Actual content here."
+        assert "---" not in docs[0].content
 
 
 class TestFrontMatterParsing:
@@ -193,6 +206,49 @@ class TestFrontMatterParsing:
     def test_strip_no_front_matter(self) -> None:
         """Text without front matter is returned unchanged."""
         assert _strip_front_matter("Just text") == "Just text"
+
+
+class TestHTMLStripping:
+    """Tests for HTML tag stripping."""
+
+    def test_strip_simple_html(self) -> None:
+        """Simple HTML tags are stripped."""
+        html = "<p>Hello <b>world</b></p>"
+        assert _strip_html_tags(html) == "Hello world"
+
+    def test_strip_nested_html(self) -> None:
+        """Nested HTML tags are stripped."""
+        html = "<div><h1>Title</h1><p>Some <em>emphasized</em> text</p></div>"
+        assert _strip_html_tags(html) == "TitleSome emphasized text"
+
+    def test_strip_html_with_no_tags(self) -> None:
+        """Plain text without HTML tags is returned unchanged."""
+        assert _strip_html_tags("Just plain text") == "Just plain text"
+
+    def test_ingest_html_file(self, tmp_path: Path) -> None:
+        """HTML files are ingested with tags stripped."""
+        (tmp_path / "page.html").write_text(
+            "<html><body><h1>Title</h1><p>Content here</p></body></html>"
+        )
+
+        stage = TextFilesStage()
+        entities = list(stage.execute(tmp_path))
+
+        docs = [e for e in entities if isinstance(e, Document)]
+        assert len(docs) == 1
+        assert docs[0].file_extension == ".html"
+        assert "<" not in docs[0].content
+        assert "Content here" in docs[0].content
+
+    def test_detect_html_files(self, tmp_path: Path) -> None:
+        """Detection counts .html files."""
+        (tmp_path / "page.html").write_text("<p>Hello</p>")
+
+        stage = TextFilesStage()
+        result = stage.detect(tmp_path)
+
+        assert EntityType.DOCUMENT in result.entity_counts
+        assert result.entity_counts[EntityType.DOCUMENT] == 1
 
 
 class TestEncodingHandling:

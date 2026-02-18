@@ -1,8 +1,9 @@
 """Text files and Obsidian vault ingestion stage.
 
-Handles importing notes from:
+Handles importing documents from:
 - Plain .txt files
 - Markdown .md files
+- HTML files
 - Obsidian vaults (with .obsidian/ directory detection)
 """
 
@@ -15,9 +16,9 @@ from potluck.models.base import EntityType, IngestableEntity, SourceType
 from potluck.pipeline.dtos import DetectionResult, PipelineFilter
 from potluck.pipeline.ingestion.base import BaseIngestionStage
 from potluck.pipeline.ingestion.registry import register
-from potluck.pipeline.ingestion.text_files.notes import (
-    count_text_files,
-    ingest_text_files,
+from potluck.pipeline.ingestion.text_files.documents import (
+    count_document_files,
+    ingest_documents,
     is_obsidian_vault,
 )
 
@@ -28,7 +29,7 @@ logger = get_logger(__name__)
 class TextFilesStage(BaseIngestionStage):
     """Ingestion stage for text files and Obsidian vaults.
 
-    Scans directories recursively for .txt and .md files.
+    Scans directories recursively for .txt, .md, and .html files.
     Detects Obsidian vaults by the presence of a .obsidian/ directory.
     """
 
@@ -43,7 +44,7 @@ class TextFilesStage(BaseIngestionStage):
     ]
 
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {
-        EntityType.KNOWLEDGE_NOTE,
+        EntityType.DOCUMENT,
     }
 
     def detect(self, path: Path) -> DetectionResult:
@@ -51,9 +52,9 @@ class TextFilesStage(BaseIngestionStage):
         entity_counts: dict[EntityType, int] = {}
         metadata: dict[str, str] = {}
 
-        count = count_text_files(path)
+        count = count_document_files(path)
         if count > 0:
-            entity_counts[EntityType.KNOWLEDGE_NOTE] = count
+            entity_counts[EntityType.DOCUMENT] = count
             metadata["source"] = "Obsidian Vault" if is_obsidian_vault(path) else "Text Files"
 
         return DetectionResult(entity_counts=entity_counts, metadata=metadata)
@@ -64,13 +65,13 @@ class TextFilesStage(BaseIngestionStage):
         entity_types: set[EntityType] | None = None,
         filters: PipelineFilter | None = None,
     ) -> Iterator[IngestableEntity]:
-        """Yield KnowledgeNote entities from text files."""
+        """Yield Document entities from text files."""
         types_to_process = (
             entity_types or self.SUPPORTED_ENTITY_TYPES
         ) & self.SUPPORTED_ENTITY_TYPES
 
-        if EntityType.KNOWLEDGE_NOTE not in types_to_process:
+        if EntityType.DOCUMENT not in types_to_process:
             return
 
-        # KnowledgeNote has no occurred_at, so date filtering is not applicable
-        yield from ingest_text_files(path)
+        # Document has no occurred_at, so date filtering is not applicable
+        yield from ingest_documents(path)

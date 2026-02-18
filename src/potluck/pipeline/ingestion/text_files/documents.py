@@ -1,17 +1,19 @@
-"""Text file and Obsidian vault ingestion."""
+"""Document ingestion from text files, Obsidian vaults, and HTML files."""
 
 import re
 from collections.abc import Iterator
+from html.parser import HTMLParser
+from io import StringIO
 from pathlib import Path
 
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
-from potluck.models.notes import KnowledgeNote
+from potluck.models.documents import Document
 from potluck.pipeline.utils.hashing import compute_content_hash
 
 logger = get_logger(__name__)
 
-TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".text", ".rst"}
+TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".text", ".rst", ".html"}
 MAX_FILE_SIZE = 1_000_000  # 1MB
 
 # Directories to skip
@@ -21,28 +23,50 @@ SKIP_DIRS = {".obsidian", ".trash", ".git", ".svn", "__pycache__", "node_modules
 _FRONT_MATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
-def ingest_text_files(
+class _HTMLStripper(HTMLParser):
+    """HTML parser that strips tags and extracts plain text."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._text = StringIO()
+
+    def handle_data(self, data: str) -> None:
+        self._text.write(data)
+
+    def get_text(self) -> str:
+        return self._text.getvalue()
+
+
+def _strip_html_tags(html: str) -> str:
+    """Strip HTML tags from content, returning plain text."""
+    stripper = _HTMLStripper()
+    stripper.feed(html)
+    return stripper.get_text()
+
+
+def ingest_documents(
     path: Path,
     base_path: Path | None = None,
-) -> Iterator[KnowledgeNote]:
-    """Ingest text files as KnowledgeNote entities.
+) -> Iterator[Document]:
+    """Ingest text files as Document entities.
 
-    Recursively scans for .txt and .md files, with special handling for
-    Obsidian vaults (skip .obsidian/ directory, parse YAML front matter).
+    Recursively scans for .txt, .md, .html, and other text files, with special
+    handling for Obsidian vaults (skip .obsidian/ directory, parse YAML front
+    matter) and HTML files (strip tags).
 
     Args:
         path: Path to scan (file or directory).
         base_path: Root path for computing relative source_id. Defaults to path.
 
     Yields:
-        KnowledgeNote entities.
+        Document entities.
     """
     base_path = base_path or path
 
     if path.is_file():
-        note = _process_file(path, base_path)
-        if note:
-            yield note
+        doc = _process_file(path, base_path)
+        if doc:
+            yield doc
         return
 
     logger.info(f"Processing text files at {path}")
@@ -59,9 +83,9 @@ def ingest_text_files(
         if _should_skip(file_path, base_path):
             continue
 
-        note = _process_file(file_path, base_path)
-        if note:
-            yield note
+        doc = _process_file(file_path, base_path)
+        if doc:
+            yield doc
 
 
 def is_obsidian_vault(path: Path) -> bool:
@@ -69,7 +93,7 @@ def is_obsidian_vault(path: Path) -> bool:
     return path.is_dir() and (path / ".obsidian").is_dir()
 
 
-def count_text_files(path: Path) -> int:
+def count_document_files(path: Path) -> int:
     """Count text files in a directory (excluding hidden dirs)."""
     if path.is_file():
         return 1 if path.suffix.lower() in TEXT_EXTENSIONS else 0
@@ -97,8 +121,8 @@ def _should_skip(file_path: Path, base_path: Path) -> bool:
     return any(part.startswith(".") or part in SKIP_DIRS for part in rel_parts)
 
 
-def _process_file(file_path: Path, base_path: Path) -> KnowledgeNote | None:
-    """Process a single text file into a KnowledgeNote."""
+def _process_file(file_path: Path, base_path: Path) -> Document | None:
+    """Process a single text file into a Document."""
     # Check file size
     try:
         file_size = file_path.stat().st_size
@@ -117,8 +141,12 @@ def _process_file(file_path: Path, base_path: Path) -> KnowledgeNote | None:
     if not content:
         return None
 
-    # Strip YAML front matter for the note content
-    content_body = _strip_front_matter(content)
+    # Strip HTML tags for .html files, YAML front matter for markdown
+    if file_path.suffix.lower() == ".html":
+        content_body = _strip_html_tags(content)
+    else:
+        content_body = _strip_front_matter(content)
+
     if not content_body.strip():
         return None
 
@@ -128,12 +156,13 @@ def _process_file(file_path: Path, base_path: Path) -> KnowledgeNote | None:
     except ValueError:
         relative_path = file_path.name
 
-    return KnowledgeNote(
+    return Document(
         source_type=SourceType.GENERIC,
         source_id=relative_path,
         content_hash=compute_content_hash(content_body),
+        title=file_path.stem,
         content=content_body,
-        created_by="import",
+        file_extension=file_path.suffix.lower(),
     )
 
 

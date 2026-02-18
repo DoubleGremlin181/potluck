@@ -7,9 +7,8 @@ from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.social import Platform, SocialComment
 from potluck.pipeline.dtos import PipelineFilter
-from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
 from potluck.pipeline.utils.hashing import compute_content_hash
-from potluck.pipeline.utils.parsers import parse_datetime
+from potluck.pipeline.utils.parsers import parse_csv
 
 logger = get_logger(__name__)
 
@@ -36,12 +35,12 @@ def ingest_comments(
 
     logger.info(f"Processing Reddit comments at {comments_file}")
 
-    for row in read_csv(comments_file):
-        comment_id = row.get("id", "")
+    for row in parse_csv(comments_file, date_columns=["date"], try_parse_dates=False):
+        comment_id = str(row.get("id", ""))
         if not comment_id:
             continue
 
-        occurred_at = parse_datetime(row.get("date"))
+        occurred_at = row.get("date")
 
         # Apply date filters
         if filters and occurred_at:
@@ -50,8 +49,8 @@ def ingest_comments(
             if filters.until and occurred_at >= filters.until:
                 continue
 
-        permalink = row.get("permalink", "")
-        subreddit = row.get("subreddit", "")
+        permalink = str(row.get("permalink", ""))
+        subreddit = str(row.get("subreddit", ""))
         body = row.get("body")
 
         yield SocialComment(

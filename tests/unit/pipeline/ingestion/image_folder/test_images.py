@@ -176,7 +176,7 @@ class TestMediaTypeDetection:
         assert _get_media_type(".flac") == MediaType.AUDIO
 
     def test_unknown_type(self) -> None:
-        assert _get_media_type(".xyz") == MediaType.OTHER
+        assert _get_media_type(".xyz") is None
 
 
 class TestImageFolderDateFiltering:

@@ -6,8 +6,8 @@ from pathlib import Path
 from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.social import Platform, Subscription, SubscriptionType
-from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
 from potluck.pipeline.utils.hashing import compute_content_hash
+from potluck.pipeline.utils.parsers import parse_csv
 
 logger = get_logger(__name__)
 
@@ -28,8 +28,8 @@ def ingest_subscriptions(path: Path) -> Iterator[Subscription]:
 
     logger.info(f"Processing Reddit subscriptions at {subs_file}")
 
-    for row in read_csv(subs_file):
-        subreddit = row.get("subreddit", "").strip()
+    for row in parse_csv(subs_file, try_parse_dates=False):
+        subreddit = str(row.get("subreddit", "")).strip()
         if not subreddit:
             continue
 

@@ -16,12 +16,11 @@ from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.email import Email, EmailFolder, EmailThread
 from potluck.pipeline.dtos import PipelineFilter
+from potluck.pipeline.utils.email import compute_email_size, generate_snippet
 from potluck.pipeline.utils.hashing import compute_content_hash
 from potluck.pipeline.utils.parsers import MboxMessage, parse_mbox
 
 logger = get_logger(__name__)
-
-SNIPPET_MAX_LENGTH = 200
 
 # Filename-to-folder mapping for Thunderbird and other clients
 FOLDER_NAME_MAP: dict[str, EmailFolder] = {
@@ -79,7 +78,7 @@ def ingest_emails(
         logger.debug(f"First pass (headers): {mbox_path}")
 
         for mbox_msg in parse_mbox(mbox_path, headers_only=True):
-            if not _passes_date_filter(mbox_msg.date, filters):
+            if filters and not filters.passes(mbox_msg.date):
                 continue
 
             msg_id = mbox_msg.message_id
@@ -134,7 +133,7 @@ def ingest_emails(
         logger.debug(f"Second pass (emails): {mbox_path}")
 
         for mbox_msg in parse_mbox(mbox_path):
-            if not _passes_date_filter(mbox_msg.date, filters):
+            if filters and not filters.passes(mbox_msg.date):
                 continue
 
             msg_id = mbox_msg.message_id
@@ -265,13 +264,6 @@ def _find_thread_root(
     return msg_id
 
 
-def _passes_date_filter(occurred_at: datetime | None, filters: PipelineFilter | None) -> bool:
-    """Check if a timestamp passes the date filter."""
-    if not filters:
-        return True
-    return filters.passes(occurred_at)
-
-
 class _ThreadStats:
     """Lightweight statistics for a thread collected during first pass."""
 
@@ -296,13 +288,9 @@ def _create_email(
         return None
 
     body_text = mbox_msg.body_plain or ""
-    snippet = None
-    if body_text:
-        snippet = body_text[:SNIPPET_MAX_LENGTH].replace("\n", " ").strip()
+    snippet = generate_snippet(mbox_msg.body_plain)
 
-    size_bytes = len(body_text.encode("utf-8")) if body_text else None
-    if mbox_msg.body_html:
-        size_bytes = (size_bytes or 0) + len(mbox_msg.body_html.encode("utf-8"))
+    size_bytes = compute_email_size(mbox_msg.body_plain, mbox_msg.body_html)
 
     if mbox_msg.message_id:
         content_hash = compute_content_hash(f"mbox_email:{mbox_msg.message_id}")

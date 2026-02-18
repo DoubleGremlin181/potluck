@@ -159,6 +159,7 @@ def parse_csv(
     date_columns: list[str] | None = None,
     delimiter: str = ",",
     encoding: str = "utf-8",
+    try_parse_dates: bool = True,
 ) -> Iterator[dict[str, Any]]:
     """Parse a CSV file and yield rows as dictionaries.
 
@@ -173,6 +174,9 @@ def parse_csv(
         date_columns: Column names to parse as datetimes.
         delimiter: CSV delimiter character.
         encoding: File encoding.
+        try_parse_dates: Whether Polars should attempt to auto-detect date columns.
+            Set to False when date formats confuse Polars' type inference
+            (use date_columns for manual parsing instead).
 
     Yields:
         Dict for each row with column names as keys.
@@ -190,7 +194,7 @@ def parse_csv(
             encoding=encoding if encoding != "utf-8" else "utf8",
             infer_schema_length=1000,  # Infer types from first 1000 rows
             null_values=["", "null", "NULL", "None", "none", "NA", "N/A", "n/a"],
-            try_parse_dates=True,  # Auto-detect date columns
+            try_parse_dates=try_parse_dates,
         )
 
         # Convert to Python dicts and yield rows

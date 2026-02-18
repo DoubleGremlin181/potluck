@@ -27,6 +27,7 @@ class TestGetSearchableEntityTypes:
             EntityType.SOCIAL_POST,
             EntityType.SOCIAL_COMMENT,
             EntityType.KNOWLEDGE_NOTE,
+            EntityType.DOCUMENT,
             EntityType.MEDIA,
             EntityType.CALENDAR_EVENT,
             EntityType.BROWSING_HISTORY,

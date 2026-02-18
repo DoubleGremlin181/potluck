@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from potluck.core.exceptions import IngestionError
+from potluck.core.exceptions import PipelineError
 from potluck.models.base import EntityType, SourceType
 from potluck.models.social import Platform, PostType, SocialComment, SocialPost, Subscription
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.reddit import RedditStage
-from potluck.pipeline.ingestion.reddit.csv_utils import read_csv
 from potluck.pipeline.utils.hashing import compute_content_hash
+from potluck.pipeline.utils.parsers import parse_csv
 
 FIXTURES_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "reddit"
 
@@ -202,22 +202,22 @@ class TestRedditEntityTypeFiltering:
         assert len(entities) > 0
 
 
-class TestRedditCsvUtilsIngestionError:
-    """Tests for csv_utils IngestionError wrapping."""
+class TestRedditCsvPipelineError:
+    """Tests for parse_csv PipelineError wrapping."""
 
-    def test_missing_csv_raises_ingestion_error(self, tmp_path: Path) -> None:
-        """Non-existent CSV raises IngestionError."""
+    def test_missing_csv_raises_pipeline_error(self, tmp_path: Path) -> None:
+        """Non-existent CSV raises PipelineError."""
         missing = tmp_path / "nonexistent.csv"
-        with pytest.raises(IngestionError, match="Failed to read CSV"):
-            list(read_csv(missing))
+        with pytest.raises(PipelineError, match="Could not read"):
+            list(parse_csv(missing))
 
-    def test_invalid_encoding_raises_ingestion_error(self, tmp_path: Path) -> None:
-        """CSV with invalid encoding raises IngestionError."""
+    def test_invalid_encoding_raises_pipeline_error(self, tmp_path: Path) -> None:
+        """CSV with invalid encoding raises PipelineError."""
         bad_file = tmp_path / "bad.csv"
         # Write binary content that is not valid UTF-8
         bad_file.write_bytes(b"header\n\x80\x81\x82\n")
-        with pytest.raises(IngestionError, match="Failed to read CSV"):
-            list(read_csv(bad_file))
+        with pytest.raises(PipelineError, match="CSV parsing error"):
+            list(parse_csv(bad_file))
 
 
 class TestRedditSubscriptionSourceIdAndContentHash:

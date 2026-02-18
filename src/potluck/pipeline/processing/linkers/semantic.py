@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
+from potluck.models.documents import Document
 from potluck.models.links import EntityLink, LinkType
 from potluck.models.media import EmbeddingType, MediaEmbedding
 from potluck.models.notes import KnowledgeNote
@@ -55,6 +56,7 @@ class SemanticLinker(BaseLinker):
     Supports:
     - Media entities via MediaEmbedding table (CLIP, OCR, caption embeddings)
     - KnowledgeNote entities via inline embedding field
+    - Document entities via inline embedding field
     """
 
     NAME: ClassVar[str] = "semantic"
@@ -99,6 +101,8 @@ class SemanticLinker(BaseLinker):
             return self._find_media_links(session, entity_ids)
         elif entity_type == EntityType.KNOWLEDGE_NOTE:
             return self._find_note_links(session, entity_ids)
+        elif entity_type == EntityType.DOCUMENT:
+            return self._find_document_links(session, entity_ids)
         else:
             # Other entity types don't have embeddings yet
             logger.debug(f"Entity type {entity_type} has no embedding support")
@@ -214,4 +218,61 @@ class SemanticLinker(BaseLinker):
                     )
 
         logger.debug(f"Found {len(links)} semantic links for notes")
+        return links
+
+    def _find_document_links(
+        self,
+        session: Session,
+        entity_ids: list[UUID],
+    ) -> list[EntityLink]:
+        """Find semantic links between documents via inline embeddings.
+
+        Args:
+            session: Database session.
+            entity_ids: List of document IDs.
+
+        Returns:
+            List of SIMILAR EntityLink records.
+        """
+        # Fetch documents with embeddings
+        stmt = (
+            select(Document)
+            .where(Document.id.in_(entity_ids))  # type: ignore[attr-defined]
+            .where(Document.embedding.isnot(None))  # type: ignore[union-attr]
+        )
+        result = session.exec(stmt)
+        documents = list(result.all())
+
+        if len(documents) < 2:
+            return []
+
+        # Build embedding lookup
+        embedding_map: dict[UUID, list[float]] = {
+            d.id: d.embedding for d in documents if d.embedding is not None
+        }
+
+        # Compare all pairs
+        links: list[EntityLink] = []
+        doc_ids = list(embedding_map.keys())
+
+        for i, id_a in enumerate(doc_ids):
+            vec_a = embedding_map[id_a]
+            for id_b in doc_ids[i + 1 :]:
+                vec_b = embedding_map[id_b]
+
+                similarity = cosine_similarity(vec_a, vec_b)
+
+                if similarity >= self._similarity_threshold:
+                    links.append(
+                        EntityLink(
+                            source_type=EntityType.DOCUMENT,
+                            source_id=id_a,
+                            target_type=EntityType.DOCUMENT,
+                            target_id=id_b,
+                            link_type=LinkType.SIMILAR,
+                            confidence=similarity,
+                        )
+                    )
+
+        logger.debug(f"Found {len(links)} semantic links for documents")
         return links

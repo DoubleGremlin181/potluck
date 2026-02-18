@@ -1,5 +1,6 @@
 """Base ingestion stage protocol and common types."""
 
+import importlib
 from abc import abstractmethod
 from collections.abc import Iterator
 from importlib.resources import files
@@ -142,8 +143,6 @@ class BaseIngestionStage(Stage[Path, Iterator[IngestableEntity]]):
         package (e.g. ``potluck.pipeline.ingestion.google_takeout.photos`` →
         ``potluck.pipeline.ingestion.google_takeout``).
         """
-        import importlib
-
         module = cls.__module__
         mod = importlib.import_module(module)
         # __init__.py files have __path__; regular modules do not

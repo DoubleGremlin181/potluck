@@ -77,6 +77,8 @@ def _process_file(
     """Process a single media file into a Media entity."""
     suffix = file_path.suffix.lower()
     media_type = _get_media_type(suffix)
+    if media_type is None:
+        return None
 
     # Extract EXIF date for occurred_at (images only)
     occurred_at = None
@@ -138,7 +140,7 @@ def _process_file(
     )
 
 
-def _get_media_type(suffix: str) -> MediaType:
+def _get_media_type(suffix: str) -> MediaType | None:
     """Determine MediaType from file extension."""
     if suffix in IMAGE_EXTENSIONS:
         return MediaType.IMAGE
@@ -146,7 +148,7 @@ def _get_media_type(suffix: str) -> MediaType:
         return MediaType.VIDEO
     if suffix in AUDIO_EXTENSIONS:
         return MediaType.AUDIO
-    return MediaType.OTHER
+    return None
 
 
 def _extract_exif_date(file_path: Path) -> datetime | None:

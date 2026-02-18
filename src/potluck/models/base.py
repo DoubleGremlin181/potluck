@@ -51,6 +51,7 @@ class EntityType(str, Enum):
     SOCIAL_POST = "social_post"
     SOCIAL_COMMENT = "social_comment"
     KNOWLEDGE_NOTE = "knowledge_note"
+    DOCUMENT = "document"
     CALENDAR_EVENT = "calendar_event"
     TRANSACTION = "transaction"
     LOCATION = "location"

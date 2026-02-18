@@ -868,7 +868,8 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.Column("source_type", sa.String(), nullable=False, server_default="manual"),
+        # source_type is nullable for FlexibleEntity (user-created content)
+        sa.Column("source_type", sa.String(), nullable=True),
         sa.Column("source_id", sa.String(), nullable=True),
         sa.Column("occurred_at", sa.DateTime(), nullable=True),
         sa.Column("content_hash", sa.String(), nullable=True),
@@ -941,6 +942,54 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_note_checklists_note_id", "note_checklists", ["note_id"])
+
+    # === Documents tables ===
+
+    op.create_table(
+        "documents",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=True),
+        sa.Column("content_hash", sa.String(), nullable=True),
+        sa.Column("title", sa.String(), nullable=True),
+        sa.Column("content", sa.String(), nullable=False),
+        sa.Column("file_extension", sa.String(), nullable=True),
+        # Search columns
+        sa.Column("embedding", Vector(384), nullable=True),
+        sa.Column("multimodal_embedding", Vector(768), nullable=True),
+        sa.Column("search_vector", TSVECTOR, nullable=True),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_documents_content_hash", "documents", ["content_hash"])
+    op.create_index("ix_documents_source_type", "documents", ["source_type"])
+    # HNSW indexes for semantic search
+    op.execute(
+        """
+        CREATE INDEX ix_documents_embedding_hnsw
+        ON documents
+        USING hnsw (embedding vector_cosine_ops)
+        WHERE embedding IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX ix_documents_multimodal_embedding_hnsw
+        ON documents
+        USING hnsw (multimodal_embedding vector_cosine_ops)
+        WHERE multimodal_embedding IS NOT NULL
+        """
+    )
+    # GIN index for full-text search
+    op.execute(
+        """
+        CREATE INDEX ix_documents_search_vector_gin
+        ON documents
+        USING gin (search_vector)
+        WHERE search_vector IS NOT NULL
+        """
+    )
 
     # === Location tables ===
 
@@ -1492,6 +1541,28 @@ def upgrade() -> None:
         """
     )
 
+    # Documents: title (weight A) + content (weight B)
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION update_documents_search_vector()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.search_vector :=
+                setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+                setweight(to_tsvector('english', COALESCE(NEW.content, '')), 'B');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER documents_search_vector_update
+            BEFORE INSERT OR UPDATE OF title, content ON documents
+            FOR EACH ROW EXECUTE FUNCTION update_documents_search_vector();
+        """
+    )
+
     # Media: caption (weight A) + ocr_text (weight B)
     op.execute(
         """
@@ -1686,6 +1757,8 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS update_people_search_vector()")
     op.execute("DROP TRIGGER IF EXISTS media_search_vector_update ON media")
     op.execute("DROP FUNCTION IF EXISTS update_media_search_vector()")
+    op.execute("DROP TRIGGER IF EXISTS documents_search_vector_update ON documents")
+    op.execute("DROP FUNCTION IF EXISTS update_documents_search_vector()")
     op.execute("DROP TRIGGER IF EXISTS knowledge_notes_search_vector_update ON knowledge_notes")
     op.execute("DROP FUNCTION IF EXISTS update_knowledge_notes_search_vector()")
     op.execute("DROP TRIGGER IF EXISTS social_comments_search_vector_update ON social_comments")
@@ -1712,6 +1785,7 @@ def downgrade() -> None:
     op.drop_table("locations")
     op.drop_table("note_checklists")
     op.drop_table("knowledge_notes")
+    op.drop_table("documents")
     op.drop_table("bookmarks")
     op.drop_table("bookmark_folders")
     op.drop_table("browsing_history")

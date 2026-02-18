@@ -52,6 +52,7 @@ class TestEntityType:
             "social_post",
             "social_comment",
             "knowledge_note",
+            "document",
             "calendar_event",
             "transaction",
             "location",
