@@ -114,7 +114,7 @@ class TestExpectedTables:
         # Social
         "social_posts",
         "social_comments",
-        "subscriptions",
+        "social_follows",
         # Browsing
         "browsing_history",
         "bookmark_folders",
