@@ -9,27 +9,27 @@
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.22/dist/full.min.css" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.16"></script>
 
-  <!-- Custom themes -->
+  <!-- Custom themes & typography -->
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&display=swap');
 
     [data-theme="potluck-light"] {
       --p: 0.68 0.16 55;     /* primary: warm amber */
       --pf: 0.60 0.16 55;
       --pc: 0.98 0.01 55;
-      --s: 0.58 0.11 185;    /* secondary: teal */
-      --sf: 0.51 0.11 185;
+      --s: 0.55 0.12 185;    /* secondary: teal */
+      --sf: 0.48 0.12 185;
       --sc: 0.98 0.01 185;
-      --a: 0.62 0.17 350;    /* accent: rose */
-      --af: 0.55 0.17 350;
+      --a: 0.60 0.17 350;    /* accent: rose */
+      --af: 0.53 0.17 350;
       --ac: 0.98 0.01 350;
       --n: 0.35 0.02 60;     /* neutral */
       --nf: 0.30 0.02 60;
       --nc: 0.95 0.01 60;
-      --b1: 0.97 0.01 80;    /* base: warm cream */
-      --b2: 0.93 0.01 80;
-      --b3: 0.88 0.01 80;
-      --bc: 0.25 0.02 60;
+      --b1: 0.97 0.008 80;   /* base: warm cream */
+      --b2: 0.94 0.008 80;
+      --b3: 0.90 0.012 75;
+      --bc: 0.22 0.02 60;
       --in: 0.62 0.17 240;
       --su: 0.62 0.15 155;
       --wa: 0.75 0.15 75;
@@ -52,10 +52,10 @@
       --n: 0.28 0.02 250;    /* neutral */
       --nf: 0.23 0.02 250;
       --nc: 0.85 0.02 250;
-      --b1: 0.20 0.02 260;   /* base: deep charcoal */
-      --b2: 0.17 0.02 260;
-      --b3: 0.15 0.02 260;
-      --bc: 0.85 0.02 250;
+      --b1: 0.18 0.015 260;  /* base: deep charcoal-blue */
+      --b2: 0.15 0.015 260;
+      --b3: 0.12 0.015 260;
+      --bc: 0.88 0.015 250;
       --in: 0.62 0.17 240;
       --su: 0.65 0.14 155;
       --wa: 0.78 0.14 75;
@@ -67,6 +67,7 @@
 
     body {
       font-family: 'DM Sans', system-ui, sans-serif;
+      letter-spacing: -0.01em;
     }
 
     h1, h2, h3, .font-display {
@@ -90,14 +91,90 @@
     }
 
     /* Scrollbar styling */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
-      background: oklch(var(--n));
-      border-radius: 4px;
+      background: oklch(var(--n) / 0.4);
+      border-radius: 3px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: oklch(var(--nf));
+      background: oklch(var(--n) / 0.6);
+    }
+
+    /* Page-load entrance animation */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-in {
+      animation: fadeInUp 0.4s ease-out both;
+    }
+    .animate-in-delay-1 { animation-delay: 0.06s; }
+    .animate-in-delay-2 { animation-delay: 0.12s; }
+    .animate-in-delay-3 { animation-delay: 0.18s; }
+
+    /* Subtle background texture */
+    .bg-grain::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: 0.03;
+      pointer-events: none;
+      z-index: 100;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 256px;
+    }
+
+    /* Theme toggle animation */
+    .theme-toggle-icon {
+      transition: transform 0.3s ease, opacity 0.2s ease;
+    }
+    .theme-toggle-icon:hover {
+      transform: rotate(20deg);
+    }
+
+    /* Card hover lift */
+    .card-hover {
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .card-hover:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px oklch(var(--bc) / 0.06);
+    }
+
+    /* Active nav indicator */
+    .nav-link {
+      position: relative;
+      transition: color 0.15s ease;
+    }
+    .nav-link.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 16px;
+      height: 2px;
+      background: oklch(var(--p));
+      border-radius: 1px;
+    }
+
+    /* Subtle divider accent */
+    .divider-accent {
+      width: 40px;
+      height: 3px;
+      border-radius: 2px;
+      background: oklch(var(--p));
+    }
+
+    /* Badge pill styling */
+    .filter-chip {
+      transition: all 0.15s ease;
+    }
+    .filter-chip:has(input:checked) {
+      background: oklch(var(--p) / 0.15);
+      border-color: oklch(var(--p) / 0.3);
     }
   </style>
 
@@ -106,32 +183,34 @@
 
   {% block head %}{% endblock %}
 </head>
-<body class="min-h-screen bg-base-100 text-base-content" hx-ext="sse">
+<body class="min-h-screen bg-base-100 text-base-content bg-grain" hx-ext="sse">
 
   <!-- Navbar -->
-  <div class="navbar bg-base-200/80 backdrop-blur-md sticky top-0 z-50 border-b border-base-300 px-4 lg:px-8">
-    <div class="navbar-start gap-1">
-      <a href="/" class="btn btn-ghost text-xl font-display tracking-tight gap-2">
-        <span class="text-primary text-2xl">&#9733;</span>
-        Potluck
+  <nav class="navbar bg-base-200/90 backdrop-blur-xl sticky top-0 z-50 border-b border-base-300/60 px-4 lg:px-8 h-16">
+    <div class="navbar-start">
+      <a href="/" class="flex items-center gap-2.5 px-2 group">
+        <span class="text-primary text-2xl transition-transform group-hover:scale-110 group-hover:rotate-12">&#9733;</span>
+        <span class="text-lg font-display font-semibold tracking-tight">Potluck</span>
       </a>
     </div>
 
     <div class="navbar-center hidden lg:flex">
-      <ul class="menu menu-horizontal gap-1 px-1 text-sm font-medium">
-        <li><a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a></li>
-        <li><a href="/search" class="{% if active_page == 'search' %}active{% endif %}">Search</a></li>
-        <li><a href="/media" class="{% if active_page == 'media' %}active{% endif %}">Media</a></li>
-        <li><a href="/notes" class="{% if active_page == 'notes' %}active{% endif %}">Notes</a></li>
-        <li><a href="/people" class="{% if active_page == 'people' %}active{% endif %}">People</a></li>
-        <li><a href="/timeline" class="{% if active_page == 'timeline' %}active{% endif %}">Timeline</a></li>
-        <li><a href="/imports" class="{% if active_page == 'imports' %}active{% endif %}">Imports</a></li>
-        <li><a href="/map" class="{% if active_page == 'map' %}active{% endif %}">Map</a></li>
-        <li><a href="/settings" class="{% if active_page == 'settings' %}active{% endif %}">Settings</a></li>
+      <ul class="flex items-center gap-0.5 text-[13px] font-medium">
+        <li><a href="/" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'dashboard' %}active text-primary{% endif %}">Dashboard</a></li>
+        <li><a href="/search" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'search' %}active text-primary{% endif %}">Search</a></li>
+        <li><a href="/media" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'media' %}active text-primary{% endif %}">Media</a></li>
+        <li><a href="/notes" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'notes' %}active text-primary{% endif %}">Notes</a></li>
+        <li><a href="/people" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'people' %}active text-primary{% endif %}">People</a></li>
+        <li class="border-l border-base-300/60 h-4 mx-1"></li>
+        <li><a href="/timeline" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'timeline' %}active text-primary{% endif %}">Timeline</a></li>
+        <li><a href="/map" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'map' %}active text-primary{% endif %}">Map</a></li>
+        <li class="border-l border-base-300/60 h-4 mx-1"></li>
+        <li><a href="/imports" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'imports' %}active text-primary{% endif %}">Imports</a></li>
+        <li><a href="/settings" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'settings' %}active text-primary{% endif %}">Settings</a></li>
       </ul>
     </div>
 
-    <div class="navbar-end gap-2">
+    <div class="navbar-end gap-1">
       <!-- Progress dropdown (SSE-powered) -->
       <div class="dropdown dropdown-end"
            hx-ext="sse"
@@ -139,52 +218,61 @@
            sse-swap="progress"
            hx-target="#progress-dropdown-content"
            hx-swap="innerHTML">
-        <div tabindex="0" role="button" class="btn btn-ghost btn-circle">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-circle">
           <div class="indicator">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
             <span id="progress-badge" class="badge badge-xs badge-primary indicator-item hidden"></span>
           </div>
         </div>
-        <div tabindex="0" class="dropdown-content z-[1] card card-compact w-80 p-2 shadow-xl bg-base-200 border border-base-300 mt-2">
+        <div tabindex="0" class="dropdown-content z-[1] card card-compact w-80 p-2 shadow-2xl bg-base-200 border border-base-300 mt-3 rounded-xl">
           <div class="card-body" id="progress-dropdown-content">
-            <p class="text-sm text-base-content/60">No active imports</p>
+            <p class="text-sm text-base-content/50">No active imports</p>
           </div>
         </div>
       </div>
 
       <!-- Theme toggle -->
-      <button class="btn btn-ghost btn-circle" onclick="toggleTheme()" aria-label="Toggle theme">
-        <span id="theme-icon" class="text-lg">&#9790;</span>
+      <button class="btn btn-ghost btn-sm btn-circle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <span id="theme-icon" class="theme-toggle-icon text-base">&#9790;</span>
       </button>
 
       <!-- Mobile menu -->
       <div class="dropdown dropdown-end lg:hidden">
-        <div tabindex="0" role="button" class="btn btn-ghost btn-circle">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+        <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-circle">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
         </div>
-        <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-xl bg-base-200 border border-base-300 rounded-box w-52 mt-2">
-          <li><a href="/">Dashboard</a></li>
-          <li><a href="/search">Search</a></li>
-          <li><a href="/media">Media</a></li>
-          <li><a href="/notes">Notes</a></li>
-          <li><a href="/people">People</a></li>
-          <li><a href="/timeline">Timeline</a></li>
-          <li><a href="/imports">Imports</a></li>
-          <li><a href="/map">Map</a></li>
-          <li><a href="/settings">Settings</a></li>
+        <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-2xl bg-base-200 border border-base-300 rounded-xl w-52 mt-3">
+          <li class="menu-title text-xs">Browse</li>
+          <li><a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+          <li><a href="/search" class="{% if active_page == 'search' %}active{% endif %}">Search</a></li>
+          <li><a href="/media" class="{% if active_page == 'media' %}active{% endif %}">Media</a></li>
+          <li><a href="/notes" class="{% if active_page == 'notes' %}active{% endif %}">Notes</a></li>
+          <li><a href="/people" class="{% if active_page == 'people' %}active{% endif %}">People</a></li>
+          <li class="menu-title text-xs mt-1">Explore</li>
+          <li><a href="/timeline" class="{% if active_page == 'timeline' %}active{% endif %}">Timeline</a></li>
+          <li><a href="/map" class="{% if active_page == 'map' %}active{% endif %}">Map</a></li>
+          <li class="menu-title text-xs mt-1">Manage</li>
+          <li><a href="/imports" class="{% if active_page == 'imports' %}active{% endif %}">Imports</a></li>
+          <li><a href="/settings" class="{% if active_page == 'settings' %}active{% endif %}">Settings</a></li>
         </ul>
       </div>
     </div>
-  </div>
+  </nav>
 
   <!-- Main content -->
-  <main class="max-w-7xl mx-auto px-4 lg:px-8 py-6">
+  <main class="max-w-7xl mx-auto px-4 lg:px-8 py-8">
     {% block content %}{% endblock %}
   </main>
 
   <!-- Footer -->
-  <footer class="footer footer-center p-6 text-base-content/40 text-xs mt-auto">
-    <p>Potluck &mdash; Your personal knowledge base</p>
+  <footer class="border-t border-base-300/40 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 lg:px-8 py-6 flex items-center justify-between text-xs text-base-content/30">
+      <span>Potluck &mdash; Personal Knowledge Base</span>
+      <span class="flex items-center gap-1.5">
+        <span class="text-primary/50">&#9733;</span>
+        Privacy-first
+      </span>
+    </div>
   </footer>
 
   <!-- HTMX -->

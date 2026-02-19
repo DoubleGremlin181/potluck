@@ -1,7 +1,7 @@
 {# Reusable entity card macro. Usage: {{ entity_card(entity, entity_type) }} #}
 
 {% macro entity_card(entity, entity_type, show_type=true) %}
-<div class="card bg-base-200 border border-base-300 shadow-sm hover:shadow-md transition-shadow">
+<div class="card bg-base-200/60 border border-base-300/40 hover:border-primary/25 transition-all rounded-xl card-hover">
   <div class="card-body p-4 gap-2">
     {% if show_type %}
     <div class="badge badge-outline badge-sm">{{ entity_type }}</div>
@@ -22,11 +22,11 @@
     </h3>
 
     {% if entity.occurred_at is defined and entity.occurred_at %}
-    <p class="text-xs text-base-content/50">
+    <p class="text-xs text-base-content/40">
       {{ entity.occurred_at.strftime('%b %d, %Y') }}
     </p>
     {% elif entity.created_at is defined and entity.created_at %}
-    <p class="text-xs text-base-content/50">
+    <p class="text-xs text-base-content/40">
       {{ entity.created_at.strftime('%b %d, %Y') }}
     </p>
     {% endif %}
@@ -62,16 +62,18 @@
 
 {% macro stat_card(label, value, icon, href=none) %}
 {% if href %}
-<a href="{{ href }}" class="card bg-base-200 border border-base-300 hover:border-primary/30 transition-colors cursor-pointer">
+<a href="{{ href }}" class="card bg-base-200/60 border border-base-300/40 hover:border-primary/30 transition-all cursor-pointer card-hover rounded-xl group">
 {% else %}
-<div class="card bg-base-200 border border-base-300">
+<div class="card bg-base-200/60 border border-base-300/40 rounded-xl">
 {% endif %}
-  <div class="card-body p-4 gap-1">
+  <div class="card-body p-4 gap-1.5">
     <div class="flex items-center justify-between">
-      <span class="text-2xl">{{ icon }}</span>
-      <span class="text-2xl font-bold font-display text-primary">{{ value | default(0) }}</span>
+      <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+        <span class="text-xl">{{ icon }}</span>
+      </div>
+      <span class="text-2xl font-bold font-display text-primary tabular-nums">{{ value | default(0) }}</span>
     </div>
-    <p class="text-xs text-base-content/60 font-medium uppercase tracking-wide mt-1">{{ label }}</p>
+    <p class="text-xs text-base-content/45 font-medium uppercase tracking-wider mt-1">{{ label }}</p>
   </div>
 {% if href %}
 </a>

@@ -8,39 +8,60 @@
   <script src="https://cdn.tailwindcss.com/3.4.16"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');
-    body { font-family: 'DM Sans', system-ui, sans-serif; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; letter-spacing: -0.01em; }
     h1, .font-display { font-family: 'Fraunces', Georgia, serif; }
 
-    [data-theme="potluck-dark"] {
-      --p: 25 75% 55%;
-      --pf: 25 75% 48%;
-      --pc: 25 10% 10%;
-      --s: 175 45% 45%;
-      --n: 220 15% 22%;
-      --nf: 220 15% 18%;
-      --nc: 220 10% 85%;
-      --b1: 225 15% 13%;
-      --b2: 225 15% 11%;
-      --b3: 225 15% 9%;
-      --bc: 220 10% 85%;
-      --er: 0 65% 55%;
+    [data-theme="potluck-light"] {
+      --p: 0.68 0.16 55;
+      --pf: 0.60 0.16 55;
+      --pc: 0.98 0.01 55;
+      --n: 0.35 0.02 60;
+      --nf: 0.30 0.02 60;
+      --nc: 0.95 0.01 60;
+      --b1: 0.97 0.008 80;
+      --b2: 0.94 0.008 80;
+      --b3: 0.90 0.012 75;
+      --bc: 0.22 0.02 60;
+      --er: 0.60 0.18 25;
       --rounded-box: 0.75rem;
       --rounded-btn: 0.5rem;
     }
+
+    [data-theme="potluck-dark"] {
+      --p: 0.72 0.15 55;
+      --pf: 0.64 0.15 55;
+      --pc: 0.15 0.01 55;
+      --n: 0.28 0.02 250;
+      --nf: 0.23 0.02 250;
+      --nc: 0.85 0.02 250;
+      --b1: 0.18 0.015 260;
+      --b2: 0.15 0.015 260;
+      --b3: 0.12 0.015 260;
+      --bc: 0.88 0.015 250;
+      --er: 0.62 0.17 25;
+      --rounded-box: 0.75rem;
+      --rounded-btn: 0.5rem;
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-in { animation: fadeInUp 0.5s ease-out both; }
   </style>
   <script src="/static/js/theme.js"></script>
 </head>
-<body class="min-h-screen bg-base-100 flex items-center justify-center">
-  <div class="card w-full max-w-sm bg-base-200 shadow-2xl border border-base-300">
-    <div class="card-body items-center text-center gap-6">
+<body class="min-h-screen bg-base-100 flex items-center justify-center px-4">
+  <div class="animate-in card w-full max-w-sm bg-base-200/80 shadow-2xl border border-base-300/60 rounded-2xl backdrop-blur-sm">
+    <div class="card-body items-center text-center gap-6 p-8">
       <div>
-        <span class="text-primary text-4xl">&#9733;</span>
-        <h1 class="text-2xl font-display mt-2">Potluck</h1>
-        <p class="text-sm text-base-content/60 mt-1">Enter your password to continue</p>
+        <span class="text-primary text-5xl inline-block hover:rotate-12 transition-transform cursor-default">&#9733;</span>
+        <h1 class="text-2xl font-display font-bold mt-3">Potluck</h1>
+        <p class="text-sm text-base-content/45 mt-1.5">Enter your password to continue</p>
       </div>
 
       {% if error %}
-      <div class="alert alert-error text-sm py-2">
+      <div class="alert alert-error text-sm py-2 rounded-xl">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>
         <span>{{ error }}</span>
       </div>
@@ -52,7 +73,7 @@
             type="password"
             name="password"
             placeholder="Password"
-            class="input input-bordered w-full"
+            class="input input-bordered w-full bg-base-100/50"
             autofocus
             required
           >
@@ -61,6 +82,8 @@
           Sign in
         </button>
       </form>
+
+      <p class="text-xs text-base-content/25">Privacy-first personal knowledge base</p>
     </div>
   </div>
 </body>

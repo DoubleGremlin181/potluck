@@ -2,7 +2,7 @@
 {% if media %}
 <div class="flex flex-col lg:flex-row w-full">
   <!-- Image/preview -->
-  <div class="flex-1 bg-black flex items-center justify-center min-h-[300px] lg:min-h-[500px]">
+  <div class="flex-1 bg-black/95 flex items-center justify-center min-h-[300px] lg:min-h-[500px]">
     {% if media.media_type.value == 'image' %}
     <img src="/media/file/{{ media.id }}" alt="{{ media.caption or '' }}"
       class="max-w-full max-h-[80vh] object-contain">
@@ -18,7 +18,7 @@
       </audio>
     </div>
     {% else %}
-    <div class="p-8 text-center text-white">
+    <div class="p-8 text-center text-white/80">
       <span class="text-6xl">&#128196;</span>
       <p class="mt-2">{{ media.original_filename or 'Document' }}</p>
     </div>
@@ -26,87 +26,82 @@
   </div>
 
   <!-- Metadata panel -->
-  <div class="w-full lg:w-80 p-5 space-y-4 overflow-y-auto max-h-[80vh]">
+  <div class="w-full lg:w-80 p-6 space-y-4 overflow-y-auto max-h-[80vh] bg-base-200">
     <h3 class="font-display font-semibold text-lg">Details</h3>
 
-    <div class="space-y-3 text-sm">
+    <div class="space-y-4 text-sm">
       {% if media.original_filename %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Filename</span>
-        <p class="font-medium break-all">{{ media.original_filename }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Filename</span>
+        <p class="font-medium break-all mt-0.5">{{ media.original_filename }}</p>
       </div>
       {% endif %}
 
       {% if media.caption %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Caption</span>
-        <p>{{ media.caption }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Caption</span>
+        <p class="mt-0.5">{{ media.caption }}</p>
       </div>
       {% endif %}
 
       {% if media.occurred_at %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Date</span>
-        <p>{{ media.occurred_at.strftime('%B %d, %Y at %H:%M') }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Date</span>
+        <p class="mt-0.5">{{ media.occurred_at.strftime('%B %d, %Y at %H:%M') }}</p>
       </div>
       {% endif %}
 
       {% if media.width and media.height %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Dimensions</span>
-        <p>{{ media.width }} × {{ media.height }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Dimensions</span>
+        <p class="mt-0.5 tabular-nums">{{ media.width }} &times; {{ media.height }}</p>
       </div>
       {% endif %}
 
       {% if media.file_size %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Size</span>
-        <p>{{ "%.1f" | format(media.file_size / 1024 / 1024) }} MB</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Size</span>
+        <p class="mt-0.5">{{ "%.1f" | format(media.file_size / 1024 / 1024) }} MB</p>
       </div>
       {% endif %}
 
       {% if media.camera_make or media.camera_model %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Camera</span>
-        <p>{{ [media.camera_make, media.camera_model] | select | join(' ') }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Camera</span>
+        <p class="mt-0.5">{{ [media.camera_make, media.camera_model] | select | join(' ') }}</p>
       </div>
       {% endif %}
 
       {% if media.location_name %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Location</span>
-        <p>{{ media.location_name }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Location</span>
+        <p class="mt-0.5">{{ media.location_name }}</p>
       </div>
       {% endif %}
 
       {% if media.ocr_text %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">OCR Text</span>
-        <p class="text-xs bg-base-300 p-2 rounded max-h-32 overflow-y-auto whitespace-pre-wrap">{{ media.ocr_text }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">OCR Text</span>
+        <p class="text-xs bg-base-300/50 p-2.5 rounded-lg max-h-32 overflow-y-auto whitespace-pre-wrap mt-1 font-mono">{{ media.ocr_text }}</p>
       </div>
       {% endif %}
 
       {% if media.album_name %}
       <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Album</span>
-        <p>{{ media.album_name }}</p>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Album</span>
+        <p class="mt-0.5">{{ media.album_name }}</p>
       </div>
       {% endif %}
 
-      <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Source</span>
-        <p>{{ media.source_type.value | replace('_', ' ') | title }}</p>
-      </div>
-
-      <div>
-        <span class="text-base-content/50 text-xs uppercase tracking-wider">Type</span>
-        <p>{{ media.media_type.value | title }}</p>
+      <div class="pt-2 border-t border-base-300/30 flex gap-2">
+        <span class="badge badge-outline badge-sm">{{ media.source_type.value | replace('_', ' ') | title }}</span>
+        <span class="badge badge-ghost badge-sm">{{ media.media_type.value | title }}</span>
       </div>
     </div>
   </div>
 </div>
 {% else %}
 <div class="p-8 text-center">
-  <p class="text-base-content/60">Media not found</p>
+  <p class="text-base-content/50">Media not found</p>
 </div>
 {% endif %}

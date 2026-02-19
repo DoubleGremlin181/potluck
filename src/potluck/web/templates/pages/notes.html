@@ -6,13 +6,17 @@
 {% block content %}
 <div class="space-y-6">
 
-  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+  <div class="animate-in flex flex-col sm:flex-row sm:items-end justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-display font-bold">Notes</h1>
-      <p class="text-base-content/60 mt-1">{{ "{:,}".format(total) }} knowledge notes</p>
+      <h1 class="text-4xl font-display font-bold tracking-tight">Notes</h1>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="divider-accent"></div>
+        <p class="text-base-content/50">{{ "{:,}".format(total) }} knowledge notes</p>
+      </div>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="document.getElementById('new-note-modal').showModal()">
-      + New Note
+    <button class="btn btn-primary btn-sm gap-1.5" onclick="document.getElementById('new-note-modal').showModal()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+      New Note
     </button>
   </div>
 
@@ -22,23 +26,23 @@
     hx-target="#notes-list"
     hx-swap="outerHTML"
     hx-push-url="true"
-    class="join w-full sm:w-auto"
+    class="animate-in animate-in-delay-1 join w-full sm:w-auto"
   >
     <input type="text" name="q" value="{{ q }}" placeholder="Filter notes..."
-      class="input input-bordered join-item w-full sm:w-64">
+      class="input input-bordered join-item w-full sm:w-72 bg-base-200/50 focus:bg-base-100">
     <button type="submit" class="btn btn-ghost join-item">Search</button>
   </form>
 
   <!-- Notes list -->
-  <div id="notes-list" class="space-y-3">
+  <div id="notes-list" class="animate-in animate-in-delay-2 space-y-2">
     {% if notes %}
       {% for note in notes %}
-      <div class="card bg-base-200 border border-base-300 hover:border-primary/20 transition-colors">
+      <div class="card bg-base-200/60 border border-base-300/40 hover:border-primary/20 transition-all rounded-xl">
         <div class="card-body p-4 gap-2">
           <div class="flex items-start justify-between gap-3">
             <div class="flex-1 min-w-0">
-              <p class="text-sm whitespace-pre-wrap break-words">{{ note.content }}</p>
-              <div class="flex items-center gap-3 mt-2 text-xs text-base-content/50">
+              <p class="text-sm whitespace-pre-wrap break-words leading-relaxed">{{ note.content }}</p>
+              <div class="flex items-center gap-3 mt-3 text-xs text-base-content/40">
                 <span>{{ note.updated_at.strftime('%b %d, %Y at %H:%M') }}</span>
                 {% if note.created_by %}
                 <span class="badge badge-ghost badge-xs">{{ note.created_by }}</span>
@@ -46,10 +50,10 @@
               </div>
             </div>
             <div class="dropdown dropdown-end shrink-0">
-              <div tabindex="0" role="button" class="btn btn-ghost btn-xs btn-circle">
+              <div tabindex="0" role="button" class="btn btn-ghost btn-xs btn-circle opacity-40 hover:opacity-100">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
               </div>
-              <ul tabindex="0" class="dropdown-content z-[1] menu p-1 shadow-lg bg-base-300 rounded-box w-32">
+              <ul tabindex="0" class="dropdown-content z-[1] menu p-1 shadow-lg bg-base-300 rounded-xl w-32">
                 <li><button onclick="editNote('{{ note.id }}', `{{ note.content | e }}`)" class="text-xs">Edit</button></li>
                 <li>
                   <form method="POST" action="/notes/{{ note.id }}/delete"
@@ -68,10 +72,12 @@
 
     {% else %}
       <div class="text-center py-16">
-        <span class="text-5xl">&#128221;</span>
-        <p class="text-base-content/60 mt-3">{{ 'No notes match your search' if q else 'No notes yet' }}</p>
+        <div class="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+          <span class="text-3xl">&#128221;</span>
+        </div>
+        <p class="text-base-content/60 font-medium">{{ 'No notes match your search' if q else 'No notes yet' }}</p>
         {% if not q %}
-        <button class="btn btn-primary btn-sm mt-3" onclick="document.getElementById('new-note-modal').showModal()">
+        <button class="btn btn-primary btn-sm mt-4" onclick="document.getElementById('new-note-modal').showModal()">
           Create your first note
         </button>
         {% endif %}
@@ -83,13 +89,13 @@
 
 <!-- New note modal -->
 <dialog id="new-note-modal" class="modal">
-  <div class="modal-box bg-base-200">
+  <div class="modal-box bg-base-200 rounded-2xl">
     <h3 class="font-display font-semibold text-lg mb-4">New Note</h3>
     <form method="POST" action="/notes">
       <textarea
         name="content"
         placeholder="Write your note..."
-        class="textarea textarea-bordered w-full h-40"
+        class="textarea textarea-bordered w-full h-40 bg-base-100"
         required
       ></textarea>
       <div class="modal-action">
@@ -103,13 +109,13 @@
 
 <!-- Edit note modal -->
 <dialog id="edit-note-modal" class="modal">
-  <div class="modal-box bg-base-200">
+  <div class="modal-box bg-base-200 rounded-2xl">
     <h3 class="font-display font-semibold text-lg mb-4">Edit Note</h3>
     <form method="POST" id="edit-note-form">
       <textarea
         name="content"
         id="edit-note-content"
-        class="textarea textarea-bordered w-full h-40"
+        class="textarea textarea-bordered w-full h-40 bg-base-100"
         required
       ></textarea>
       <div class="modal-action">

@@ -4,13 +4,16 @@
 {% block title %}Dashboard — Potluck{% endblock %}
 
 {% block content %}
-<div class="space-y-8">
+<div class="space-y-10">
 
-  <!-- Header -->
-  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+  <!-- Hero header -->
+  <div class="animate-in flex flex-col sm:flex-row sm:items-end justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-display font-bold">Dashboard</h1>
-      <p class="text-base-content/60 mt-1">{{ "{:,}".format(total_entities) }} items in your knowledge base</p>
+      <h1 class="text-4xl font-display font-bold tracking-tight">Dashboard</h1>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="divider-accent"></div>
+        <p class="text-base-content/50">{{ "{:,}".format(total_entities) }} items in your knowledge base</p>
+      </div>
     </div>
 
     <!-- Quick search -->
@@ -19,7 +22,7 @@
         type="text"
         name="q"
         placeholder="Search everything..."
-        class="input input-bordered join-item w-full sm:w-64"
+        class="input input-bordered join-item w-full sm:w-72 bg-base-200/50 focus:bg-base-100"
       >
       <button type="submit" class="btn btn-primary join-item">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -28,7 +31,7 @@
   </div>
 
   <!-- Entity count stat cards -->
-  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+  <div class="animate-in animate-in-delay-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
     {% for etype, count in entity_counts.items() if count > 0 %}
     {{ stat_card(
       etype | replace('_', ' ') | title,
@@ -41,27 +44,34 @@
 
   {% if not entity_counts.values() | select('gt', 0) | list %}
   <!-- Empty state -->
-  <div class="card bg-base-200 border border-base-300 border-dashed">
-    <div class="card-body items-center text-center py-12">
-      <span class="text-5xl mb-2">&#128218;</span>
-      <h2 class="card-title font-display">Your knowledge base is empty</h2>
-      <p class="text-base-content/60 max-w-md">
+  <div class="animate-in animate-in-delay-1 card bg-base-200/50 border-2 border-dashed border-base-300">
+    <div class="card-body items-center text-center py-16">
+      <div class="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+        <span class="text-4xl">&#128218;</span>
+      </div>
+      <h2 class="card-title font-display text-xl">Your knowledge base is empty</h2>
+      <p class="text-base-content/50 max-w-md mt-1">
         Start by importing your data — Google Takeout, Reddit exports, WhatsApp chats, and more.
       </p>
-      <a href="/imports" class="btn btn-primary mt-4">Import Data</a>
+      <a href="/imports" class="btn btn-primary mt-6 gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        Import Data
+      </a>
     </div>
   </div>
   {% endif %}
 
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="animate-in animate-in-delay-2 grid grid-cols-1 lg:grid-cols-3 gap-8">
     <!-- Recent Activity -->
     <div class="lg:col-span-2">
-      <h2 class="text-lg font-display font-semibold mb-3">Recent Activity</h2>
+      <h2 class="text-lg font-display font-semibold mb-4">Recent Activity</h2>
       {% if recent_entities %}
       <div class="space-y-2">
         {% for item in recent_entities %}
-        <div class="flex items-center gap-3 p-3 rounded-lg bg-base-200/50 border border-base-300/50 hover:border-base-300 transition-colors">
-          <span class="text-lg shrink-0">{{ entity_type_icon(item.entity_type) }}</span>
+        <div class="flex items-center gap-3 p-3.5 rounded-xl bg-base-200/60 border border-base-300/40 hover:border-base-300 hover:bg-base-200 transition-all group">
+          <div class="w-9 h-9 rounded-lg bg-base-300/60 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+            <span class="text-base">{{ entity_type_icon(item.entity_type) }}</span>
+          </div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium truncate">
               {% if item.entity.caption is defined and item.entity.caption %}
@@ -82,51 +92,50 @@
                 {{ item.entity_type | replace('_', ' ') | title }}
               {% endif %}
             </p>
-            <p class="text-xs text-base-content/50">
+            <p class="text-xs text-base-content/40 mt-0.5">
               {{ item.entity_type | replace('_', ' ') }}
               &middot;
               {{ item.created_at.strftime('%b %d, %Y at %H:%M') }}
             </p>
           </div>
-          <div class="badge badge-ghost badge-sm shrink-0">{{ item.entity_type | replace('_', ' ') }}</div>
         </div>
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-base-content/50 text-sm">No recent activity</p>
+      <p class="text-base-content/40 text-sm">No recent activity</p>
       {% endif %}
     </div>
 
     <!-- Active Imports sidebar -->
     <div>
-      <h2 class="text-lg font-display font-semibold mb-3">Active Imports</h2>
+      <h2 class="text-lg font-display font-semibold mb-4">Active Imports</h2>
       {% if active_imports %}
       <div class="space-y-3">
         {% for run in active_imports %}
-        <div class="card bg-base-200 border border-base-300 p-3">
+        <div class="card bg-base-200/80 border border-base-300/60 p-4 rounded-xl">
           <div class="flex justify-between items-center mb-2">
             <span class="badge badge-sm badge-{{ 'warning' if run.status.value == 'running' else 'ghost' }}">
               {{ run.status.value }}
             </span>
-            <span class="text-xs text-base-content/50">{{ run.entities_created }} created</span>
+            <span class="text-xs text-base-content/40">{{ run.entities_created }} created</span>
           </div>
           {% if run.progress_percent is not none %}
           <progress class="progress progress-primary w-full h-1.5" value="{{ run.progress_percent }}" max="100"></progress>
-          <p class="text-xs text-base-content/50 mt-1">{{ run.progress_current }}/{{ run.progress_total }}</p>
+          <p class="text-xs text-base-content/40 mt-1">{{ run.progress_current }}/{{ run.progress_total }}</p>
           {% else %}
           <progress class="progress progress-primary w-full h-1.5"></progress>
           {% endif %}
           {% if run.current_file %}
-          <p class="text-xs text-base-content/50 truncate mt-1">{{ run.current_file }}</p>
+          <p class="text-xs text-base-content/40 truncate mt-1">{{ run.current_file }}</p>
           {% endif %}
         </div>
         {% endfor %}
       </div>
       <a href="/imports" class="btn btn-ghost btn-sm w-full mt-3">View all &rarr;</a>
       {% else %}
-      <div class="card bg-base-200/50 border border-base-300/50 border-dashed p-6 text-center">
-        <p class="text-sm text-base-content/50">No active imports</p>
-        <a href="/imports" class="btn btn-ghost btn-sm mt-2">Start Import</a>
+      <div class="card bg-base-200/30 border-2 border-dashed border-base-300/50 p-8 text-center rounded-xl">
+        <p class="text-sm text-base-content/40">No active imports</p>
+        <a href="/imports" class="btn btn-ghost btn-sm mt-3">Start Import</a>
       </div>
       {% endif %}
     </div>

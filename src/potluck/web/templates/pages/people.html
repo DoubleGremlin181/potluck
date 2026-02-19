@@ -6,42 +6,43 @@
 {% block content %}
 <div class="space-y-6">
 
-  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+  <div class="animate-in flex flex-col sm:flex-row sm:items-end justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-display font-bold">People</h1>
-      <p class="text-base-content/60 mt-1">{{ "{:,}".format(total) }} people</p>
+      <h1 class="text-4xl font-display font-bold tracking-tight">People</h1>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="divider-accent"></div>
+        <p class="text-base-content/50">{{ "{:,}".format(total) }} people</p>
+      </div>
     </div>
-  </div>
-
-  <!-- Search + Merge -->
-  <div class="flex flex-col sm:flex-row gap-3">
-    <form hx-get="/people" hx-target="main" hx-push-url="true" class="join flex-1">
-      <input type="text" name="q" value="{{ q }}" placeholder="Search people..."
-        class="input input-bordered join-item w-full">
-      <button type="submit" class="btn btn-ghost join-item">Search</button>
-    </form>
     <button class="btn btn-outline btn-sm" onclick="document.getElementById('merge-modal').showModal()">
       Merge People
     </button>
   </div>
 
+  <!-- Search -->
+  <form hx-get="/people" hx-target="main" hx-push-url="true" class="animate-in animate-in-delay-1 join flex-1 w-full sm:w-auto">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search people..."
+      class="input input-bordered join-item w-full bg-base-200/50 focus:bg-base-100">
+    <button type="submit" class="btn btn-ghost join-item">Search</button>
+  </form>
+
   <!-- People grid -->
   {% if people %}
-  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+  <div class="animate-in animate-in-delay-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
     {% for person in people %}
     <a href="/people/{{ person.id }}"
-       class="card bg-base-200 border border-base-300 hover:border-primary/30 transition-colors">
+       class="card bg-base-200/60 border border-base-300/40 hover:border-primary/30 transition-all rounded-xl card-hover group">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center gap-3">
           <div class="avatar placeholder">
-            <div class="bg-primary/20 text-primary rounded-full w-10 h-10">
-              <span class="text-lg font-display">{{ person.display_name[0] | upper }}</span>
+            <div class="bg-primary/15 text-primary rounded-xl w-11 h-11 group-hover:bg-primary/20 transition-colors">
+              <span class="text-lg font-display font-semibold">{{ person.display_name[0] | upper }}</span>
             </div>
           </div>
           <div class="min-w-0 flex-1">
             <h3 class="font-semibold text-sm truncate">{{ person.display_name }}</h3>
             {% if person.aliases %}
-            <p class="text-xs text-base-content/50 truncate">
+            <p class="text-xs text-base-content/40 truncate">
               {{ person.aliases | length }} alias{{ 'es' if person.aliases | length != 1 }}
             </p>
             {% endif %}
@@ -59,8 +60,10 @@
 
   {% else %}
   <div class="text-center py-16">
-    <span class="text-5xl">&#128100;</span>
-    <p class="text-base-content/60 mt-3">{{ 'No people match your search' if q else 'No people found' }}</p>
+    <div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center mx-auto mb-4">
+      <span class="text-3xl">&#128100;</span>
+    </div>
+    <p class="text-base-content/60 font-medium">{{ 'No people match your search' if q else 'No people found' }}</p>
   </div>
   {% endif %}
 
@@ -68,11 +71,11 @@
 
 <!-- Merge modal -->
 <dialog id="merge-modal" class="modal">
-  <div class="modal-box bg-base-200">
+  <div class="modal-box bg-base-200 rounded-2xl">
     <h3 class="font-display font-semibold text-lg mb-4">Merge People</h3>
     <form method="POST" action="/people/merge" class="space-y-4">
       <div class="form-control">
-        <label class="label text-sm">Merge this person...</label>
+        <label class="text-sm font-medium mb-1">Merge this person...</label>
         <select name="source_id" class="select select-bordered w-full" required>
           <option value="">Select person to merge</option>
           {% for person in people %}
@@ -81,7 +84,7 @@
         </select>
       </div>
       <div class="form-control">
-        <label class="label text-sm">...into this person</label>
+        <label class="text-sm font-medium mb-1">...into this person</label>
         <select name="target_id" class="select select-bordered w-full" required>
           <option value="">Select target person</option>
           {% for person in people %}

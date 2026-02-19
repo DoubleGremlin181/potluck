@@ -48,30 +48,33 @@
 {% block content %}
 <div class="space-y-6">
 
-  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+  <div class="animate-in flex flex-col sm:flex-row sm:items-end justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-display font-bold">Timeline</h1>
-      <p class="text-base-content/60 mt-1">Your data across time</p>
+      <h1 class="text-4xl font-display font-bold tracking-tight">Timeline</h1>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="divider-accent"></div>
+        <p class="text-base-content/50">Your data across time</p>
+      </div>
     </div>
   </div>
 
   <!-- Filters -->
-  <div class="flex flex-wrap items-end gap-3">
+  <div class="animate-in animate-in-delay-1 flex flex-wrap items-end gap-3 p-4 bg-base-200/40 rounded-xl border border-base-300/30">
     <div class="form-control">
-      <label class="label text-xs font-semibold">From</label>
-      <input type="date" id="tl-start" class="input input-bordered input-sm">
+      <label class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-1">From</label>
+      <input type="date" id="tl-start" class="input input-bordered input-sm bg-base-100">
     </div>
     <div class="form-control">
-      <label class="label text-xs font-semibold">To</label>
-      <input type="date" id="tl-end" class="input input-bordered input-sm">
+      <label class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-1">To</label>
+      <input type="date" id="tl-end" class="input input-bordered input-sm bg-base-100">
     </div>
-    <div class="form-control">
-      <label class="label text-xs font-semibold">Types</label>
+    <div class="form-control flex-1">
+      <label class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-1">Types</label>
       <div class="flex flex-wrap gap-1.5">
         {% for et in entity_types %}
-        <label class="label cursor-pointer gap-1 p-0">
+        <label class="filter-chip cursor-pointer flex items-center gap-1 px-2.5 py-1 rounded-full border border-base-300/60 text-xs">
           <input type="checkbox" value="{{ et }}" class="checkbox checkbox-xs checkbox-primary tl-type-filter" checked>
-          <span class="label-text text-xs">{{ et | replace('_', ' ') | title }}</span>
+          <span>{{ et | replace('_', ' ') | title }}</span>
         </label>
         {% endfor %}
       </div>
@@ -80,8 +83,8 @@
   </div>
 
   <!-- Timeline container -->
-  <div id="timeline-container" style="min-height: 400px;">
-    <div id="timeline-loading" class="flex items-center justify-center h-[400px] text-base-content/50">
+  <div id="timeline-container" class="animate-in animate-in-delay-2" style="min-height: 400px;">
+    <div id="timeline-loading" class="flex items-center justify-center h-[400px] text-base-content/40">
       <span class="loading loading-spinner loading-md mr-2"></span>
       Loading timeline...
     </div>
@@ -122,7 +125,7 @@
 
         if (data.items.length === 0) {
           var emptyMsg = document.createElement('div');
-          emptyMsg.className = 'flex items-center justify-center h-[400px] text-base-content/50';
+          emptyMsg.className = 'flex items-center justify-center h-[400px] text-base-content/40';
           var p = document.createElement('p');
           p.textContent = 'No timeline data found for the selected filters';
           emptyMsg.appendChild(p);
@@ -152,7 +155,7 @@
           container.removeChild(container.firstChild);
         }
         var errDiv = document.createElement('div');
-        errDiv.className = 'alert alert-error';
+        errDiv.className = 'alert alert-error rounded-xl';
         var errP = document.createElement('p');
         errP.textContent = 'Failed to load timeline: ' + err.message;
         errDiv.appendChild(errP);

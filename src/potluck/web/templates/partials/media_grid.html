@@ -4,7 +4,7 @@
 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
   {% for media in items %}
   <div
-    class="group relative aspect-square bg-base-300 rounded-lg overflow-hidden cursor-pointer border border-base-300 hover:border-primary/40 transition-colors"
+    class="group relative aspect-square bg-base-300/60 rounded-xl overflow-hidden cursor-pointer border border-base-300/40 hover:border-primary/40 transition-all hover:shadow-lg"
     hx-get="/media/{{ media.id }}/detail"
     hx-target="#lightbox-content"
     hx-swap="innerHTML"
@@ -13,37 +13,37 @@
     <img
       src="/media/thumb/{{ media.id }}"
       alt="{{ media.caption or media.original_filename or 'Media' }}"
-      class="w-full h-full object-cover"
+      class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
       loading="lazy"
     >
     {% elif media.media_type.value == 'video' %}
-    <div class="w-full h-full flex items-center justify-center bg-base-300">
-      <span class="text-4xl">&#127909;</span>
+    <div class="w-full h-full flex items-center justify-center bg-base-300/80">
+      <span class="text-4xl opacity-60 group-hover:opacity-80 transition-opacity">&#127909;</span>
     </div>
     {% elif media.media_type.value == 'audio' %}
-    <div class="w-full h-full flex items-center justify-center bg-base-300">
-      <span class="text-4xl">&#127911;</span>
+    <div class="w-full h-full flex items-center justify-center bg-base-300/80">
+      <span class="text-4xl opacity-60 group-hover:opacity-80 transition-opacity">&#127911;</span>
     </div>
     {% else %}
-    <div class="w-full h-full flex items-center justify-center bg-base-300">
-      <span class="text-4xl">&#128196;</span>
+    <div class="w-full h-full flex items-center justify-center bg-base-300/80">
+      <span class="text-4xl opacity-60 group-hover:opacity-80 transition-opacity">&#128196;</span>
     </div>
     {% endif %}
 
     <!-- Overlay -->
-    <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-      <p class="text-white text-xs truncate">
+    <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2.5 pt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+      <p class="text-white text-xs truncate font-medium">
         {{ media.caption or media.original_filename or '' }}
       </p>
       {% if media.occurred_at %}
-      <p class="text-white/70 text-[10px]">{{ media.occurred_at.strftime('%b %d, %Y') }}</p>
+      <p class="text-white/60 text-[10px] mt-0.5">{{ media.occurred_at.strftime('%b %d, %Y') }}</p>
       {% endif %}
     </div>
 
     <!-- Badges -->
-    <div class="absolute top-1.5 right-1.5 flex gap-1">
+    <div class="absolute top-2 right-2 flex gap-1">
       {% if media.ocr_text %}
-      <span class="badge badge-xs bg-black/50 text-white border-0">OCR</span>
+      <span class="badge badge-xs bg-black/50 text-white border-0 backdrop-blur-sm">OCR</span>
       {% endif %}
     </div>
   </div>
@@ -54,12 +54,14 @@
 
 {% else %}
 <div class="text-center py-16">
-  <span class="text-5xl">&#128247;</span>
-  <p class="text-base-content/60 mt-3">No media found</p>
+  <div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center mx-auto mb-4">
+    <span class="text-3xl">&#128247;</span>
+  </div>
+  <p class="text-base-content/60 font-medium">No media found</p>
   {% if q or media_type %}
-  <a href="/media" class="btn btn-ghost btn-sm mt-2">Clear filters</a>
+  <a href="/media" class="btn btn-ghost btn-sm mt-3">Clear filters</a>
   {% else %}
-  <p class="text-sm text-base-content/40 mt-1">Import some photos to get started</p>
+  <p class="text-sm text-base-content/35 mt-1">Import some photos to get started</p>
   {% endif %}
 </div>
 {% endif %}

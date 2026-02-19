@@ -5,21 +5,27 @@
 {% block content %}
 <div class="space-y-8">
 
-  <h1 class="text-3xl font-display font-bold">Settings</h1>
+  <div class="animate-in">
+    <h1 class="text-4xl font-display font-bold tracking-tight">Settings</h1>
+    <div class="flex items-center gap-3 mt-2">
+      <div class="divider-accent"></div>
+      <p class="text-base-content/50">Database and system configuration</p>
+    </div>
+  </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
     <!-- Database Stats -->
-    <div class="card bg-base-200 border border-base-300">
+    <div class="animate-in animate-in-delay-1 card bg-base-200/60 border border-base-300/40 rounded-xl">
       <div class="card-body p-5">
-        <h2 class="font-display font-semibold text-lg mb-1">Database</h2>
-        <div class="flex gap-4 mb-4">
+        <h2 class="font-display font-semibold text-lg mb-3">Database</h2>
+        <div class="flex gap-6 mb-5">
           <div>
-            <span class="text-2xl font-bold font-display text-primary">{{ "{:,}".format(total) }}</span>
-            <p class="text-xs text-base-content/50">Total entities</p>
+            <span class="text-3xl font-bold font-display text-primary tabular-nums">{{ "{:,}".format(total) }}</span>
+            <p class="text-xs text-base-content/40 mt-0.5">Total entities</p>
           </div>
           <div>
-            <span class="text-2xl font-bold font-display text-secondary">
+            <span class="text-3xl font-bold font-display text-secondary tabular-nums">
               {% if db_size > 1073741824 %}
                 {{ "%.1f" | format(db_size / 1073741824) }} GB
               {% elif db_size > 1048576 %}
@@ -28,14 +34,14 @@
                 {{ "%.1f" | format(db_size / 1024) }} KB
               {% endif %}
             </span>
-            <p class="text-xs text-base-content/50">Database size</p>
+            <p class="text-xs text-base-content/40 mt-0.5">Database size</p>
           </div>
         </div>
 
-        <div class="overflow-x-auto">
+        <div class="overflow-x-auto rounded-lg border border-base-300/30">
           <table class="table table-sm">
-            <thead>
-              <tr>
+            <thead class="bg-base-300/20">
+              <tr class="text-xs uppercase tracking-wider text-base-content/40">
                 <th>Entity Type</th>
                 <th>Table</th>
                 <th class="text-right">Count</th>
@@ -43,17 +49,17 @@
             </thead>
             <tbody>
               {% for stat in table_stats %}
-              <tr>
+              <tr class="hover:bg-base-300/20">
                 <td class="font-medium text-sm">{{ stat.name | replace('_', ' ') | title }}</td>
-                <td class="text-xs text-base-content/50 font-mono">{{ stat.table }}</td>
-                <td class="text-right">{{ "{:,}".format(stat.count) }}</td>
+                <td class="text-xs text-base-content/40 font-mono">{{ stat.table }}</td>
+                <td class="text-right tabular-nums">{{ "{:,}".format(stat.count) }}</td>
               </tr>
               {% endfor %}
             </tbody>
             <tfoot>
-              <tr class="font-bold">
+              <tr class="font-bold border-t border-base-300/40">
                 <td colspan="2">Total</td>
-                <td class="text-right">{{ "{:,}".format(total) }}</td>
+                <td class="text-right tabular-nums">{{ "{:,}".format(total) }}</td>
               </tr>
             </tfoot>
           </table>
@@ -63,14 +69,14 @@
 
     <!-- Configuration -->
     <div class="space-y-6">
-      <div class="card bg-base-200 border border-base-300">
+      <div class="animate-in animate-in-delay-1 card bg-base-200/60 border border-base-300/40 rounded-xl">
         <div class="card-body p-5">
           <h2 class="font-display font-semibold text-lg mb-3">Configuration</h2>
           <div class="space-y-3">
             {% for key, value in config_items.items() %}
-            <div class="flex justify-between items-center text-sm">
-              <span class="text-base-content/60">{{ key }}</span>
-              <span class="font-mono text-xs bg-base-300 px-2 py-0.5 rounded">{{ value }}</span>
+            <div class="flex justify-between items-center text-sm py-1 border-b border-base-300/20 last:border-0">
+              <span class="text-base-content/50">{{ key }}</span>
+              <span class="font-mono text-xs bg-base-300/50 px-2.5 py-1 rounded-md">{{ value }}</span>
             </div>
             {% endfor %}
           </div>
@@ -78,17 +84,17 @@
       </div>
 
       <!-- System Info -->
-      <div class="card bg-base-200 border border-base-300">
+      <div class="animate-in animate-in-delay-2 card bg-base-200/60 border border-base-300/40 rounded-xl">
         <div class="card-body p-5">
           <h2 class="font-display font-semibold text-lg mb-3">System</h2>
           <div class="space-y-3 text-sm">
-            <div class="flex justify-between items-center">
-              <span class="text-base-content/60">Version</span>
-              <span class="font-mono text-xs bg-base-300 px-2 py-0.5 rounded">0.9.0</span>
+            <div class="flex justify-between items-center py-1 border-b border-base-300/20">
+              <span class="text-base-content/50">Version</span>
+              <span class="font-mono text-xs bg-base-300/50 px-2.5 py-1 rounded-md">0.9.0</span>
             </div>
-            <div class="flex justify-between items-center">
-              <span class="text-base-content/60">Framework</span>
-              <span class="font-mono text-xs bg-base-300 px-2 py-0.5 rounded">FastAPI + HTMX</span>
+            <div class="flex justify-between items-center py-1">
+              <span class="text-base-content/50">Framework</span>
+              <span class="font-mono text-xs bg-base-300/50 px-2.5 py-1 rounded-md">FastAPI + HTMX</span>
             </div>
           </div>
         </div>

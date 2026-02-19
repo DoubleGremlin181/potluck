@@ -5,35 +5,44 @@
 {% block head %}
 <link rel="stylesheet" href="/static/css/leaflet.css">
 <style>
-  #map-container { height: 600px; border-radius: 0.75rem; overflow: hidden; border: 1px solid oklch(var(--b3)); }
+  #map-container {
+    height: 600px;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid oklch(var(--b3) / 0.6);
+    box-shadow: 0 4px 24px oklch(var(--bc) / 0.04);
+  }
   .leaflet-popup-content { font-family: 'DM Sans', sans-serif; font-size: 13px; }
-  .leaflet-popup-content-wrapper { border-radius: 0.5rem; }
+  .leaflet-popup-content-wrapper { border-radius: 0.75rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="space-y-6">
 
-  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+  <div class="animate-in flex flex-col sm:flex-row sm:items-end justify-between gap-4">
     <div>
-      <h1 class="text-3xl font-display font-bold">Map</h1>
-      <p class="text-base-content/60 mt-1">Geolocated entities</p>
+      <h1 class="text-4xl font-display font-bold tracking-tight">Map</h1>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="divider-accent"></div>
+        <p class="text-base-content/50">Geolocated entities</p>
+      </div>
     </div>
 
     <!-- Type filters -->
     <div class="flex flex-wrap gap-2">
       {% for et in entity_types %}
-      <label class="label cursor-pointer gap-1.5 p-0">
+      <label class="filter-chip cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-base-300/60 text-xs">
         <input type="checkbox" value="{{ et }}" class="checkbox checkbox-xs checkbox-primary map-type-filter" checked
           onchange="loadMarkers()">
-        <span class="label-text text-xs">{{ et | replace('_', ' ') | title }}</span>
+        <span>{{ et | replace('_', ' ') | title }}</span>
       </label>
       {% endfor %}
     </div>
   </div>
 
-  <div id="map-container"></div>
-  <p id="marker-count" class="text-xs text-base-content/50"></p>
+  <div id="map-container" class="animate-in animate-in-delay-1"></div>
+  <p id="marker-count" class="text-xs text-base-content/40"></p>
 
 </div>
 {% endblock %}
