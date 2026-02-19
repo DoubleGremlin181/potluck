@@ -120,6 +120,21 @@ class TestGoogleTakeoutStageDetectionCounts:
             assert EntityType.BROWSING_HISTORY in result.entity_counts
             assert result.entity_counts[EntityType.BROWSING_HISTORY] == 2
 
+    def test_detect_chrome_history_fallback_filename(self) -> None:
+        """Detects Chrome history using History.json (newer Takeout format)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chrome_dir = Path(tmpdir) / "Takeout" / "Chrome"
+            chrome_dir.mkdir(parents=True)
+            (chrome_dir / "History.json").write_text(
+                '{"Browser History": [{"url": "https://example.com"}]}'
+            )
+
+            stage = GoogleTakeoutStage()
+            result = stage.detect(Path(tmpdir))
+
+            assert EntityType.BROWSING_HISTORY in result.entity_counts
+            assert result.entity_counts[EntityType.BROWSING_HISTORY] == 1
+
     def test_detect_chrome_bookmarks(self) -> None:
         """Detects Chrome bookmarks."""
         with tempfile.TemporaryDirectory() as tmpdir:

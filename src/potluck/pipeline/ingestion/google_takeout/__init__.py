@@ -335,6 +335,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
 
         history_file = chrome_dir / "BrowserHistory.json"
         if not history_file.exists():
+            history_file = chrome_dir / "History.json"
+        if not history_file.exists():
             return 0
 
         try:
