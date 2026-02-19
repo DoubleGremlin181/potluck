@@ -51,11 +51,13 @@ curl -fsSL "$REPO_URL/docker-compose.yml" -o docker-compose.yml
 curl -fsSL "$REPO_URL/scripts/init-db.sql" -o init-db.sql
 curl -fsSL "$REPO_URL/.env.example" -o .env
 
-# Generate secure password and update .env
+# Generate secure credentials and update .env
 echo "🔐 Generating secure credentials..."
 DB_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
+WEB_SECRET=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 sed -i "s/POSTGRES_PASSWORD=changeme_in_production/POSTGRES_PASSWORD=$DB_PASSWORD/" .env
 sed -i "s/:changeme_in_production@/:$DB_PASSWORD@/g" .env
+sed -i "s/# WEB_SECRET_KEY=change-me-in-production/WEB_SECRET_KEY=$WEB_SECRET/" .env
 
 # Set production profile (uses pre-built GHCR images)
 echo "COMPOSE_PROFILES=prod" >> .env
