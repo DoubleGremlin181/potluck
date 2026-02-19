@@ -93,3 +93,7 @@ Thumbs.db
 # Claude Code
 .claude/settings.local.json
 PLAN.md
+plan.md
+
+# Playwright MCP
+.playwright-mcp/

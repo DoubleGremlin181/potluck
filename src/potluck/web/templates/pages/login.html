@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="potluck-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Potluck</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.22/dist/full.min.css" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');
+    body { font-family: 'DM Sans', system-ui, sans-serif; }
+    h1, .font-display { font-family: 'Fraunces', Georgia, serif; }
+
+    [data-theme="potluck-dark"] {
+      --p: 25 75% 55%;
+      --pf: 25 75% 48%;
+      --pc: 25 10% 10%;
+      --s: 175 45% 45%;
+      --n: 220 15% 22%;
+      --nf: 220 15% 18%;
+      --nc: 220 10% 85%;
+      --b1: 225 15% 13%;
+      --b2: 225 15% 11%;
+      --b3: 225 15% 9%;
+      --bc: 220 10% 85%;
+      --er: 0 65% 55%;
+      --rounded-box: 0.75rem;
+      --rounded-btn: 0.5rem;
+    }
+  </style>
+  <script src="/static/js/theme.js"></script>
+</head>
+<body class="min-h-screen bg-base-100 flex items-center justify-center">
+  <div class="card w-full max-w-sm bg-base-200 shadow-2xl border border-base-300">
+    <div class="card-body items-center text-center gap-6">
+      <div>
+        <span class="text-primary text-4xl">&#9733;</span>
+        <h1 class="text-2xl font-display mt-2">Potluck</h1>
+        <p class="text-sm text-base-content/60 mt-1">Enter your password to continue</p>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-error text-sm py-2">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+
+      <form method="POST" action="/login" class="w-full">
+        <div class="form-control w-full">
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            class="input input-bordered w-full"
+            autofocus
+            required
+          >
+        </div>
+        <button type="submit" class="btn btn-primary w-full mt-4">
+          Sign in
+        </button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

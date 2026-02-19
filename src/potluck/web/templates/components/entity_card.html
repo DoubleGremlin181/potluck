@@ -1,0 +1,81 @@
+{# Reusable entity card macro. Usage: {{ entity_card(entity, entity_type) }} #}
+
+{% macro entity_card(entity, entity_type, show_type=true) %}
+<div class="card bg-base-200 border border-base-300 shadow-sm hover:shadow-md transition-shadow">
+  <div class="card-body p-4 gap-2">
+    {% if show_type %}
+    <div class="badge badge-outline badge-sm">{{ entity_type }}</div>
+    {% endif %}
+
+    <h3 class="card-title text-sm font-semibold line-clamp-1">
+      {% if entity.title is defined and entity.title %}
+        {{ entity.title }}
+      {% elif entity.caption is defined and entity.caption %}
+        {{ entity.caption }}
+      {% elif entity.subject is defined and entity.subject %}
+        {{ entity.subject }}
+      {% elif entity.name is defined and entity.name %}
+        {{ entity.name }}
+      {% else %}
+        {{ entity_type }} {{ entity.id | string | truncate(8, true, '') }}
+      {% endif %}
+    </h3>
+
+    {% if entity.occurred_at is defined and entity.occurred_at %}
+    <p class="text-xs text-base-content/50">
+      {{ entity.occurred_at.strftime('%b %d, %Y') }}
+    </p>
+    {% elif entity.created_at is defined and entity.created_at %}
+    <p class="text-xs text-base-content/50">
+      {{ entity.created_at.strftime('%b %d, %Y') }}
+    </p>
+    {% endif %}
+
+    {% if entity.source_type is defined and entity.source_type %}
+    <div class="badge badge-ghost badge-xs">{{ entity.source_type.value }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+
+{% macro entity_type_icon(entity_type) %}
+{% if entity_type == 'media' %}&#128247;
+{% elif entity_type == 'chat_message' %}&#128172;
+{% elif entity_type == 'email' %}&#9993;
+{% elif entity_type == 'social_post' %}&#128227;
+{% elif entity_type == 'social_comment' %}&#128488;
+{% elif entity_type == 'knowledge_note' %}&#128221;
+{% elif entity_type == 'document' %}&#128196;
+{% elif entity_type == 'calendar_event' %}&#128197;
+{% elif entity_type == 'transaction' %}&#128176;
+{% elif entity_type == 'location' %}&#128205;
+{% elif entity_type == 'location_visit' %}&#128204;
+{% elif entity_type == 'browsing_history' %}&#127760;
+{% elif entity_type == 'bookmark' %}&#128278;
+{% elif entity_type == 'person' %}&#128100;
+{% elif entity_type == 'tag' %}&#127991;
+{% else %}&#128196;
+{% endif %}
+{% endmacro %}
+
+
+{% macro stat_card(label, value, icon, href=none) %}
+{% if href %}
+<a href="{{ href }}" class="card bg-base-200 border border-base-300 hover:border-primary/30 transition-colors cursor-pointer">
+{% else %}
+<div class="card bg-base-200 border border-base-300">
+{% endif %}
+  <div class="card-body p-4 gap-1">
+    <div class="flex items-center justify-between">
+      <span class="text-2xl">{{ icon }}</span>
+      <span class="text-2xl font-bold font-display text-primary">{{ value | default(0) }}</span>
+    </div>
+    <p class="text-xs text-base-content/60 font-medium uppercase tracking-wide mt-1">{{ label }}</p>
+  </div>
+{% if href %}
+</a>
+{% else %}
+</div>
+{% endif %}
+{% endmacro %}

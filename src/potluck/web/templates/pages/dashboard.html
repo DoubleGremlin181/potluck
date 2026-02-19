@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% from "components/entity_card.html" import stat_card, entity_card, entity_type_icon %}
+
+{% block title %}Dashboard — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-display font-bold">Dashboard</h1>
+      <p class="text-base-content/60 mt-1">{{ "{:,}".format(total_entities) }} items in your knowledge base</p>
+    </div>
+
+    <!-- Quick search -->
+    <form action="/search" method="GET" class="join w-full sm:w-auto">
+      <input
+        type="text"
+        name="q"
+        placeholder="Search everything..."
+        class="input input-bordered join-item w-full sm:w-64"
+      >
+      <button type="submit" class="btn btn-primary join-item">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+    </form>
+  </div>
+
+  <!-- Entity count stat cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+    {% for etype, count in entity_counts.items() if count > 0 %}
+    {{ stat_card(
+      etype | replace('_', ' ') | title,
+      "{:,}".format(count),
+      entity_type_icon(etype),
+      href="/search?type=" ~ etype
+    ) }}
+    {% endfor %}
+  </div>
+
+  {% if not entity_counts.values() | select('gt', 0) | list %}
+  <!-- Empty state -->
+  <div class="card bg-base-200 border border-base-300 border-dashed">
+    <div class="card-body items-center text-center py-12">
+      <span class="text-5xl mb-2">&#128218;</span>
+      <h2 class="card-title font-display">Your knowledge base is empty</h2>
+      <p class="text-base-content/60 max-w-md">
+        Start by importing your data — Google Takeout, Reddit exports, WhatsApp chats, and more.
+      </p>
+      <a href="/imports" class="btn btn-primary mt-4">Import Data</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Recent Activity -->
+    <div class="lg:col-span-2">
+      <h2 class="text-lg font-display font-semibold mb-3">Recent Activity</h2>
+      {% if recent_entities %}
+      <div class="space-y-2">
+        {% for item in recent_entities %}
+        <div class="flex items-center gap-3 p-3 rounded-lg bg-base-200/50 border border-base-300/50 hover:border-base-300 transition-colors">
+          <span class="text-lg shrink-0">{{ entity_type_icon(item.entity_type) }}</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium truncate">
+              {% if item.entity.caption is defined and item.entity.caption %}
+                {{ item.entity.caption }}
+              {% elif item.entity.subject is defined and item.entity.subject %}
+                {{ item.entity.subject }}
+              {% elif item.entity.name is defined and item.entity.name %}
+                {{ item.entity.name }}
+              {% elif item.entity.title is defined and item.entity.title %}
+                {{ item.entity.title }}
+              {% elif item.entity.content is defined and item.entity.content %}
+                {{ item.entity.content | truncate(80) }}
+              {% elif item.entity.body is defined and item.entity.body %}
+                {{ item.entity.body | truncate(80) }}
+              {% elif item.entity.file_path is defined and item.entity.file_path %}
+                {{ item.entity.file_path | basename if item.entity.file_path else '' }}
+              {% else %}
+                {{ item.entity_type | replace('_', ' ') | title }}
+              {% endif %}
+            </p>
+            <p class="text-xs text-base-content/50">
+              {{ item.entity_type | replace('_', ' ') }}
+              &middot;
+              {{ item.created_at.strftime('%b %d, %Y at %H:%M') }}
+            </p>
+          </div>
+          <div class="badge badge-ghost badge-sm shrink-0">{{ item.entity_type | replace('_', ' ') }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-base-content/50 text-sm">No recent activity</p>
+      {% endif %}
+    </div>
+
+    <!-- Active Imports sidebar -->
+    <div>
+      <h2 class="text-lg font-display font-semibold mb-3">Active Imports</h2>
+      {% if active_imports %}
+      <div class="space-y-3">
+        {% for run in active_imports %}
+        <div class="card bg-base-200 border border-base-300 p-3">
+          <div class="flex justify-between items-center mb-2">
+            <span class="badge badge-sm badge-{{ 'warning' if run.status.value == 'running' else 'ghost' }}">
+              {{ run.status.value }}
+            </span>
+            <span class="text-xs text-base-content/50">{{ run.entities_created }} created</span>
+          </div>
+          {% if run.progress_percent is not none %}
+          <progress class="progress progress-primary w-full h-1.5" value="{{ run.progress_percent }}" max="100"></progress>
+          <p class="text-xs text-base-content/50 mt-1">{{ run.progress_current }}/{{ run.progress_total }}</p>
+          {% else %}
+          <progress class="progress progress-primary w-full h-1.5"></progress>
+          {% endif %}
+          {% if run.current_file %}
+          <p class="text-xs text-base-content/50 truncate mt-1">{{ run.current_file }}</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <a href="/imports" class="btn btn-ghost btn-sm w-full mt-3">View all &rarr;</a>
+      {% else %}
+      <div class="card bg-base-200/50 border border-base-300/50 border-dashed p-6 text-center">
+        <p class="text-sm text-base-content/50">No active imports</p>
+        <a href="/imports" class="btn btn-ghost btn-sm mt-2">Start Import</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

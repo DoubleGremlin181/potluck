@@ -54,6 +54,16 @@ class Settings(BaseSettings):
         description="Web server port",
     )
 
+    # Web auth
+    web_password: str | None = Field(
+        default=None,
+        description="Password for web UI access. If unset, no auth required.",
+    )
+    web_secret_key: str = Field(
+        default="potluck-dev-secret-change-me",
+        description="Secret key for signing session cookies",
+    )
+
     # Logging
     log_level: str = Field(
         default="INFO",
