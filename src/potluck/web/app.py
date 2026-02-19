@@ -12,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from potluck.core.config import get_settings
-from potluck.web.routers import auth, dashboard
+from potluck.web.routers import auth, dashboard, search
 
 _WEB_DIR = Path(__file__).parent
 _TEMPLATES_DIR = _WEB_DIR / "templates"
@@ -71,6 +71,7 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(auth.router)
     app.include_router(dashboard.router)
+    app.include_router(search.router)
 
     return app
 

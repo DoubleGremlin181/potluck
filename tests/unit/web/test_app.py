@@ -20,6 +20,7 @@ class TestAppFactory:
         assert "/" in paths
         assert "/login" in paths
         assert "/logout" in paths
+        assert "/search" in paths
 
     def test_static_files_mounted(self) -> None:
         """Static files should be mounted at /static."""

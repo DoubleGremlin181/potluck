@@ -1,6 +1,6 @@
 """Tests for web router configuration."""
 
-from potluck.web.routers import auth, dashboard
+from potluck.web.routers import auth, dashboard, search
 
 
 def _route_paths(router: object) -> set[str]:
@@ -21,3 +21,8 @@ class TestRouterConfiguration:
         """Dashboard router should handle /."""
         paths = _route_paths(dashboard.router)
         assert "/" in paths
+
+    def test_search_router_has_search(self) -> None:
+        """Search router should handle /search."""
+        paths = _route_paths(search.router)
+        assert "/search" in paths

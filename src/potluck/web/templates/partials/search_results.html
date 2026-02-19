@@ -1,0 +1,77 @@
+{% from "components/entity_card.html" import entity_type_icon %}
+{% from "components/pagination.html" import pagination %}
+
+{% if error %}
+<div class="alert alert-error">
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>
+  <span>{{ error }}</span>
+</div>
+{% elif results %}
+  <!-- Result stats -->
+  <div class="flex items-center justify-between text-sm text-base-content/60 mb-4">
+    <span>{{ results.total_count }} result{{ 's' if results.total_count != 1 }} in {{ results.took_ms }}ms</span>
+    <span class="badge badge-ghost badge-sm">{{ results.mode.value | replace('_', ' ') | title }}</span>
+  </div>
+
+  <!-- Result items -->
+  <div class="space-y-3">
+    {% for item in results.items %}
+    <div class="card bg-base-200 border border-base-300 hover:border-primary/30 transition-colors">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-lg shrink-0">{{ entity_type_icon(item.entity_type.value) }}</span>
+            <div class="min-w-0">
+              <h3 class="font-semibold text-sm truncate">
+                {{ item.title or (item.entity_type.value | replace('_', ' ') | title) }}
+              </h3>
+              {% if item.snippet %}
+              <p class="text-xs text-base-content/70 mt-1 line-clamp-2">{{ item.snippet | safe }}</p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="badge badge-outline badge-xs">{{ item.entity_type.value | replace('_', ' ') }}</span>
+            {% if item.source_type %}
+            <span class="badge badge-ghost badge-xs">{{ item.source_type.value | replace('_', ' ') }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-xs text-base-content/50 mt-1">
+          <div class="flex items-center gap-3">
+            {% if item.occurred_at %}
+            <span>{{ item.occurred_at.strftime('%b %d, %Y') }}</span>
+            {% endif %}
+            <span class="font-mono">score: {{ "%.3f" | format(item.score) }}</span>
+          </div>
+          <div class="flex gap-2">
+            {% if item.fts_rank %}
+            <span class="badge badge-outline badge-xs">FTS #{{ item.fts_rank }}</span>
+            {% endif %}
+            {% if item.vector_rank %}
+            <span class="badge badge-outline badge-xs">Vec #{{ item.vector_rank }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {{ pagination(results.total_count, page, per_page, "/search?q=" ~ q ~ "&mode=" ~ mode, "#results") }}
+
+{% elif q %}
+  <div class="text-center py-12">
+    <span class="text-4xl">&#128269;</span>
+    <p class="text-base-content/60 mt-2">No results found for "{{ q }}"</p>
+    <p class="text-sm text-base-content/40 mt-1">Try different keywords or adjust your filters</p>
+  </div>
+{% else %}
+  <div class="text-center py-12">
+    <span class="text-4xl">&#128270;</span>
+    <p class="text-base-content/60 mt-2">Enter a search query to find items in your knowledge base</p>
+    <p class="text-sm text-base-content/40 mt-1">Supports keyword search, semantic search, and hybrid mode</p>
+  </div>
+{% endif %}

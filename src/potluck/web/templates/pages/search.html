@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% from "components/entity_card.html" import entity_type_icon %}
+
+{% block title %}Search — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <h1 class="text-3xl font-display font-bold">Search</h1>
+
+  <!-- Search form -->
+  <form
+    hx-get="/search"
+    hx-target="#results"
+    hx-swap="innerHTML"
+    hx-push-url="true"
+    hx-indicator="#search-loading"
+    class="space-y-4"
+  >
+    <!-- Search input + mode -->
+    <div class="flex flex-col sm:flex-row gap-3">
+      <div class="join flex-1">
+        <input
+          type="text"
+          name="q"
+          value="{{ q }}"
+          placeholder="Search your knowledge base..."
+          class="input input-bordered join-item w-full"
+          autofocus
+        >
+        <button type="submit" class="btn btn-primary join-item">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </button>
+      </div>
+
+      <select name="mode" class="select select-bordered w-full sm:w-auto">
+        {% for m in search_modes %}
+        <option value="{{ m }}" {{ 'selected' if m == mode }}>
+          {{ m | replace('_', ' ') | title }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Filters (collapsible) -->
+    <div class="collapse collapse-arrow bg-base-200 border border-base-300">
+      <input type="checkbox" {% if selected_types or selected_sources or since or until %}checked{% endif %}>
+      <div class="collapse-title text-sm font-medium">
+        Filters
+        {% if selected_types or selected_sources or since or until %}
+        <span class="badge badge-primary badge-sm ml-2">Active</span>
+        {% endif %}
+      </div>
+      <div class="collapse-content space-y-4">
+
+        <!-- Entity types -->
+        <div>
+          <label class="label text-xs font-semibold uppercase tracking-wider">Entity Types</label>
+          <div class="flex flex-wrap gap-2">
+            {% for et in entity_types %}
+            <label class="label cursor-pointer gap-1.5 p-0">
+              <input type="checkbox" name="type" value="{{ et }}"
+                {{ 'checked' if et in selected_types }}
+                class="checkbox checkbox-xs checkbox-primary">
+              <span class="label-text text-xs">{{ entity_type_icon(et) }} {{ et | replace('_', ' ') | title }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Source types -->
+        <div>
+          <label class="label text-xs font-semibold uppercase tracking-wider">Sources</label>
+          <div class="flex flex-wrap gap-2">
+            {% for st in source_types %}
+            <label class="label cursor-pointer gap-1.5 p-0">
+              <input type="checkbox" name="source" value="{{ st }}"
+                {{ 'checked' if st in selected_sources }}
+                class="checkbox checkbox-xs checkbox-secondary">
+              <span class="label-text text-xs">{{ st | replace('_', ' ') | title }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Date range -->
+        <div class="flex flex-col sm:flex-row gap-3">
+          <div class="form-control flex-1">
+            <label class="label text-xs font-semibold uppercase tracking-wider">Since</label>
+            <input type="date" name="since" value="{{ since }}" class="input input-bordered input-sm">
+          </div>
+          <div class="form-control flex-1">
+            <label class="label text-xs font-semibold uppercase tracking-wider">Until</label>
+            <input type="date" name="until" value="{{ until }}" class="input input-bordered input-sm">
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <!-- Loading indicator -->
+  <div id="search-loading" class="htmx-indicator flex justify-center py-8">
+    <span class="loading loading-spinner loading-md text-primary"></span>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    {% include "partials/search_results.html" %}
+  </div>
+
+</div>
+{% endblock %}
