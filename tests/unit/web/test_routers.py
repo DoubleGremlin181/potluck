@@ -1,6 +1,7 @@
 """Tests for web router configuration."""
 
 from potluck.web.routers import auth, dashboard, search
+from potluck.web.routers import media as media_router
 
 
 def _route_paths(router: object) -> set[str]:
@@ -26,3 +27,9 @@ class TestRouterConfiguration:
         """Search router should handle /search."""
         paths = _route_paths(search.router)
         assert "/search" in paths
+
+    def test_media_router_has_routes(self) -> None:
+        """Media router should have gallery and detail routes."""
+        paths = _route_paths(media_router.router)
+        assert "/media" in paths
+        assert "/media/{media_id}/detail" in paths

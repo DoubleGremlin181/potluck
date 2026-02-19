@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "components/pagination.html" import pagination %}
+
+{% block title %}Media — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-display font-bold">Media</h1>
+      <p class="text-base-content/60 mt-1">{{ "{:,}".format(total) }} items</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form
+    hx-get="/media"
+    hx-target="#media-grid"
+    hx-swap="innerHTML"
+    hx-push-url="true"
+    class="flex flex-wrap items-end gap-3"
+  >
+    <div class="form-control">
+      <label class="label text-xs font-semibold">Type</label>
+      <select name="media_type" class="select select-bordered select-sm">
+        <option value="">All types</option>
+        {% for mt in media_types %}
+        <option value="{{ mt }}" {{ 'selected' if mt == media_type }}>{{ mt | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-control">
+      <label class="label text-xs font-semibold">Search</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Caption/OCR text..."
+        class="input input-bordered input-sm w-48">
+    </div>
+
+    <label class="label cursor-pointer gap-2">
+      <input type="checkbox" name="has_ocr" {{ 'checked' if has_ocr }}
+        class="checkbox checkbox-xs checkbox-primary">
+      <span class="label-text text-xs">Has OCR</span>
+    </label>
+
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    <a href="/media" class="btn btn-ghost btn-sm">Clear</a>
+  </form>
+
+  <!-- Grid -->
+  <div id="media-grid">
+    {% include "partials/media_grid.html" %}
+  </div>
+
+</div>
+
+<!-- Lightbox modal -->
+<dialog id="lightbox" class="modal">
+  <div class="modal-box w-11/12 max-w-5xl p-0 overflow-hidden bg-base-200">
+    <form method="dialog">
+      <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10">✕</button>
+    </form>
+    <div id="lightbox-content" class="flex flex-col lg:flex-row">
+      <!-- Content loaded via HTMX -->
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Open lightbox on thumbnail click
+  document.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id === 'lightbox-content') {
+      document.getElementById('lightbox').showModal();
+    }
+  });
+</script>
+{% endblock %}

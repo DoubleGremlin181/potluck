@@ -1,0 +1,65 @@
+{% from "components/pagination.html" import pagination %}
+
+{% if items %}
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+  {% for media in items %}
+  <div
+    class="group relative aspect-square bg-base-300 rounded-lg overflow-hidden cursor-pointer border border-base-300 hover:border-primary/40 transition-colors"
+    hx-get="/media/{{ media.id }}/detail"
+    hx-target="#lightbox-content"
+    hx-swap="innerHTML"
+  >
+    {% if media.media_type.value == 'image' %}
+    <img
+      src="/media/thumb/{{ media.id }}"
+      alt="{{ media.caption or media.original_filename or 'Media' }}"
+      class="w-full h-full object-cover"
+      loading="lazy"
+    >
+    {% elif media.media_type.value == 'video' %}
+    <div class="w-full h-full flex items-center justify-center bg-base-300">
+      <span class="text-4xl">&#127909;</span>
+    </div>
+    {% elif media.media_type.value == 'audio' %}
+    <div class="w-full h-full flex items-center justify-center bg-base-300">
+      <span class="text-4xl">&#127911;</span>
+    </div>
+    {% else %}
+    <div class="w-full h-full flex items-center justify-center bg-base-300">
+      <span class="text-4xl">&#128196;</span>
+    </div>
+    {% endif %}
+
+    <!-- Overlay -->
+    <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <p class="text-white text-xs truncate">
+        {{ media.caption or media.original_filename or '' }}
+      </p>
+      {% if media.occurred_at %}
+      <p class="text-white/70 text-[10px]">{{ media.occurred_at.strftime('%b %d, %Y') }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Badges -->
+    <div class="absolute top-1.5 right-1.5 flex gap-1">
+      {% if media.ocr_text %}
+      <span class="badge badge-xs bg-black/50 text-white border-0">OCR</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{{ pagination(total, page, per_page, "/media?media_type=" ~ media_type ~ "&q=" ~ q, "#media-grid") }}
+
+{% else %}
+<div class="text-center py-16">
+  <span class="text-5xl">&#128247;</span>
+  <p class="text-base-content/60 mt-3">No media found</p>
+  {% if q or media_type %}
+  <a href="/media" class="btn btn-ghost btn-sm mt-2">Clear filters</a>
+  {% else %}
+  <p class="text-sm text-base-content/40 mt-1">Import some photos to get started</p>
+  {% endif %}
+</div>
+{% endif %}

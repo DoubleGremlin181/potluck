@@ -1,0 +1,112 @@
+{# Lightbox media detail view #}
+{% if media %}
+<div class="flex flex-col lg:flex-row w-full">
+  <!-- Image/preview -->
+  <div class="flex-1 bg-black flex items-center justify-center min-h-[300px] lg:min-h-[500px]">
+    {% if media.media_type.value == 'image' %}
+    <img src="/media/file/{{ media.id }}" alt="{{ media.caption or '' }}"
+      class="max-w-full max-h-[80vh] object-contain">
+    {% elif media.media_type.value == 'video' %}
+    <video controls class="max-w-full max-h-[80vh]">
+      <source src="/media/file/{{ media.id }}" type="{{ media.mime_type or 'video/mp4' }}">
+    </video>
+    {% elif media.media_type.value == 'audio' %}
+    <div class="p-8 text-center">
+      <span class="text-6xl mb-4 block">&#127911;</span>
+      <audio controls class="w-full max-w-md">
+        <source src="/media/file/{{ media.id }}" type="{{ media.mime_type or 'audio/mpeg' }}">
+      </audio>
+    </div>
+    {% else %}
+    <div class="p-8 text-center text-white">
+      <span class="text-6xl">&#128196;</span>
+      <p class="mt-2">{{ media.original_filename or 'Document' }}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Metadata panel -->
+  <div class="w-full lg:w-80 p-5 space-y-4 overflow-y-auto max-h-[80vh]">
+    <h3 class="font-display font-semibold text-lg">Details</h3>
+
+    <div class="space-y-3 text-sm">
+      {% if media.original_filename %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Filename</span>
+        <p class="font-medium break-all">{{ media.original_filename }}</p>
+      </div>
+      {% endif %}
+
+      {% if media.caption %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Caption</span>
+        <p>{{ media.caption }}</p>
+      </div>
+      {% endif %}
+
+      {% if media.occurred_at %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Date</span>
+        <p>{{ media.occurred_at.strftime('%B %d, %Y at %H:%M') }}</p>
+      </div>
+      {% endif %}
+
+      {% if media.width and media.height %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Dimensions</span>
+        <p>{{ media.width }} × {{ media.height }}</p>
+      </div>
+      {% endif %}
+
+      {% if media.file_size %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Size</span>
+        <p>{{ "%.1f" | format(media.file_size / 1024 / 1024) }} MB</p>
+      </div>
+      {% endif %}
+
+      {% if media.camera_make or media.camera_model %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Camera</span>
+        <p>{{ [media.camera_make, media.camera_model] | select | join(' ') }}</p>
+      </div>
+      {% endif %}
+
+      {% if media.location_name %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Location</span>
+        <p>{{ media.location_name }}</p>
+      </div>
+      {% endif %}
+
+      {% if media.ocr_text %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">OCR Text</span>
+        <p class="text-xs bg-base-300 p-2 rounded max-h-32 overflow-y-auto whitespace-pre-wrap">{{ media.ocr_text }}</p>
+      </div>
+      {% endif %}
+
+      {% if media.album_name %}
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Album</span>
+        <p>{{ media.album_name }}</p>
+      </div>
+      {% endif %}
+
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Source</span>
+        <p>{{ media.source_type.value | replace('_', ' ') | title }}</p>
+      </div>
+
+      <div>
+        <span class="text-base-content/50 text-xs uppercase tracking-wider">Type</span>
+        <p>{{ media.media_type.value | title }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="p-8 text-center">
+  <p class="text-base-content/60">Media not found</p>
+</div>
+{% endif %}

@@ -21,6 +21,14 @@ class TestAppFactory:
         assert "/login" in paths
         assert "/logout" in paths
         assert "/search" in paths
+        assert "/media" in paths
+
+    def test_media_serving_routes(self) -> None:
+        """Media serving routes should be registered."""
+        app = create_app()
+        paths = {r.path for r in app.routes if hasattr(r, "path")}
+        assert "/media/file/{media_id}" in paths
+        assert "/media/thumb/{media_id}" in paths
 
     def test_static_files_mounted(self) -> None:
         """Static files should be mounted at /static."""
