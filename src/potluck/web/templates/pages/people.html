@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "components/pagination.html" import pagination %}
+
+{% block title %}People — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-display font-bold">People</h1>
+      <p class="text-base-content/60 mt-1">{{ "{:,}".format(total) }} people</p>
+    </div>
+  </div>
+
+  <!-- Search + Merge -->
+  <div class="flex flex-col sm:flex-row gap-3">
+    <form hx-get="/people" hx-target="main" hx-push-url="true" class="join flex-1">
+      <input type="text" name="q" value="{{ q }}" placeholder="Search people..."
+        class="input input-bordered join-item w-full">
+      <button type="submit" class="btn btn-ghost join-item">Search</button>
+    </form>
+    <button class="btn btn-outline btn-sm" onclick="document.getElementById('merge-modal').showModal()">
+      Merge People
+    </button>
+  </div>
+
+  <!-- People grid -->
+  {% if people %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+    {% for person in people %}
+    <a href="/people/{{ person.id }}"
+       class="card bg-base-200 border border-base-300 hover:border-primary/30 transition-colors">
+      <div class="card-body p-4 gap-2">
+        <div class="flex items-center gap-3">
+          <div class="avatar placeholder">
+            <div class="bg-primary/20 text-primary rounded-full w-10 h-10">
+              <span class="text-lg font-display">{{ person.display_name[0] | upper }}</span>
+            </div>
+          </div>
+          <div class="min-w-0 flex-1">
+            <h3 class="font-semibold text-sm truncate">{{ person.display_name }}</h3>
+            {% if person.aliases %}
+            <p class="text-xs text-base-content/50 truncate">
+              {{ person.aliases | length }} alias{{ 'es' if person.aliases | length != 1 }}
+            </p>
+            {% endif %}
+          </div>
+        </div>
+        {% if person.is_self %}
+        <div class="badge badge-primary badge-xs">You</div>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {{ pagination(total, page, per_page, "/people?q=" ~ q, "main") }}
+
+  {% else %}
+  <div class="text-center py-16">
+    <span class="text-5xl">&#128100;</span>
+    <p class="text-base-content/60 mt-3">{{ 'No people match your search' if q else 'No people found' }}</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Merge modal -->
+<dialog id="merge-modal" class="modal">
+  <div class="modal-box bg-base-200">
+    <h3 class="font-display font-semibold text-lg mb-4">Merge People</h3>
+    <form method="POST" action="/people/merge" class="space-y-4">
+      <div class="form-control">
+        <label class="label text-sm">Merge this person...</label>
+        <select name="source_id" class="select select-bordered w-full" required>
+          <option value="">Select person to merge</option>
+          {% for person in people %}
+          <option value="{{ person.id }}">{{ person.display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-control">
+        <label class="label text-sm">...into this person</label>
+        <select name="target_id" class="select select-bordered w-full" required>
+          <option value="">Select target person</option>
+          {% for person in people %}
+          <option value="{{ person.id }}">{{ person.display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('merge-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-warning">Merge</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{% endblock %}

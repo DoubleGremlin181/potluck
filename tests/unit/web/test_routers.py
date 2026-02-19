@@ -1,6 +1,6 @@
 """Tests for web router configuration."""
 
-from potluck.web.routers import auth, dashboard, notes, search
+from potluck.web.routers import auth, dashboard, notes, people, search
 from potluck.web.routers import media as media_router
 
 
@@ -40,3 +40,11 @@ class TestRouterConfiguration:
         assert "/notes" in paths
         assert "/notes/{note_id}/edit" in paths
         assert "/notes/{note_id}/delete" in paths
+
+    def test_people_router_has_routes(self) -> None:
+        """People router should have list, detail, merge."""
+        paths = _route_paths(people.router)
+        assert "/people" in paths
+        assert "/people/{person_id}" in paths
+        assert "/people/merge" in paths
+        assert "/people/{person_id}/alias" in paths

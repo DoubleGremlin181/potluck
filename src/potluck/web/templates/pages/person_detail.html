@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}{{ person.display_name if person else 'Person' }} — Potluck{% endblock %}
+
+{% block content %}
+{% if person %}
+<div class="space-y-6">
+
+  <!-- Header -->
+  <div class="flex items-center gap-4">
+    <a href="/people" class="btn btn-ghost btn-sm">&larr; People</a>
+    <div class="flex items-center gap-3 flex-1">
+      <div class="avatar placeholder">
+        <div class="bg-primary/20 text-primary rounded-full w-14 h-14">
+          <span class="text-2xl font-display">{{ person.display_name[0] | upper }}</span>
+        </div>
+      </div>
+      <div>
+        <h1 class="text-2xl font-display font-bold">{{ person.display_name }}</h1>
+        {% if person.is_self %}
+        <span class="badge badge-primary badge-sm">You</span>
+        {% endif %}
+        {% if person.date_of_birth %}
+        <p class="text-sm text-base-content/50">Born {{ person.date_of_birth.strftime('%B %d, %Y') }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Aliases -->
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body p-5">
+      <h2 class="font-display font-semibold text-lg mb-3">Aliases</h2>
+
+      {% if person.aliases %}
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Value</th>
+              <th>Source</th>
+              <th>Primary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for alias in person.aliases %}
+            <tr>
+              <td><span class="badge badge-outline badge-xs">{{ alias.alias_type.value }}</span></td>
+              <td class="font-medium">{{ alias.value }}</td>
+              <td class="text-xs text-base-content/50">{{ alias.source_type.value | replace('_', ' ') }}</td>
+              <td>
+                {% if alias.is_primary %}
+                <span class="badge badge-primary badge-xs">Primary</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-sm text-base-content/50">No aliases</p>
+      {% endif %}
+
+      <!-- Add alias form -->
+      <div class="divider text-xs">Add Alias</div>
+      <form method="POST" action="/people/{{ person.id }}/alias" class="flex flex-wrap gap-2">
+        <select name="alias_type" class="select select-bordered select-sm" required>
+          {% for at in alias_types %}
+          <option value="{{ at }}">{{ at | title }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="value" placeholder="Alias value" class="input input-bordered input-sm flex-1" required>
+        <button type="submit" class="btn btn-primary btn-sm">Add</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Metadata -->
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body p-5">
+      <h2 class="font-display font-semibold text-lg mb-3">Info</h2>
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <span class="text-base-content/50 text-xs uppercase tracking-wider">Created</span>
+          <p>{{ person.created_at.strftime('%b %d, %Y') }}</p>
+        </div>
+        <div>
+          <span class="text-base-content/50 text-xs uppercase tracking-wider">ID</span>
+          <p class="font-mono text-xs break-all">{{ person.id }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% else %}
+<div class="text-center py-16">
+  <p class="text-base-content/60">Person not found</p>
+  <a href="/people" class="btn btn-ghost btn-sm mt-2">&larr; Back to People</a>
+</div>
+{% endif %}
+{% endblock %}

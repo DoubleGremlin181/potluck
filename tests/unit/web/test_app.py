@@ -23,6 +23,7 @@ class TestAppFactory:
         assert "/search" in paths
         assert "/media" in paths
         assert "/notes" in paths
+        assert "/people" in paths
 
     def test_media_serving_routes(self) -> None:
         """Media serving routes should be registered."""
