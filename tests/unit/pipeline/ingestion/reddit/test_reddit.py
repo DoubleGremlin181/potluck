@@ -7,7 +7,7 @@ import pytest
 
 from potluck.core.exceptions import PipelineError
 from potluck.models.base import EntityType, SourceType
-from potluck.models.social import Platform, PostType, SocialComment, SocialPost, Subscription
+from potluck.models.social import Platform, PostType, SocialComment, SocialFollow, SocialPost
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.ingestion.reddit import RedditStage
 from potluck.pipeline.utils.hashing import compute_content_hash
@@ -26,10 +26,10 @@ class TestRedditDetection:
 
         assert EntityType.SOCIAL_POST in result.entity_counts
         assert EntityType.SOCIAL_COMMENT in result.entity_counts
-        assert EntityType.SUBSCRIPTION in result.entity_counts
+        assert EntityType.SOCIAL_FOLLOW in result.entity_counts
         assert result.entity_counts[EntityType.SOCIAL_POST] == 4
         assert result.entity_counts[EntityType.SOCIAL_COMMENT] == 4
-        assert result.entity_counts[EntityType.SUBSCRIPTION] == 5
+        assert result.entity_counts[EntityType.SOCIAL_FOLLOW] == 5
 
     def test_detect_empty_directory(self, tmp_path: Path) -> None:
         """Detection returns empty counts for directory without CSVs."""
@@ -131,15 +131,15 @@ class TestRedditCommentIngestion:
         assert unsaved.is_saved is False
 
 
-class TestRedditSubscriptionIngestion:
+class TestRedditSocialFollowIngestion:
     """Tests for Reddit subscription ingestion."""
 
     def test_ingest_subscriptions(self) -> None:
-        """Subscriptions are ingested correctly."""
+        """SocialFollows are ingested correctly."""
         stage = RedditStage()
-        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SOCIAL_FOLLOW}))
 
-        subs = [e for e in entities if isinstance(e, Subscription)]
+        subs = [e for e in entities if isinstance(e, SocialFollow)]
         assert len(subs) == 5
 
         python_sub = next(s for s in subs if s.target_name == "python")
@@ -186,14 +186,14 @@ class TestRedditEntityTypeFiltering:
         assert all(isinstance(e, SocialPost) for e in entities)
 
     def test_only_subscriptions(self) -> None:
-        """Only subscriptions are returned when only SUBSCRIPTION requested."""
+        """Only social follows are returned when only SOCIAL_FOLLOW requested."""
         stage = RedditStage()
-        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
-        assert all(isinstance(e, Subscription) for e in entities)
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SOCIAL_FOLLOW}))
+        assert all(isinstance(e, SocialFollow) for e in entities)
 
     @pytest.mark.parametrize(
         "entity_type",
-        [EntityType.SOCIAL_POST, EntityType.SOCIAL_COMMENT, EntityType.SUBSCRIPTION],
+        [EntityType.SOCIAL_POST, EntityType.SOCIAL_COMMENT, EntityType.SOCIAL_FOLLOW],
     )
     def test_individual_entity_types(self, entity_type: EntityType) -> None:
         """Each supported entity type can be ingested independently."""
@@ -220,14 +220,14 @@ class TestRedditCsvPipelineError:
             list(parse_csv(bad_file))
 
 
-class TestRedditSubscriptionSourceIdAndContentHash:
+class TestRedditSocialFollowSourceIdAndContentHash:
     """Tests for subscription source_id and content_hash fields."""
 
     def test_subscription_source_id_format(self) -> None:
-        """Subscription source_id follows 'reddit_sub:SUBREDDIT' pattern."""
+        """SocialFollow source_id follows 'reddit_sub:SUBREDDIT' pattern."""
         stage = RedditStage()
-        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
-        subs = [e for e in entities if isinstance(e, Subscription)]
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SOCIAL_FOLLOW}))
+        subs = [e for e in entities if isinstance(e, SocialFollow)]
 
         for sub in subs:
             assert sub.source_id is not None
@@ -236,27 +236,27 @@ class TestRedditSubscriptionSourceIdAndContentHash:
             assert subreddit_name == sub.target_name
 
     def test_subscription_content_hash_uses_compute_content_hash(self) -> None:
-        """Subscription content_hash is computed from the source_id via compute_content_hash."""
+        """SocialFollow content_hash is computed from the source_id via compute_content_hash."""
         stage = RedditStage()
-        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
-        subs = [e for e in entities if isinstance(e, Subscription)]
+        entities = list(stage.execute(FIXTURES_DIR, {EntityType.SOCIAL_FOLLOW}))
+        subs = [e for e in entities if isinstance(e, SocialFollow)]
 
         for sub in subs:
             expected_hash = compute_content_hash(f"reddit_sub:{sub.target_name}")
             assert sub.content_hash == expected_hash
 
     def test_subscription_content_hash_deterministic(self) -> None:
-        """Subscription content hashes are deterministic across runs."""
+        """SocialFollow content hashes are deterministic across runs."""
         stage = RedditStage()
-        entities1 = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
-        entities2 = list(stage.execute(FIXTURES_DIR, {EntityType.SUBSCRIPTION}))
+        entities1 = list(stage.execute(FIXTURES_DIR, {EntityType.SOCIAL_FOLLOW}))
+        entities2 = list(stage.execute(FIXTURES_DIR, {EntityType.SOCIAL_FOLLOW}))
 
         subs1 = sorted(
-            [e for e in entities1 if isinstance(e, Subscription)],
+            [e for e in entities1 if isinstance(e, SocialFollow)],
             key=lambda s: s.source_id or "",
         )
         subs2 = sorted(
-            [e for e in entities2 if isinstance(e, Subscription)],
+            [e for e in entities2 if isinstance(e, SocialFollow)],
             key=lambda s: s.source_id or "",
         )
         for s1, s2 in zip(subs1, subs2, strict=True):

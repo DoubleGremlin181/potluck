@@ -39,8 +39,8 @@ class PostType(str, Enum):
     OTHER = "other"
 
 
-class SubscriptionType(str, Enum):
-    """Type of subscription/follow."""
+class SocialFollowType(str, Enum):
+    """Type of social follow."""
 
     SUBREDDIT = "subreddit"
     USER = "user"
@@ -422,48 +422,48 @@ class SocialComment(TimestampedEntity, table=True):
     post: "SocialPost" = Relationship(back_populates="comments")
 
 
-class Subscription(BaseEntity, table=True):
-    """Subscription to subreddits, channels, users, etc."""
+class SocialFollow(BaseEntity, table=True):
+    """Follow/subscription to subreddits, channels, users, etc."""
 
-    __tablename__ = "subscriptions"
+    __tablename__ = "social_follows"
 
     # Platform information
     platform: Platform = Field(
         description="Social media platform",
     )
-    subscription_type: SubscriptionType = Field(
-        description="Type of subscription",
+    follow_type: SocialFollowType = Field(
+        description="Type of social follow",
     )
 
-    # Subscription target
+    # Follow target
     target_id: str | None = Field(
         default=None,
         index=True,
-        description="Platform-specific ID of the subscription target",
+        description="Platform-specific ID of the follow target",
     )
     target_name: str = Field(
         index=True,
-        description="Name of what's being subscribed to",
+        description="Name of what's being followed",
     )
     target_url: str | None = Field(
         default=None,
-        description="URL to the subscription target",
+        description="URL to the follow target",
     )
     target_description: str | None = Field(
         default=None,
         description="Description of the target",
     )
 
-    # Subscription metadata
-    subscribed_at: datetime | None = Field(
+    # Follow metadata
+    followed_at: datetime | None = Field(
         default=None,
-        description="When the subscription started",
+        description="When the follow started",
     )
-    unsubscribed_at: datetime | None = Field(
+    unfollowed_at: datetime | None = Field(
         default=None,
-        description="When unsubscribed (if applicable)",
+        description="When unfollowed (if applicable)",
     )
     is_active: bool = Field(
         default=True,
-        description="Whether currently subscribed",
+        description="Whether currently following",
     )

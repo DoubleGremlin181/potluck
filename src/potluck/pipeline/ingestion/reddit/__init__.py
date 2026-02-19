@@ -44,7 +44,7 @@ class RedditStage(BaseIngestionStage):
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {
         EntityType.SOCIAL_POST,
         EntityType.SOCIAL_COMMENT,
-        EntityType.SUBSCRIPTION,
+        EntityType.SOCIAL_FOLLOW,
     }
 
     def detect(self, path: Path) -> DetectionResult:
@@ -66,7 +66,7 @@ class RedditStage(BaseIngestionStage):
 
         subs_count = _count_csv_rows(path / "subscribed_subreddits.csv")
         if subs_count > 0:
-            entity_counts[EntityType.SUBSCRIPTION] = subs_count
+            entity_counts[EntityType.SOCIAL_FOLLOW] = subs_count
 
         if entity_counts:
             metadata["source"] = "Reddit GDPR Export"
@@ -105,7 +105,7 @@ class RedditStage(BaseIngestionStage):
         if EntityType.SOCIAL_COMMENT in types_to_process:
             yield from ingest_comments(path, saved_comment_ids, filters)
 
-        if EntityType.SUBSCRIPTION in types_to_process:
+        if EntityType.SOCIAL_FOLLOW in types_to_process:
             yield from ingest_subscriptions(path)
 
 

@@ -47,8 +47,8 @@ class TestImageFolderDetection:
         assert EntityType.MEDIA in result.entity_counts
         assert result.entity_counts[EntityType.MEDIA] == 2
 
-    def test_detect_mixed_media(self, tmp_path: Path) -> None:
-        """Detection counts images, videos, and audio."""
+    def test_detect_ignores_non_images(self, tmp_path: Path) -> None:
+        """Detection only counts image files, ignoring video and audio."""
         _create_minimal_jpeg(tmp_path / "photo.jpg")
         (tmp_path / "video.mp4").write_bytes(b"\x00" * 100)
         (tmp_path / "audio.mp3").write_bytes(b"\x00" * 100)
@@ -56,7 +56,7 @@ class TestImageFolderDetection:
         stage = ImageFolderStage()
         result = stage.detect(tmp_path)
 
-        assert result.entity_counts[EntityType.MEDIA] == 3
+        assert result.entity_counts[EntityType.MEDIA] == 1
 
     def test_detect_empty_directory(self, tmp_path: Path) -> None:
         """Empty directories return no counts."""
@@ -166,14 +166,11 @@ class TestMediaTypeDetection:
         assert _get_media_type(".png") == MediaType.IMAGE
         assert _get_media_type(".heic") == MediaType.IMAGE
 
-    def test_video_types(self) -> None:
-        assert _get_media_type(".mp4") == MediaType.VIDEO
-        assert _get_media_type(".mov") == MediaType.VIDEO
-
-    def test_audio_types(self) -> None:
-        assert _get_media_type(".mp3") == MediaType.AUDIO
-        assert _get_media_type(".wav") == MediaType.AUDIO
-        assert _get_media_type(".flac") == MediaType.AUDIO
+    def test_video_and_audio_not_supported(self) -> None:
+        assert _get_media_type(".mp4") is None
+        assert _get_media_type(".mov") is None
+        assert _get_media_type(".mp3") is None
+        assert _get_media_type(".wav") is None
 
     def test_unknown_type(self) -> None:
         assert _get_media_type(".xyz") is None

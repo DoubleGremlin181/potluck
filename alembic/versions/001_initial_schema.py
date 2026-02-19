@@ -699,7 +699,7 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "subscriptions",
+        "social_follows",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
@@ -707,19 +707,19 @@ def upgrade() -> None:
         sa.Column("source_id", sa.String(), nullable=True),
         sa.Column("content_hash", sa.String(), nullable=True),
         sa.Column("platform", sa.String(), nullable=False),
-        sa.Column("subscription_type", sa.String(), nullable=False),
+        sa.Column("follow_type", sa.String(), nullable=False),
         sa.Column("target_id", sa.String(), nullable=True),
         sa.Column("target_name", sa.String(), nullable=False),
         sa.Column("target_url", sa.String(), nullable=True),
         sa.Column("target_description", sa.String(), nullable=True),
-        sa.Column("subscribed_at", sa.DateTime(), nullable=True),
-        sa.Column("unsubscribed_at", sa.DateTime(), nullable=True),
+        sa.Column("followed_at", sa.DateTime(), nullable=True),
+        sa.Column("unfollowed_at", sa.DateTime(), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_subscriptions_target_id", "subscriptions", ["target_id"])
-    op.create_index("ix_subscriptions_target_name", "subscriptions", ["target_name"])
-    op.create_index("ix_subscriptions_content_hash", "subscriptions", ["content_hash"])
+    op.create_index("ix_social_follows_target_id", "social_follows", ["target_id"])
+    op.create_index("ix_social_follows_target_name", "social_follows", ["target_name"])
+    op.create_index("ix_social_follows_content_hash", "social_follows", ["content_hash"])
 
     # === Browsing tables ===
 
@@ -1789,7 +1789,7 @@ def downgrade() -> None:
     op.drop_table("bookmarks")
     op.drop_table("bookmark_folders")
     op.drop_table("browsing_history")
-    op.drop_table("subscriptions")
+    op.drop_table("social_follows")
     op.drop_table("social_comments")
     op.drop_table("social_posts")
     op.drop_table("email_attachments")

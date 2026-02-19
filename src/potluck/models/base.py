@@ -58,7 +58,7 @@ class EntityType(str, Enum):
     LOCATION_VISIT = "location_visit"
     BROWSING_HISTORY = "browsing_history"
     BOOKMARK = "bookmark"
-    SUBSCRIPTION = "subscription"
+    SOCIAL_FOLLOW = "social_follow"
     BUDGET = "budget"
     PERSON = "person"
     TAG = "tag"

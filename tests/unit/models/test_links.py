@@ -57,7 +57,7 @@ class TestEntityLinkModels:
             "calendar_event",
             "transaction",
             "budget",
-            "subscription",
+            "social_follow",
             "location",
             "location_visit",
             "browsing_history",

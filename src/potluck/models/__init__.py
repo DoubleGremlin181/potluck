@@ -77,9 +77,9 @@ from potluck.models.social import (
     Platform,
     PostType,
     SocialComment,
+    SocialFollow,
+    SocialFollowType,
     SocialPost,
-    Subscription,
-    SubscriptionType,
 )
 from potluck.models.sources import (
     ImportRun,
@@ -214,8 +214,8 @@ __all__ = [
     "PostType",
     "SocialComment",
     "SocialPost",
-    "Subscription",
-    "SubscriptionType",
+    "SocialFollow",
+    "SocialFollowType",
     # Sources
     "ImportRun",
     "ImportSource",

@@ -1,8 +1,8 @@
-# Image / Media Folder Import
+# Image Folder Import
 
 ## Usage
 
-Point Potluck at any folder containing images, videos, or audio:
+Point Potluck at any folder containing images:
 
 ```bash
 potluck ingest /path/to/photos --source image_folder
@@ -11,8 +11,6 @@ potluck ingest /path/to/photos --source image_folder
 ## Supported formats
 
 **Images:** .jpg, .jpeg, .png, .gif, .webp, .heic, .heif, .bmp, .tiff, .tif, .svg, .raw, .cr2, .nef, .arw
-**Video:** .mp4, .mov, .avi, .mkv, .webm, .flv, .wmv, .m4v, .3gp, .mpg, .mpeg
-**Audio:** .mp3, .wav, .flac, .aac, .ogg, .m4a, .wma
 
 ## Notes
 

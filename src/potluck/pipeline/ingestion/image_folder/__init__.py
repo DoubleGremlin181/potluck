@@ -1,6 +1,6 @@
-"""Image/media folder ingestion stage.
+"""Image folder ingestion stage.
 
-Recursively scans any directory for images, videos, and audio files.
+Recursively scans any directory for image files.
 """
 
 from collections.abc import Iterator
@@ -19,9 +19,9 @@ logger = get_logger(__name__)
 
 @register
 class ImageFolderStage(BaseIngestionStage):
-    """Ingestion stage for media file folders.
+    """Ingestion stage for image file folders.
 
-    Scans any directory recursively for images, videos, and audio files.
+    Scans any directory recursively for image files.
     """
 
     SOURCE_TYPE: ClassVar[SourceType] = SourceType.GENERIC

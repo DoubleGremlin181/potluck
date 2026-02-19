@@ -1,4 +1,4 @@
-"""Media file ingestion from arbitrary folders."""
+"""Image file ingestion from arbitrary folders."""
 
 import mimetypes
 from collections.abc import Iterator
@@ -12,12 +12,7 @@ from potluck.models.base import SourceType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.utils.hashing import compute_file_hash
-from potluck.pipeline.utils.media import (
-    ALL_MEDIA_EXTENSIONS,
-    AUDIO_EXTENSIONS,
-    IMAGE_EXTENSIONS,
-    VIDEO_EXTENSIONS,
-)
+from potluck.pipeline.utils.media import IMAGE_EXTENSIONS
 
 logger = get_logger(__name__)
 
@@ -26,9 +21,9 @@ def ingest_media(
     path: Path,
     filters: PipelineFilter | None = None,
 ) -> Iterator[Media]:
-    """Ingest media files from a directory.
+    """Ingest image files from a directory.
 
-    Recursively scans for image, video, and audio files.
+    Recursively scans for image files.
 
     Args:
         path: Directory to scan.
@@ -43,13 +38,13 @@ def ingest_media(
             yield entity
         return
 
-    logger.info(f"Processing media folder at {path}")
+    logger.info(f"Processing image folder at {path}")
 
     for file_path in path.rglob("*"):
         if not file_path.is_file():
             continue
 
-        if file_path.suffix.lower() not in ALL_MEDIA_EXTENSIONS:
+        if file_path.suffix.lower() not in IMAGE_EXTENSIONS:
             continue
 
         entity = _process_file(file_path, path, filters)
@@ -58,13 +53,13 @@ def ingest_media(
 
 
 def count_media_files(path: Path) -> int:
-    """Count media files by extension in a directory."""
+    """Count image files by extension in a directory."""
     if path.is_file():
-        return 1 if path.suffix.lower() in ALL_MEDIA_EXTENSIONS else 0
+        return 1 if path.suffix.lower() in IMAGE_EXTENSIONS else 0
 
     count = 0
     for file_path in path.rglob("*"):
-        if file_path.is_file() and file_path.suffix.lower() in ALL_MEDIA_EXTENSIONS:
+        if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS:
             count += 1
     return count
 
@@ -141,13 +136,9 @@ def _process_file(
 
 
 def _get_media_type(suffix: str) -> MediaType | None:
-    """Determine MediaType from file extension."""
+    """Determine MediaType from file extension (images only)."""
     if suffix in IMAGE_EXTENSIONS:
         return MediaType.IMAGE
-    if suffix in VIDEO_EXTENSIONS:
-        return MediaType.VIDEO
-    if suffix in AUDIO_EXTENSIONS:
-        return MediaType.AUDIO
     return None
 
 
