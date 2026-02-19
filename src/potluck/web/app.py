@@ -19,7 +19,7 @@ from starlette.responses import Response
 from potluck.core.config import get_settings
 from potluck.models.media import Media
 from potluck.web.dependencies import get_db, require_auth
-from potluck.web.routers import auth, dashboard, notes, people, search
+from potluck.web.routers import auth, dashboard, notes, people, search, timeline
 from potluck.web.routers import media as media_router
 
 _WEB_DIR = Path(__file__).parent
@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(media_router.router)
     app.include_router(notes.router)
     app.include_router(people.router)
+    app.include_router(timeline.router)
 
     # Media file serving
     @app.get("/media/file/{media_id}", dependencies=[Depends(require_auth)])

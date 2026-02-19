@@ -1,6 +1,6 @@
 """Tests for web router configuration."""
 
-from potluck.web.routers import auth, dashboard, notes, people, search
+from potluck.web.routers import auth, dashboard, notes, people, search, timeline
 from potluck.web.routers import media as media_router
 
 
@@ -48,3 +48,9 @@ class TestRouterConfiguration:
         assert "/people/{person_id}" in paths
         assert "/people/merge" in paths
         assert "/people/{person_id}/alias" in paths
+
+    def test_timeline_router_has_data_endpoint(self) -> None:
+        """Timeline router should have page and data endpoints."""
+        paths = _route_paths(timeline.router)
+        assert "/timeline" in paths
+        assert "/timeline/data" in paths

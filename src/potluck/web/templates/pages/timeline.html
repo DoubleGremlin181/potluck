@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Timeline — Potluck{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/vis-timeline.css">
+<style>
+  .vis-timeline {
+    border: 1px solid oklch(var(--b3));
+    border-radius: 0.75rem;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .vis-item {
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    border-color: oklch(var(--p));
+    background-color: oklch(var(--p) / 0.2);
+    color: oklch(var(--bc));
+  }
+  .vis-item.vis-selected {
+    border-color: oklch(var(--a));
+    background-color: oklch(var(--a) / 0.3);
+  }
+  .vis-label {
+    color: oklch(var(--bc));
+    font-size: 0.75rem;
+  }
+  .vis-panel.vis-background,
+  .vis-panel.vis-center,
+  .vis-panel.vis-left,
+  .vis-panel.vis-right,
+  .vis-panel.vis-top,
+  .vis-panel.vis-bottom {
+    background: oklch(var(--b1));
+    border-color: oklch(var(--b3));
+  }
+  .vis-time-axis .vis-text {
+    color: oklch(var(--bc) / 0.6);
+    font-size: 0.7rem;
+  }
+  .vis-time-axis .vis-grid.vis-minor { border-color: oklch(var(--b3) / 0.5); }
+  .vis-time-axis .vis-grid.vis-major { border-color: oklch(var(--b3)); }
+  .vis-labelset .vis-label { border-color: oklch(var(--b3)); }
+  .vis-group { border-color: oklch(var(--b3)); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-display font-bold">Timeline</h1>
+      <p class="text-base-content/60 mt-1">Your data across time</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex flex-wrap items-end gap-3">
+    <div class="form-control">
+      <label class="label text-xs font-semibold">From</label>
+      <input type="date" id="tl-start" class="input input-bordered input-sm">
+    </div>
+    <div class="form-control">
+      <label class="label text-xs font-semibold">To</label>
+      <input type="date" id="tl-end" class="input input-bordered input-sm">
+    </div>
+    <div class="form-control">
+      <label class="label text-xs font-semibold">Types</label>
+      <div class="flex flex-wrap gap-1.5">
+        {% for et in entity_types %}
+        <label class="label cursor-pointer gap-1 p-0">
+          <input type="checkbox" value="{{ et }}" class="checkbox checkbox-xs checkbox-primary tl-type-filter" checked>
+          <span class="label-text text-xs">{{ et | replace('_', ' ') | title }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <button onclick="loadTimeline()" class="btn btn-primary btn-sm">Load</button>
+  </div>
+
+  <!-- Timeline container -->
+  <div id="timeline-container" style="min-height: 400px;">
+    <div id="timeline-loading" class="flex items-center justify-center h-[400px] text-base-content/50">
+      <span class="loading loading-spinner loading-md mr-2"></span>
+      Loading timeline...
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/vis-timeline.min.js"></script>
+<script>
+  var timeline = null;
+
+  function loadTimeline() {
+    var start = document.getElementById('tl-start').value;
+    var end = document.getElementById('tl-end').value;
+    var types = [];
+    document.querySelectorAll('.tl-type-filter:checked').forEach(function(cb) {
+      types.push(cb.value);
+    });
+
+    var params = new URLSearchParams();
+    if (start) params.append('start', start);
+    if (end) params.append('end', end);
+    types.forEach(function(t) { params.append('type', t); });
+
+    var container = document.getElementById('timeline-container');
+    var loading = document.getElementById('timeline-loading');
+    if (loading) loading.style.display = 'flex';
+
+    fetch('/timeline/data?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        // Clear container safely
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
+
+        if (data.items.length === 0) {
+          var emptyMsg = document.createElement('div');
+          emptyMsg.className = 'flex items-center justify-center h-[400px] text-base-content/50';
+          var p = document.createElement('p');
+          p.textContent = 'No timeline data found for the selected filters';
+          emptyMsg.appendChild(p);
+          container.appendChild(emptyMsg);
+          return;
+        }
+
+        var items = new vis.DataSet(data.items);
+        var groups = new vis.DataSet(data.groups);
+
+        var options = {
+          height: '500px',
+          stack: true,
+          showMajorLabels: true,
+          showMinorLabels: true,
+          groupOrder: 'content',
+          zoomMin: 1000 * 60 * 60,       // 1 hour
+          zoomMax: 1000 * 60 * 60 * 24 * 365 * 10,  // 10 years
+          tooltip: { followMouse: true },
+        };
+
+        if (timeline) timeline.destroy();
+        timeline = new vis.Timeline(container, items, groups, options);
+      })
+      .catch(function(err) {
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
+        var errDiv = document.createElement('div');
+        errDiv.className = 'alert alert-error';
+        var errP = document.createElement('p');
+        errP.textContent = 'Failed to load timeline: ' + err.message;
+        errDiv.appendChild(errP);
+        container.appendChild(errDiv);
+      });
+  }
+
+  // Load on page ready
+  loadTimeline();
+</script>
+{% endblock %}
