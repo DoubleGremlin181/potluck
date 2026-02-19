@@ -7,8 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from potluck.core.config import get_settings
+from potluck.core.logging import get_logger
 from potluck.models import get_entity_type_model_map
 from potluck.web.dependencies import get_db, require_auth
+
+logger = get_logger("web.settings")
 
 router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_auth)])
 
@@ -40,11 +43,13 @@ async def settings_page(
     total = sum(t["count"] for t in table_stats)  # type: ignore[misc]
 
     # Database size
+    db_size: int | None
     try:
         result = await db.execute(text("SELECT pg_database_size(current_database())"))
         db_size = result.scalar() or 0
     except Exception:
-        db_size = 0
+        logger.exception("Failed to retrieve database size")
+        db_size = None
 
     # Config (sanitized - hide sensitive values)
     config_items = {

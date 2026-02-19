@@ -13,12 +13,15 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import col
 from starlette.responses import Response
 
+from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 from potluck.models.sources import ImportRun, ImportStatus
 from potluck.pipeline import start_ingestion
 from potluck.pipeline.ingestion.registry import list_stages
 from potluck.pipeline.tasks.ingestion import cancel_ingestion
 from potluck.web.dependencies import get_db, require_auth
+
+logger = get_logger("web.imports")
 
 router = APIRouter(prefix="/imports", tags=["imports"], dependencies=[Depends(require_auth)])
 
@@ -137,7 +140,11 @@ async def start_import_from_path(
     if entity_types:
         types = [EntityType(t) for t in entity_types if t]
 
-    start_ingestion(file_path, types)
+    try:
+        start_ingestion(file_path, types)
+    except Exception:
+        logger.exception("Failed to start ingestion from path=%s", file_path)
+        return RedirectResponse(url="/imports?error=ingestion_failed", status_code=303)
     return RedirectResponse(url="/imports", status_code=303)
 
 
@@ -163,12 +170,16 @@ async def browse_files(
         for entry in sorted(base_path.iterdir()):
             if entry.name.startswith("."):
                 continue
+            try:
+                size = entry.stat().st_size if entry.is_file() else None
+            except OSError:
+                size = None
             entries.append(
                 {
                     "name": entry.name,
                     "path": str(entry),
                     "is_dir": entry.is_dir(),
-                    "size": entry.stat().st_size if entry.is_file() else None,
+                    "size": size,
                 }
             )
     except PermissionError:

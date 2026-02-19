@@ -6,8 +6,11 @@ from fastapi import Cookie, HTTPException, Request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from potluck.core.config import Settings, get_settings
+from potluck.core.config import get_settings
 from potluck.db.session import get_async_engine
+
+# 30-day session cookie lifetime in seconds
+SESSION_MAX_AGE = 86400 * 30
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -15,11 +18,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     engine = get_async_engine()
     async with AsyncSession(engine, expire_on_commit=False) as session:
         yield session
-
-
-def get_current_settings() -> Settings:
-    """Return the application settings."""
-    return get_settings()
 
 
 async def require_auth(
@@ -40,6 +38,6 @@ async def require_auth(
 
     serializer = URLSafeTimedSerializer(settings.web_secret_key)
     try:
-        serializer.loads(session_token, max_age=86400 * 30)  # 30 days
+        serializer.loads(session_token, max_age=SESSION_MAX_AGE)
     except BadSignature as exc:
         raise HTTPException(status_code=303, headers={"Location": "/login"}) from exc

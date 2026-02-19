@@ -4,6 +4,7 @@ import pytest
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from potluck.core.config import get_settings
+from potluck.web.dependencies import SESSION_MAX_AGE
 
 
 class TestAuthCookies:
@@ -17,8 +18,7 @@ class TestAuthCookies:
         token = serializer.dumps("authenticated")
         assert isinstance(token, str)
 
-        # Should not raise
-        data = serializer.loads(token, max_age=86400 * 30)
+        data = serializer.loads(token, max_age=SESSION_MAX_AGE)
         assert data == "authenticated"
 
     def test_invalid_token_raises(self) -> None:
@@ -27,7 +27,7 @@ class TestAuthCookies:
         serializer = URLSafeTimedSerializer(settings.web_secret_key)
 
         with pytest.raises(BadSignature):
-            serializer.loads("invalid-token", max_age=86400 * 30)
+            serializer.loads("invalid-token", max_age=SESSION_MAX_AGE)
 
     def test_different_secret_rejects(self) -> None:
         """A token signed with a different key should be rejected."""
@@ -37,4 +37,4 @@ class TestAuthCookies:
         token = serializer1.dumps("authenticated")
 
         with pytest.raises(BadSignature):
-            serializer2.loads(token, max_age=86400 * 30)
+            serializer2.loads(token, max_age=SESSION_MAX_AGE)

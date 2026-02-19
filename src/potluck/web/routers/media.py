@@ -21,7 +21,6 @@ async def media_gallery(
     request: Request,
     db: AsyncSession = Depends(get_db),
     media_type: str = Query(default="", description="Filter by media type"),
-    has_faces: bool = Query(default=False, description="Filter by has faces"),
     has_ocr: bool = Query(default=False, description="Filter by has OCR text"),
     q: str = Query(default="", description="Search within captions/OCR"),
     page: int = Query(default=1, ge=1),
@@ -64,7 +63,6 @@ async def media_gallery(
         "page": page,
         "per_page": per_page,
         "media_type": media_type,
-        "has_faces": has_faces,
         "has_ocr": has_ocr,
         "q": q,
         "media_types": [t.value for t in MediaType],
@@ -78,11 +76,11 @@ async def media_gallery(
 @router.get("/{media_id}/detail", response_class=HTMLResponse)
 async def media_detail(
     request: Request,
-    media_id: str,
+    media_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Render media detail lightbox content."""
-    stmt = select(Media).where(col(Media.id) == UUID(media_id))
+    stmt = select(Media).where(col(Media.id) == media_id)
     result = await db.execute(stmt)
     media = result.scalar_one_or_none()
 

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import col
 from starlette.responses import Response
 
+from potluck.models.base import SourceType
 from potluck.models.people import AliasType, Person, PersonAlias
 from potluck.web.dependencies import get_db, require_auth
 
@@ -67,17 +68,18 @@ async def people_list(
 @router.get("/{person_id}", response_class=HTMLResponse)
 async def person_detail(
     request: Request,
-    person_id: str,
+    person_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Render person detail page."""
     stmt = (
-        select(Person)
-        .where(col(Person.id) == UUID(person_id))
-        .options(selectinload(Person.aliases))  # type: ignore[arg-type]
+        select(Person).where(col(Person.id) == person_id).options(selectinload(Person.aliases))  # type: ignore[arg-type]
     )
     result = await db.execute(stmt)
     person = result.scalar_one_or_none()
+
+    if person is None:
+        raise HTTPException(status_code=404, detail="Person not found")
 
     templates = request.app.state.templates
     return templates.TemplateResponse(  # type: ignore[no-any-return]
@@ -93,16 +95,14 @@ async def person_detail(
 
 @router.post("/{person_id}/alias")
 async def add_alias(
-    person_id: str,
+    person_id: UUID,
     db: AsyncSession = Depends(get_db),
     alias_type: str = Form(...),
     value: str = Form(...),
 ) -> RedirectResponse:
     """Add an alias to a person."""
-    from potluck.models.base import SourceType
-
     alias = PersonAlias(
-        person_id=UUID(person_id),
+        person_id=person_id,
         alias_type=AliasType(alias_type),
         value=value.strip(),
         source_type=SourceType.MANUAL,
@@ -115,29 +115,34 @@ async def add_alias(
 @router.post("/merge")
 async def merge_people(
     db: AsyncSession = Depends(get_db),
-    source_id: str = Form(...),
-    target_id: str = Form(...),
+    source_id: UUID = Form(...),
+    target_id: UUID = Form(...),
 ) -> RedirectResponse:
     """Merge source person into target person."""
-    source_uuid = UUID(source_id)
-    target_uuid = UUID(target_id)
+    if source_id == target_id:
+        return RedirectResponse(url=f"/people/{target_id}", status_code=303)
 
-    # Get source person
-    stmt = select(Person).where(col(Person.id) == source_uuid)
-    result = await db.execute(stmt)
-    source = result.scalar_one_or_none()
+    # Verify both source and target exist
+    source_stmt = select(Person).where(col(Person.id) == source_id)
+    source = (await db.execute(source_stmt)).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source person not found")
 
-    if source and source_uuid != target_uuid:
-        source.merged_into_id = target_uuid
-        db.add(source)
+    target_stmt = select(Person).where(col(Person.id) == target_id)
+    target = (await db.execute(target_stmt)).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target person not found")
 
-        # Move aliases to target
-        alias_stmt = select(PersonAlias).where(col(PersonAlias.person_id) == source_uuid)
-        alias_result = await db.execute(alias_stmt)
-        for alias in alias_result.scalars().all():
-            alias.person_id = target_uuid
-            db.add(alias)
+    source.merged_into_id = target_id
+    db.add(source)
 
-        await db.commit()
+    # Move aliases to target
+    alias_stmt = select(PersonAlias).where(col(PersonAlias.person_id) == source_id)
+    alias_result = await db.execute(alias_stmt)
+    for alias in alias_result.scalars().all():
+        alias.person_id = target_id
+        db.add(alias)
+
+    await db.commit()
 
     return RedirectResponse(url=f"/people/{target_id}", status_code=303)

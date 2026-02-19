@@ -48,10 +48,6 @@ class ProcessingError(PipelineError):
     """
 
 
-class WebError(PotluckError):
-    """Raised when a web UI operation fails."""
-
-
 class SearchError(PotluckError):
     """Base exception for search operations.
 

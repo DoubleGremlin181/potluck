@@ -7,10 +7,14 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
+from potluck.core.exceptions import SearchError
+from potluck.core.logging import get_logger
 from potluck.models.base import EntityType, SourceType
 from potluck.search import SearchQuery, SearchResults, search
 from potluck.search.dtos import SearchMode
 from potluck.web.dependencies import get_db, require_auth
+
+logger = get_logger("web.search")
 
 router = APIRouter(tags=["search"], dependencies=[Depends(require_auth)])
 
@@ -48,28 +52,35 @@ async def search_page(
 
         since_dt: datetime | None = None
         until_dt: datetime | None = None
-        try:
-            if since:
+        if since:
+            try:
                 since_dt = datetime.fromisoformat(since)
-            if until:
+            except ValueError:
+                error = f"Invalid start date format: '{since}'. Use YYYY-MM-DD."
+        if until:
+            try:
                 until_dt = datetime.fromisoformat(until)
-        except ValueError:
-            pass
+            except ValueError:
+                error = f"Invalid end date format: '{until}'. Use YYYY-MM-DD."
 
-        try:
-            query = SearchQuery(
-                query=q.strip(),
-                mode=search_mode,
-                entity_types=entity_types,
-                source_types=source_types,
-                limit=per_page,
-                offset=(page - 1) * per_page,
-                since=since_dt,
-                until=until_dt,
-            )
-            results = await search(query)
-        except Exception as e:
-            error = str(e)
+        if error is None:
+            try:
+                query = SearchQuery(
+                    query=q.strip(),
+                    mode=search_mode,
+                    entity_types=entity_types,
+                    source_types=source_types,
+                    limit=per_page,
+                    offset=(page - 1) * per_page,
+                    since=since_dt,
+                    until=until_dt,
+                )
+                results = await search(query)
+            except SearchError as e:
+                error = f"Search failed: {e.message}"
+            except Exception:
+                logger.exception("Unexpected error during search for query=%s", q)
+                error = "An unexpected error occurred while searching. Please try again."
 
     templates = request.app.state.templates
     is_htmx = request.headers.get("HX-Request") == "true"

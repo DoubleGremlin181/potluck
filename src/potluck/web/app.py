@@ -18,7 +18,7 @@ from starlette.responses import Response
 
 from potluck.core.config import get_settings
 from potluck.models.media import Media
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import SESSION_MAX_AGE, get_db, require_auth
 from potluck.web.routers import (
     auth,
     dashboard,
@@ -41,7 +41,7 @@ _STATIC_DIR = _WEB_DIR / "static"
 class AuthMiddleware(BaseHTTPMiddleware):
     """Redirect unauthenticated requests to the login page.
 
-    Skips auth check for /login, /static, and /favicon.ico.
+    Skips auth check for /login, /static/*, and /favicon.ico.
     If WEB_PASSWORD is not set, all requests are allowed through.
     """
 
@@ -51,7 +51,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if path.startswith(("/login", "/static", "/favicon.ico")):
+        if path == "/login" or path.startswith(("/login/", "/static/")) or path == "/favicon.ico":
             return await call_next(request)
 
         token = request.cookies.get("session_token")
@@ -60,7 +60,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         serializer = URLSafeTimedSerializer(settings.web_secret_key)
         try:
-            serializer.loads(token, max_age=86400 * 30)
+            serializer.loads(token, max_age=SESSION_MAX_AGE)
         except BadSignature:
             return RedirectResponse(url="/login", status_code=303)
 
@@ -100,13 +100,10 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(map_router.router)
 
-    # Media file serving
-    @app.get("/media/file/{media_id}", dependencies=[Depends(require_auth)])
-    async def serve_media(media_id: UUID, db: AsyncSession = Depends(get_db)) -> FileResponse:
-        """Serve a media file by its database ID.
+    async def _resolve_media_file(media_id: UUID, db: AsyncSession) -> tuple[Path, str]:
+        """Look up a media file by database ID and return its path and content type.
 
-        Looks up the file_path in the Media table and returns the file.
-        No direct filesystem paths are exposed to the client.
+        Raises HTTPException(404) if the media record or file is missing.
         """
         stmt = select(Media).where(col(Media.id) == media_id)
         result = await db.execute(stmt)
@@ -120,33 +117,22 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="File not found on disk")
 
         content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
-        return FileResponse(
-            path=file_path,
-            media_type=content_type,
-            filename=file_path.name,
-        )
+        return file_path, content_type
 
-    # Media thumbnail serving (resized)
+    @app.get("/media/file/{media_id}", dependencies=[Depends(require_auth)])
+    async def serve_media(media_id: UUID, db: AsyncSession = Depends(get_db)) -> FileResponse:
+        """Serve a media file by its database ID.
+
+        No direct filesystem paths are exposed to the client.
+        """
+        file_path, content_type = await _resolve_media_file(media_id, db)
+        return FileResponse(path=file_path, media_type=content_type, filename=file_path.name)
+
     @app.get("/media/thumb/{media_id}", dependencies=[Depends(require_auth)])
     async def serve_thumbnail(media_id: UUID, db: AsyncSession = Depends(get_db)) -> FileResponse:
-        """Serve a media thumbnail. Falls back to the original file."""
-        stmt = select(Media).where(col(Media.id) == media_id)
-        result = await db.execute(stmt)
-        media = result.scalar_one_or_none()
-
-        if media is None or not media.file_path:
-            raise HTTPException(status_code=404, detail="Media not found")
-
-        file_path = Path(media.file_path)
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found on disk")
-
-        content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
-        return FileResponse(
-            path=file_path,
-            media_type=content_type,
-            filename=file_path.name,
-        )
+        """Serve a media file as a thumbnail (currently serves the original file)."""
+        file_path, content_type = await _resolve_media_file(media_id, db)
+        return FileResponse(path=file_path, media_type=content_type, filename=file_path.name)
 
     return app
 

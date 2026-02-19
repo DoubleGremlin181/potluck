@@ -1,11 +1,14 @@
 """Authentication router for the web UI."""
 
+import hmac
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from itsdangerous import URLSafeTimedSerializer
 from starlette.responses import Response
 
 from potluck.core.config import get_settings
+from potluck.web.dependencies import SESSION_MAX_AGE
 
 router = APIRouter(tags=["auth"])
 
@@ -30,7 +33,7 @@ async def login(request: Request, password: str = Form(...)) -> Response:
     """Verify password and set signed session cookie."""
     settings = get_settings()
 
-    if password != settings.web_password:
+    if not hmac.compare_digest(password, settings.web_password or ""):
         templates = request.app.state.templates
         return templates.TemplateResponse(  # type: ignore[no-any-return]
             request,
@@ -48,7 +51,7 @@ async def login(request: Request, password: str = Form(...)) -> Response:
         value=token,
         httponly=True,
         samesite="lax",
-        max_age=86400 * 30,
+        max_age=SESSION_MAX_AGE,
     )
     return response
 

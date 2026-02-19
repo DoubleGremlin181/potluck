@@ -3,7 +3,7 @@
 import hashlib
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,36 +74,40 @@ async def create_note(
 @router.post("/{note_id}/edit", response_class=HTMLResponse)
 async def edit_note(
     request: Request,
-    note_id: str,
+    note_id: UUID,
     db: AsyncSession = Depends(get_db),
     content: str = Form(...),
 ) -> RedirectResponse:
     """Update a KnowledgeNote."""
-    stmt = select(KnowledgeNote).where(col(KnowledgeNote.id) == UUID(note_id))
+    stmt = select(KnowledgeNote).where(col(KnowledgeNote.id) == note_id)
     result = await db.execute(stmt)
     note = result.scalar_one_or_none()
 
-    if note:
-        note.content = content.strip()
-        note.content_hash = hashlib.sha256(content.strip().encode()).hexdigest()
-        db.add(note)
-        await db.commit()
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    note.content = content.strip()
+    note.content_hash = hashlib.sha256(content.strip().encode()).hexdigest()
+    db.add(note)
+    await db.commit()
 
     return RedirectResponse(url="/notes", status_code=303)
 
 
 @router.post("/{note_id}/delete")
 async def delete_note(
-    note_id: str,
+    note_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     """Delete a KnowledgeNote."""
-    stmt = select(KnowledgeNote).where(col(KnowledgeNote.id) == UUID(note_id))
+    stmt = select(KnowledgeNote).where(col(KnowledgeNote.id) == note_id)
     result = await db.execute(stmt)
     note = result.scalar_one_or_none()
 
-    if note:
-        await db.delete(note)
-        await db.commit()
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    await db.delete(note)
+    await db.commit()
 
     return RedirectResponse(url="/notes", status_code=303)

@@ -1,5 +1,6 @@
 """Timeline router — interactive timeline visualization."""
 
+import contextlib
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -54,13 +55,12 @@ async def timeline_data(
 
     start_dt: datetime | None = None
     end_dt: datetime | None = None
-    try:
-        if start:
+    if start:
+        with contextlib.suppress(ValueError):
             start_dt = datetime.fromisoformat(start)
-        if end:
+    if end:
+        with contextlib.suppress(ValueError):
             end_dt = datetime.fromisoformat(end)
-    except ValueError:
-        pass
 
     target_types = set()
     if types:

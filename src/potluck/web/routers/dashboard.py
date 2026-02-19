@@ -30,9 +30,11 @@ async def dashboard(request: Request, db: AsyncSession = Depends(get_db)) -> Res
         entity_counts[entity_type.value] = count
         total_entities += count
 
-    # Recent entities (last 10 created across all types)
+    # Fetch the 3 most recent entities per type, then merge and take the overall top 10
     recent_entities: list[dict[str, object]] = []
     for entity_type, model in entity_map.items():
+        if not hasattr(model, "created_at"):
+            continue
         stmt = select(model).order_by(col(model.created_at).desc()).limit(3)  # type: ignore[assignment, attr-defined]
         result = await db.execute(stmt)
         for entity in result.scalars().all():
