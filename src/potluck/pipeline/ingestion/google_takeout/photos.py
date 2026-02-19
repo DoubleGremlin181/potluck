@@ -24,40 +24,11 @@ from potluck.models.base import SourceType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.utils.hashing import compute_file_hash
+from potluck.pipeline.utils.media import IMAGE_EXTENSIONS, PHOTO_VIDEO_EXTENSIONS, VIDEO_EXTENSIONS
 
 logger = get_logger(__name__)
 
-# Media file extensions supported by Google Photos
-IMAGE_EXTENSIONS = {
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".webp",
-    ".heic",
-    ".heif",
-    ".bmp",
-    ".tiff",
-    ".tif",
-    ".raw",
-    ".cr2",
-    ".nef",
-    ".arw",
-}
-
-VIDEO_EXTENSIONS = {
-    ".mp4",
-    ".mov",
-    ".avi",
-    ".mkv",
-    ".webm",
-    ".m4v",
-    ".3gp",
-    ".mpg",
-    ".mpeg",
-}
-
-MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+MEDIA_EXTENSIONS = PHOTO_VIDEO_EXTENSIONS
 
 
 def ingest_media(

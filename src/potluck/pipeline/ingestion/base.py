@@ -1,5 +1,6 @@
 """Base ingestion stage protocol and common types."""
 
+import importlib
 from abc import abstractmethod
 from collections.abc import Iterator
 from importlib.resources import files
@@ -129,19 +130,39 @@ class BaseIngestionStage(Stage[Path, Iterator[IngestableEntity]]):
         ...
 
     @classmethod
+    def _stage_package(cls) -> str:
+        """Derive the package name where this stage class is defined.
+
+        Uses ``cls.__module__`` so that stages sharing a SourceType (e.g.
+        GENERIC used by mbox, text_files, image_folder) resolve to their
+        own package rather than a non-existent ``ingestion.generic``.
+
+        When the class is defined in ``__init__.py``, ``__module__`` already
+        equals the package (e.g. ``potluck.pipeline.ingestion.google_takeout``).
+        When defined in a sub-module, we strip the last component to get the
+        package (e.g. ``potluck.pipeline.ingestion.google_takeout.photos`` →
+        ``potluck.pipeline.ingestion.google_takeout``).
+        """
+        module = cls.__module__
+        mod = importlib.import_module(module)
+        # __init__.py files have __path__; regular modules do not
+        if hasattr(mod, "__path__"):
+            return module
+        return module.rsplit(".", 1)[0] if "." in module else module
+
+    @classmethod
     def get_instructions(cls) -> str:
         """Load instructions from the stage's package.
 
-        Instructions are loaded from:
-        potluck/pipeline/ingestion/{source_type}/instructions.md
+        Instructions are loaded from the package directory containing the
+        stage class, e.g. ``potluck/pipeline/ingestion/mbox/instructions.md``.
 
         Returns:
             Markdown instructions for obtaining this data export,
             or empty string if no instructions file exists.
         """
         try:
-            package_name = f"potluck.pipeline.ingestion.{cls.SOURCE_TYPE.value}"
-            resource = files(package_name).joinpath("instructions.md")
+            resource = files(cls._stage_package()).joinpath("instructions.md")
             return resource.read_text()
         except FileNotFoundError:
             logger.debug(f"No instructions.md found for {cls.__name__}")
@@ -154,15 +175,14 @@ class BaseIngestionStage(Stage[Path, Iterator[IngestableEntity]]):
     def get_assets_path(cls) -> Path | None:
         """Get path to assets folder for this stage's instructions.
 
-        Assets (images, etc.) for instructions are stored alongside the stage:
-        potluck/pipeline/ingestion/{source_type}/assets/
+        Assets (images, etc.) for instructions are stored alongside the
+        stage class, e.g. ``potluck/pipeline/ingestion/mbox/assets/``.
 
         Returns:
             Path to the assets folder, or None if it doesn't exist.
         """
         try:
-            package_name = f"potluck.pipeline.ingestion.{cls.SOURCE_TYPE.value}"
-            assets_resource = files(package_name).joinpath("assets")
+            assets_resource = files(cls._stage_package()).joinpath("assets")
             assets_path = Path(str(assets_resource))
             if not assets_path.is_dir():
                 logger.debug(f"No assets folder found for {cls.__name__}")

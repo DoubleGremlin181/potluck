@@ -47,9 +47,13 @@ def ingest_browsing_history(
         logger.debug("No Chrome directory found in takeout")
         return
 
+    # Google Takeout uses "BrowserHistory.json" in older exports and
+    # "History.json" in newer ones. Check both filenames.
     history_file = chrome_dir / "BrowserHistory.json"
     if not history_file.exists():
-        logger.debug("No BrowserHistory.json found")
+        history_file = chrome_dir / "History.json"
+    if not history_file.exists():
+        logger.debug("No BrowserHistory.json or History.json found")
         return
 
     logger.info(f"Processing Chrome history from {history_file}")
@@ -145,7 +149,7 @@ def _parse_history_entry(entry: dict[str, Any]) -> BrowsingHistory | None:
         title=entry.get("title"),
         favicon_url=entry.get("favicon_url"),
         occurred_at=occurred_at,
-        transition_type=entry.get("page_transition"),
+        transition_type=entry.get("page_transition") or entry.get("page_transition_qualifier"),
         browser="Chrome",
     )
 

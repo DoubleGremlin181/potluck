@@ -19,12 +19,10 @@ from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.email import Email, EmailFolder, EmailThread
 from potluck.pipeline.dtos import PipelineFilter
+from potluck.pipeline.utils.email import compute_email_size, generate_snippet
 from potluck.pipeline.utils.parsers import MboxMessage, parse_mbox
 
 logger = get_logger(__name__)
-
-# Constants
-SNIPPET_MAX_LENGTH = 200  # Maximum length for email snippet preview
 
 # Gmail label to folder mapping
 LABEL_TO_FOLDER: dict[str, EmailFolder] = {
@@ -87,7 +85,7 @@ def ingest_emails(
         for mbox_msg in parse_mbox(mbox_file, headers_only=True):
             occurred_at = mbox_msg.date
 
-            if not _passes_date_filter(occurred_at, filters):
+            if filters and not filters.passes(occurred_at):
                 continue
 
             thread_id = mbox_msg.headers.get("X-GM-THRID")
@@ -127,7 +125,7 @@ def ingest_emails(
         for mbox_msg in parse_mbox(mbox_file):
             occurred_at = mbox_msg.date
 
-            if not _passes_date_filter(occurred_at, filters):
+            if filters and not filters.passes(occurred_at):
                 continue
 
             thread_id = mbox_msg.headers.get("X-GM-THRID")
@@ -135,15 +133,6 @@ def ingest_emails(
             email_entity = _create_email(mbox_msg, parent_thread)
             if email_entity:
                 yield email_entity
-
-
-def _passes_date_filter(occurred_at: datetime | None, filters: PipelineFilter | None) -> bool:
-    """Check if a timestamp passes the date filter."""
-    if not filters or not occurred_at:
-        return True
-    if filters.since and occurred_at < filters.since:
-        return False
-    return not (filters.until and occurred_at >= filters.until)
 
 
 class _ThreadStats:
@@ -250,15 +239,11 @@ def _create_email(
     is_trash = "trash" in label_lower
 
     # Create snippet from body
-    snippet = None
     body_text = mbox_msg.body_plain or ""
-    if body_text:
-        snippet = body_text[:SNIPPET_MAX_LENGTH].replace("\n", " ").strip()
+    snippet = generate_snippet(mbox_msg.body_plain)
 
     # Calculate size from body
-    size_bytes = len(body_text.encode("utf-8")) if body_text else None
-    if mbox_msg.body_html:
-        size_bytes = (size_bytes or 0) + len(mbox_msg.body_html.encode("utf-8"))
+    size_bytes = compute_email_size(mbox_msg.body_plain, mbox_msg.body_html)
 
     # Create content hash from message_id or body
     content_hash = mbox_msg.message_id

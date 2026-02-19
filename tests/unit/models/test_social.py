@@ -1,18 +1,18 @@
-"""Tests for SocialPost, SocialComment, and Subscription models."""
+"""Tests for SocialPost, SocialComment, and SocialFollow models."""
 
 from potluck.models.base import SourceType
 from potluck.models.social import (
     Platform,
     PostType,
     SocialComment,
+    SocialFollow,
+    SocialFollowType,
     SocialPost,
-    Subscription,
-    SubscriptionType,
 )
 
 
 class TestSocialModels:
-    """Tests for SocialPost, SocialComment, and Subscription models."""
+    """Tests for SocialPost, SocialComment, and SocialFollow models."""
 
     def test_social_post_creation(self) -> None:
         """SocialPost can be created."""
@@ -58,20 +58,20 @@ class TestSocialModels:
         assert comment.depth == 0
         assert comment.is_own_comment is False
 
-    def test_subscription_creation(self) -> None:
-        """Subscription can be created."""
-        sub = Subscription(
+    def test_social_follow_creation(self) -> None:
+        """SocialFollow can be created."""
+        follow = SocialFollow(
             source_type=SourceType.GOOGLE_TAKEOUT,
             platform=Platform.YOUTUBE,
-            subscription_type=SubscriptionType.CHANNEL,
+            follow_type=SocialFollowType.CHANNEL,
             target_name="Tech Channel",
         )
-        assert sub.platform == Platform.YOUTUBE
-        assert sub.target_name == "Tech Channel"
-        assert sub.is_active is True
+        assert follow.platform == Platform.YOUTUBE
+        assert follow.target_name == "Tech Channel"
+        assert follow.is_active is True
 
-    def test_subscription_type_enum(self) -> None:
-        """SubscriptionType enum has expected values."""
+    def test_social_follow_type_enum(self) -> None:
+        """SocialFollowType enum has expected values."""
         expected = {"subreddit", "user", "channel", "page", "hashtag", "topic", "other"}
-        actual = {t.value for t in SubscriptionType}
+        actual = {t.value for t in SocialFollowType}
         assert actual == expected

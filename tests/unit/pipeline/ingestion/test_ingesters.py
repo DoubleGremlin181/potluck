@@ -52,12 +52,15 @@ class TestEntityType:
             "social_post",
             "social_comment",
             "knowledge_note",
+            "document",
             "calendar_event",
             "transaction",
             "location",
             "location_visit",
             "browsing_history",
             "bookmark",
+            "social_follow",
+            "budget",
             "person",
             "tag",
         }
@@ -612,3 +615,52 @@ class TestCeleryTaskEntityTypeValidation:
         """Valid entity type strings parse correctly."""
         assert EntityType("media") == EntityType.MEDIA
         assert EntityType("email") == EntityType.EMAIL
+
+
+class TestGetInstructionsGenericSourceTypes:
+    """Tests for get_instructions with GENERIC source type stages.
+
+    Multiple stages (MboxStage, ImageFolderStage, TextFilesStage) share
+    SOURCE_TYPE=GENERIC. The fix uses cls.__module__ via _stage_package()
+    to resolve each to its own package rather than a non-existent
+    'ingestion.generic' directory.
+    """
+
+    def test_mbox_stage_get_instructions(self) -> None:
+        """MboxStage loads instructions from mbox/ package despite GENERIC source type."""
+        from potluck.pipeline.ingestion.mbox import MboxStage
+
+        instructions = MboxStage.get_instructions()
+        assert isinstance(instructions, str)
+        assert len(instructions) > 0
+
+    def test_image_folder_stage_get_instructions(self) -> None:
+        """ImageFolderStage loads instructions from image_folder/ package."""
+        from potluck.pipeline.ingestion.image_folder import ImageFolderStage
+
+        instructions = ImageFolderStage.get_instructions()
+        assert isinstance(instructions, str)
+        assert len(instructions) > 0
+
+    def test_text_files_stage_get_instructions(self) -> None:
+        """TextFilesStage loads instructions from text_files/ package."""
+        from potluck.pipeline.ingestion.text_files import TextFilesStage
+
+        instructions = TextFilesStage.get_instructions()
+        assert isinstance(instructions, str)
+        assert len(instructions) > 0
+
+    def test_generic_stages_have_different_instructions(self) -> None:
+        """Each GENERIC stage loads its own unique instructions, not the same file."""
+        from potluck.pipeline.ingestion.image_folder import ImageFolderStage
+        from potluck.pipeline.ingestion.mbox import MboxStage
+        from potluck.pipeline.ingestion.text_files import TextFilesStage
+
+        mbox_instructions = MboxStage.get_instructions()
+        image_instructions = ImageFolderStage.get_instructions()
+        text_instructions = TextFilesStage.get_instructions()
+
+        # All three share SOURCE_TYPE=GENERIC but should have different instructions
+        assert mbox_instructions != image_instructions
+        assert mbox_instructions != text_instructions
+        assert image_instructions != text_instructions

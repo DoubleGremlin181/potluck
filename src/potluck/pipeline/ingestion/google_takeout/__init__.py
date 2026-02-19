@@ -7,6 +7,7 @@ Handles importing data from Google Takeout archives including:
 - Gmail (emails)
 - Chrome History/Bookmarks
 - Location History (Timeline)
+- Google Keep (notes)
 
 Supports both extracted directories and compressed archives (.zip, .tgz, .tar.gz).
 """
@@ -26,11 +27,13 @@ from potluck.pipeline.ingestion.google_takeout.chrome import (
     ingest_bookmarks,
     ingest_browsing_history,
 )
+from potluck.pipeline.ingestion.google_takeout.keep import count_keep_notes, ingest_keep_notes
 from potluck.pipeline.ingestion.google_takeout.location import ingest_location_visits
 from potluck.pipeline.ingestion.google_takeout.mail import ingest_emails
 from potluck.pipeline.ingestion.google_takeout.photos import ingest_media
 from potluck.pipeline.ingestion.registry import register
 from potluck.pipeline.utils.archive import extracted
+from potluck.pipeline.utils.media import PHOTO_VIDEO_EXTENSIONS
 
 logger = get_logger(__name__)
 
@@ -47,6 +50,7 @@ class GoogleTakeoutStage(BaseIngestionStage):
     - Browsing History: Chrome browsing history
     - Bookmarks: Chrome bookmarks
     - Location Visits: Location history from Timeline
+    - Documents: Notes from Google Keep
 
     The stage auto-detects which data types are present in the archive
     and only processes the requested entity types.
@@ -67,6 +71,7 @@ class GoogleTakeoutStage(BaseIngestionStage):
         EntityType.BROWSING_HISTORY,
         EntityType.BOOKMARK,
         EntityType.LOCATION_VISIT,
+        EntityType.DOCUMENT,
     }
 
     def detect(self, path: Path) -> DetectionResult:
@@ -131,6 +136,11 @@ class GoogleTakeoutStage(BaseIngestionStage):
         location_count = self._count_location_visits(path)
         if location_count > 0:
             entity_counts[EntityType.LOCATION_VISIT] = location_count
+
+        # Detect Google Keep
+        keep_count = count_keep_notes(path)
+        if keep_count > 0:
+            entity_counts[EntityType.DOCUMENT] = keep_count
 
         # Add metadata about detected sources
         if entity_counts:
@@ -249,6 +259,9 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if EntityType.EMAIL in types_to_process:
             yield from deduplicate(ingest_emails(path, filters))
 
+        if EntityType.DOCUMENT in types_to_process:
+            yield from deduplicate(ingest_keep_notes(path, filters))
+
     # -------------------------------------------------------------------------
     # Detection helper methods
     # -------------------------------------------------------------------------
@@ -259,24 +272,9 @@ class GoogleTakeoutStage(BaseIngestionStage):
         if not photos_dir:
             return 0
 
-        # Count image and video files
-        media_extensions = {
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".gif",
-            ".webp",
-            ".heic",
-            ".heif",
-            ".mp4",
-            ".mov",
-            ".avi",
-            ".mkv",
-            ".webm",
-        }
         count = 0
         for file in photos_dir.rglob("*"):
-            if file.is_file() and file.suffix.lower() in media_extensions:
+            if file.is_file() and file.suffix.lower() in PHOTO_VIDEO_EXTENSIONS:
                 count += 1
         return count
 
@@ -336,6 +334,8 @@ class GoogleTakeoutStage(BaseIngestionStage):
             return 0
 
         history_file = chrome_dir / "BrowserHistory.json"
+        if not history_file.exists():
+            history_file = chrome_dir / "History.json"
         if not history_file.exists():
             return 0
 

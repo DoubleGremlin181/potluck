@@ -38,6 +38,7 @@ from potluck.core.constants import (
 )
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
+from potluck.models.documents import Document
 from potluck.models.media import EmbeddingType, Media, MediaEmbedding, MediaType
 from potluck.models.messages import ChatMessage
 from potluck.models.notes import KnowledgeNote
@@ -61,6 +62,7 @@ TEXT_FIELD_MAP: dict[EntityType, str] = {
     EntityType.SOCIAL_POST: "body",
     EntityType.SOCIAL_COMMENT: "body",
     EntityType.KNOWLEDGE_NOTE: "content",
+    EntityType.DOCUMENT: "content",
 }
 
 
@@ -82,6 +84,7 @@ class TextEmbeddingProcessor(BaseProcessor):
         EntityType.SOCIAL_POST,
         EntityType.SOCIAL_COMMENT,
         EntityType.KNOWLEDGE_NOTE,
+        EntityType.DOCUMENT,
     }
     PERSIST_FIELDS: ClassVar[list[str]] = []  # Custom persist_result
 
@@ -315,6 +318,8 @@ class TextEmbeddingProcessor(BaseProcessor):
             return EntityType.CHAT_MESSAGE
         if isinstance(entity, KnowledgeNote):
             return EntityType.KNOWLEDGE_NOTE
+        if isinstance(entity, Document):
+            return EntityType.DOCUMENT
         from potluck.models.email import Email
         from potluck.models.social import SocialComment, SocialPost
 
@@ -390,6 +395,7 @@ class MultimodalTextEmbeddingProcessor(BaseProcessor):
         EntityType.SOCIAL_POST,
         EntityType.SOCIAL_COMMENT,
         EntityType.KNOWLEDGE_NOTE,
+        EntityType.DOCUMENT,
     }
     PERSIST_FIELDS: ClassVar[list[str]] = []  # Custom persist_result
 
@@ -496,6 +502,8 @@ class MultimodalTextEmbeddingProcessor(BaseProcessor):
             return EntityType.CHAT_MESSAGE
         if isinstance(entity, KnowledgeNote):
             return EntityType.KNOWLEDGE_NOTE
+        if isinstance(entity, Document):
+            return EntityType.DOCUMENT
         from potluck.models.email import Email
         from potluck.models.social import SocialComment, SocialPost
 

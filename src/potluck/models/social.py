@@ -3,16 +3,15 @@
 from datetime import datetime
 from enum import Enum
 from typing import ClassVar
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import TSVECTOR
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import SourceType, TimestampedEntity
-from potluck.models.utils import utc_now
+from potluck.models.base import BaseEntity, TimestampedEntity
 
 
 class Platform(str, Enum):
@@ -40,8 +39,8 @@ class PostType(str, Enum):
     OTHER = "other"
 
 
-class SubscriptionType(str, Enum):
-    """Type of subscription/follow."""
+class SocialFollowType(str, Enum):
+    """Type of social follow."""
 
     SUBREDDIT = "subreddit"
     USER = "user"
@@ -423,77 +422,48 @@ class SocialComment(TimestampedEntity, table=True):
     post: "SocialPost" = Relationship(back_populates="comments")
 
 
-class Subscription(SQLModel, table=True):
-    """Subscription to subreddits, channels, users, etc."""
+class SocialFollow(BaseEntity, table=True):
+    """Follow/subscription to subreddits, channels, users, etc."""
 
-    __tablename__ = "subscriptions"
-
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        description="Unique identifier for the subscription",
-    )
-    created_at: datetime = Field(
-        default_factory=utc_now,
-        description="When the subscription was recorded",
-    )
-    source_type: SourceType = Field(
-        description="The source system this subscription was imported from",
-    )
+    __tablename__ = "social_follows"
 
     # Platform information
     platform: Platform = Field(
         description="Social media platform",
     )
-    subscription_type: SubscriptionType = Field(
-        description="Type of subscription",
+    follow_type: SocialFollowType = Field(
+        description="Type of social follow",
     )
 
-    # Subscription target
+    # Follow target
     target_id: str | None = Field(
         default=None,
         index=True,
-        description="Platform-specific ID of the subscription target",
+        description="Platform-specific ID of the follow target",
     )
     target_name: str = Field(
         index=True,
-        description="Name of what's being subscribed to",
+        description="Name of what's being followed",
     )
     target_url: str | None = Field(
         default=None,
-        description="URL to the subscription target",
+        description="URL to the follow target",
     )
     target_description: str | None = Field(
         default=None,
         description="Description of the target",
     )
 
-    # Subscription metadata
-    subscribed_at: datetime | None = Field(
+    # Follow metadata
+    followed_at: datetime | None = Field(
         default=None,
-        description="When the subscription started",
+        description="When the follow started",
     )
-    unsubscribed_at: datetime | None = Field(
+    unfollowed_at: datetime | None = Field(
         default=None,
-        description="When unsubscribed (if applicable)",
+        description="When unfollowed (if applicable)",
     )
     is_active: bool = Field(
         default=True,
-        description="Whether currently subscribed",
-    )
-
-    # Target statistics (at time of export)
-    subscriber_count: int | None = Field(
-        default=None,
-        description="Number of subscribers the target has",
-    )
-    post_count: int | None = Field(
-        default=None,
-        description="Number of posts in the community",
-    )
-
-    # Notification preferences
-    notifications_enabled: bool = Field(
-        default=True,
-        description="Whether notifications are enabled",
+        description="Whether currently following",
     )

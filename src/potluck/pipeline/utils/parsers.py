@@ -73,6 +73,10 @@ def parse_datetime(value: str | int | float | None) -> datetime | None:
     if not value:
         return None
 
+    # Normalize common timezone suffixes to offset format
+    if value.endswith(" UTC"):
+        value = value[:-4] + "+00:00"
+
     # Try Unix timestamp as string
     try:
         ts = float(value)
@@ -155,6 +159,7 @@ def parse_csv(
     date_columns: list[str] | None = None,
     delimiter: str = ",",
     encoding: str = "utf-8",
+    try_parse_dates: bool = True,
 ) -> Iterator[dict[str, Any]]:
     """Parse a CSV file and yield rows as dictionaries.
 
@@ -169,6 +174,9 @@ def parse_csv(
         date_columns: Column names to parse as datetimes.
         delimiter: CSV delimiter character.
         encoding: File encoding.
+        try_parse_dates: Whether Polars should attempt to auto-detect date columns.
+            Set to False when date formats confuse Polars' type inference
+            (use date_columns for manual parsing instead).
 
     Yields:
         Dict for each row with column names as keys.
@@ -186,7 +194,7 @@ def parse_csv(
             encoding=encoding if encoding != "utf-8" else "utf8",
             infer_schema_length=1000,  # Infer types from first 1000 rows
             null_values=["", "null", "NULL", "None", "none", "NA", "N/A", "n/a"],
-            try_parse_dates=True,  # Auto-detect date columns
+            try_parse_dates=try_parse_dates,
         )
 
         # Convert to Python dicts and yield rows
@@ -270,9 +278,6 @@ class MboxAttachment:
     content_type: str | None = None
     """MIME content type."""
 
-    content: bytes = field(default_factory=bytes, repr=False)
-    """Attachment content."""
-
     size: int = 0
     """Size in bytes."""
 
@@ -307,7 +312,7 @@ def parse_mbox(path: Path, *, headers_only: bool = False) -> Iterator[MboxMessag
             total += 1
             try:
                 yield _parse_email_message(msg, headers_only=headers_only)
-            except (KeyError, ValueError, TypeError, AttributeError) as e:
+            except (KeyError, ValueError) as e:
                 skipped += 1
                 # Include message index and any available identifiers for debugging
                 msg_id = msg.get("Message-ID", "<unknown>") if msg else "<unknown>"
@@ -500,8 +505,8 @@ def _get_text_content(part: Message) -> str | None:
 def _extract_attachment(part: Message, result: MboxMessage) -> None:
     """Extract attachment metadata from an email part.
 
-    Only stores metadata (filename, content type, size) — not the raw binary
-    content. This keeps memory bounded when processing large mailboxes.
+    Only stores metadata (filename, content type, size). The payload is
+    decoded to measure its size but is not retained on the result.
 
     Args:
         part: Email message part.
@@ -522,8 +527,11 @@ def _extract_attachment(part: Message, result: MboxMessage) -> None:
             size=size,
         )
         result.attachments.append(attachment)
-    except Exception as e:
-        filename = part.get_filename() or "<unknown>"
+    except (LookupError, UnicodeDecodeError, ValueError, KeyError, TypeError) as e:
+        try:
+            filename = part.get_filename() or "<unknown>"
+        except (LookupError, UnicodeDecodeError, ValueError, TypeError):
+            filename = "<unknown>"
         logger.warning(
             f"Failed to extract attachment '{filename}' from email: {e}. "
             "This attachment will not be available in the imported data."

@@ -1,6 +1,6 @@
 [project]
 name = "potluck"
-version = "0.7.0"
+version = "0.8.0"
 description = "Personal Knowledge Database MCP server - Personalize your AI with Google Takeout and GDPR exports"
 readme = "README.md"
 license = { text = "MIT" }
@@ -124,4 +124,9 @@ filterwarnings = [
     #   These are build artifacts from the SWIG code generator.
     "ignore:torch.ao.quantization is deprecated:DeprecationWarning",
     "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]
+
+[dependency-groups]
+dev = [
+    "types-pyyaml>=6.0.12.20250915",
 ]

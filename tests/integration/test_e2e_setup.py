@@ -114,7 +114,7 @@ class TestExpectedTables:
         # Social
         "social_posts",
         "social_comments",
-        "subscriptions",
+        "social_follows",
         # Browsing
         "browsing_history",
         "bookmark_folders",
@@ -250,18 +250,18 @@ class TestTableColumns:
         run_migrations: None,  # noqa: ARG002 - fixture runs migrations
         db_connection: psycopg2.extensions.connection,
     ) -> None:
-        """Verify knowledge_notes table has nullable source_type (FlexibleEntity)."""
+        """Verify knowledge_notes table has nullable source_type (SimpleEntity)."""
         with db_connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT column_name, is_nullable
+                SELECT column_name, is_nullable, column_default
                 FROM information_schema.columns
                 WHERE table_name = 'knowledge_notes' AND column_name = 'source_type'
                 """
             )
             result = cursor.fetchone()
             assert result is not None, "source_type column not found"
-            assert result[1] == "YES", "source_type should be nullable for FlexibleEntity"
+            assert result[1] == "YES", "source_type should be nullable for SimpleEntity"
 
     def test_accounts_table_columns(
         self,

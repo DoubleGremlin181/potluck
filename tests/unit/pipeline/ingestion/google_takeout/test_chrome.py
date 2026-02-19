@@ -108,6 +108,67 @@ class TestBrowsingHistoryIngestion:
             entities = list(ingest_browsing_history(Path(tmpdir)))
             assert entities == []
 
+    def test_ingest_history_fallback_filename(self) -> None:
+        """History.json is used as fallback when BrowserHistory.json is missing.
+
+        Newer Google Takeout exports use 'History.json' instead of
+        'BrowserHistory.json'. The ingester should handle both.
+        """
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chrome_dir = Path(tmpdir) / "Chrome"
+            chrome_dir.mkdir()
+            # Create History.json (the newer filename) instead of BrowserHistory.json
+            history_data = {
+                "Browser History": [
+                    {
+                        "url": "https://example.com/",
+                        "title": "Example",
+                        "time_usec": 1704067200000000,
+                        "page_transition_qualifier": "LINK",
+                    }
+                ]
+            }
+            (chrome_dir / "History.json").write_text(json.dumps(history_data))
+            entities = list(ingest_browsing_history(Path(tmpdir)))
+            assert len(entities) == 1
+            assert entities[0].url == "https://example.com/"
+            assert entities[0].transition_type == "LINK"
+
+    def test_ingest_history_prefers_original_filename(self) -> None:
+        """BrowserHistory.json is preferred over History.json when both exist."""
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chrome_dir = Path(tmpdir) / "Chrome"
+            chrome_dir.mkdir()
+            # Create both files
+            original_data = {
+                "Browser History": [
+                    {
+                        "url": "https://original.com/",
+                        "title": "Original",
+                        "time_usec": 1704067200000000,
+                    }
+                ]
+            }
+            fallback_data = {
+                "Browser History": [
+                    {
+                        "url": "https://fallback.com/",
+                        "title": "Fallback",
+                        "time_usec": 1704067200000000,
+                    }
+                ]
+            }
+            (chrome_dir / "BrowserHistory.json").write_text(json.dumps(original_data))
+            (chrome_dir / "History.json").write_text(json.dumps(fallback_data))
+
+            entities = list(ingest_browsing_history(Path(tmpdir)))
+            assert len(entities) == 1
+            assert entities[0].url == "https://original.com/"
+
 
 class TestBookmarksIngestion:
     """Tests for Chrome bookmarks ingestion."""

@@ -24,6 +24,7 @@ from potluck.models.calendar import (
     EventVisibility,
     ResponseStatus,
 )
+from potluck.models.documents import Document
 from potluck.models.email import (
     Email,
     EmailAttachment,
@@ -76,9 +77,9 @@ from potluck.models.social import (
     Platform,
     PostType,
     SocialComment,
+    SocialFollow,
+    SocialFollowType,
     SocialPost,
-    Subscription,
-    SubscriptionType,
 )
 from potluck.models.sources import (
     ImportRun,
@@ -117,6 +118,7 @@ _ENTITY_TYPE_MODEL_MAP: dict[EntityType, type[SQLModel]] = {
     EntityType.SOCIAL_POST: SocialPost,
     EntityType.SOCIAL_COMMENT: SocialComment,
     EntityType.KNOWLEDGE_NOTE: KnowledgeNote,
+    EntityType.DOCUMENT: Document,
     EntityType.CALENDAR_EVENT: CalendarEvent,
     EntityType.TRANSACTION: Transaction,
     EntityType.LOCATION: Location,
@@ -198,6 +200,8 @@ __all__ = [
     "ThreadType",
     # Notes
     "KnowledgeNote",
+    # Documents
+    "Document",
     # People
     "AliasType",
     "ClusterStatus",
@@ -210,8 +214,8 @@ __all__ = [
     "PostType",
     "SocialComment",
     "SocialPost",
-    "Subscription",
-    "SubscriptionType",
+    "SocialFollow",
+    "SocialFollowType",
     # Sources
     "ImportRun",
     "ImportSource",

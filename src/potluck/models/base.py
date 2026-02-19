@@ -34,7 +34,7 @@ class SourceType(str, Enum):
     REDDIT = "reddit"
     WHATSAPP = "whatsapp"
     YNAB = "ynab"
-    GENERIC = "generic"  # Bulk import of generic files (images, markdown, MBOX)
+    GENERIC = "generic"  # Generic file-based imports (images, text, MBOX, etc.)
     MANUAL = "manual"  # User-created content within Potluck (notes, annotations)
 
 
@@ -51,12 +51,15 @@ class EntityType(str, Enum):
     SOCIAL_POST = "social_post"
     SOCIAL_COMMENT = "social_comment"
     KNOWLEDGE_NOTE = "knowledge_note"
+    DOCUMENT = "document"
     CALENDAR_EVENT = "calendar_event"
     TRANSACTION = "transaction"
     LOCATION = "location"
     LOCATION_VISIT = "location_visit"
     BROWSING_HISTORY = "browsing_history"
     BOOKMARK = "bookmark"
+    SOCIAL_FOLLOW = "social_follow"
+    BUDGET = "budget"
     PERSON = "person"
     TAG = "tag"
 

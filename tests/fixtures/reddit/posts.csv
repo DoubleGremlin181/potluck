@@ -1,0 +1,5 @@
+id,permalink,date,ip,subreddit,gildings,title,url,body
+t3_abc123,/r/python/comments/abc123/my_first_project/,2023-06-15 14:30:00 UTC,0.0.0.0,python,0,My First Python Project,https://reddit.com/r/python/comments/abc123/my_first_project/,"Just finished my first Python project! It's a CLI tool for managing tasks."
+t3_def456,/r/programming/comments/def456/interesting_article/,2024-01-20 09:15:30 UTC,0.0.0.0,programming,0,Interesting Article on Rust,https://blog.example.com/rust-2024,"Check out this great article on Rust's new features"
+t3_ghi789,/r/askreddit/comments/ghi789/what_is_your_favorite/,2024-03-10 18:45:00 UTC,0.0.0.0,AskReddit,1,What is your favorite programming language?,https://reddit.com/r/askreddit/comments/ghi789/what_is_your_favorite/,
+t3_saved1,/r/learnpython/comments/saved1/helpful_tutorial/,2024-05-01 12:00:00 UTC,0.0.0.0,learnpython,0,Helpful Tutorial on Decorators,https://reddit.com/r/learnpython/comments/saved1/helpful_tutorial/,"A comprehensive guide to Python decorators"
