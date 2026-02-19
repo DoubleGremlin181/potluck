@@ -5,9 +5,16 @@ from enum import Enum
 from typing import ClassVar
 from uuid import UUID, uuid4
 
+from sqlalchemy import String
 from sqlmodel import Field, SQLModel
+from sqlmodel.main import default_registry
 
 from potluck.models.utils import IANATimezone, UTCDatetime, utc_now
+
+# Store Python str-Enums as VARCHAR, not PostgreSQL native enum types.
+# The migration creates all enum columns as VARCHAR (sa.String), so SQLAlchemy
+# must not attempt to cast parameters to non-existent PG enum types.
+default_registry.type_annotation_map[Enum] = String
 
 
 class IngestableEntity:

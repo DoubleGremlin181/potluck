@@ -405,10 +405,12 @@ def _run_sync_ingest(
                 resume_failed=resume_failed,
                 content_path=content_path,
             )
+            # Capture import_run_id while session is open to avoid DetachedInstanceError
+            import_run_id = str(result.import_run.id)
 
     # Display results
     _display_import_stats(result.stats)
-    _console.print(f"\nImport Run ID: {result.import_run.id}")
+    _console.print(f"\nImport Run ID: {import_run_id}")
 
     if result.stats.entities_created > 0:
         _console.print(f"Processing queued ({result.stats.entities_created} tasks).")
@@ -417,7 +419,7 @@ def _run_sync_ingest(
 
     # Wait for processing if requested
     if wait_for_processing and result.stats.entities_created > 0:
-        _wait_for_processing(str(result.import_run.id))
+        _wait_for_processing(import_run_id)
 
 
 def _display_import_stats(stats: PipelineStats) -> None:

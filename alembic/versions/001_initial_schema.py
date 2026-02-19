@@ -899,6 +899,8 @@ def upgrade() -> None:
         sa.Column("search_vector", TSVECTOR, nullable=True),
         sa.Column("color", sa.String(), nullable=True),
         sa.Column("tags", sa.String(), nullable=True),
+        sa.Column("created_by", sa.String(), nullable=True),
+        sa.Column("linked_entities", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_knowledge_notes_occurred_at", "knowledge_notes", ["occurred_at"])
