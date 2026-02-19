@@ -4,7 +4,7 @@ This module consolidates all DTOs used across ingestion and processing stages,
 providing a unified set of data models for pipeline operations.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Self
@@ -43,8 +43,17 @@ class PipelineFilter(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_date_range(self) -> Self:
-        """Validate that since is before until when both are specified."""
+    def validate_and_normalize(self) -> Self:
+        """Normalize naive datetimes to UTC and validate range.
+
+        CLI parsers (e.g. Typer) produce naive datetimes from date strings.
+        Entity timestamps are timezone-aware (UTC), so we must normalize here
+        to avoid TypeError on comparison.
+        """
+        if self.since and self.since.tzinfo is None:
+            self.since = self.since.replace(tzinfo=UTC)
+        if self.until and self.until.tzinfo is None:
+            self.until = self.until.replace(tzinfo=UTC)
         if self.since and self.until and self.since > self.until:
             raise ValueError("'since' must be before 'until'")
         return self

@@ -201,3 +201,17 @@ class TestPipelineFilterPasses:
         after = datetime(2025, 1, 1, tzinfo=UTC)
         assert f.passes(before) is False
         assert f.passes(after) is False
+
+    def test_naive_datetimes_normalized_to_utc(self) -> None:
+        """Naive datetimes (e.g. from CLI parsing) are normalized to UTC."""
+        naive_since = datetime(2024, 1, 1)
+        naive_until = datetime(2024, 12, 31)
+        f = PipelineFilter(since=naive_since, until=naive_until)
+        assert f.since is not None and f.since.tzinfo == UTC
+        assert f.until is not None and f.until.tzinfo == UTC
+
+    def test_naive_filter_compares_with_aware_timestamp(self) -> None:
+        """Naive filter datetimes can be compared with aware entity timestamps."""
+        f = PipelineFilter(since=datetime(2024, 6, 1))
+        aware_ts = datetime(2024, 7, 1, tzinfo=UTC)
+        assert f.passes(aware_ts) is True
