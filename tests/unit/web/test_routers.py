@@ -1,6 +1,6 @@
 """Tests for web router configuration."""
 
-from potluck.web.routers import auth, dashboard, search
+from potluck.web.routers import auth, dashboard, notes, search
 from potluck.web.routers import media as media_router
 
 
@@ -33,3 +33,10 @@ class TestRouterConfiguration:
         paths = _route_paths(media_router.router)
         assert "/media" in paths
         assert "/media/{media_id}/detail" in paths
+
+    def test_notes_router_has_crud(self) -> None:
+        """Notes router should have list, create, edit, delete."""
+        paths = _route_paths(notes.router)
+        assert "/notes" in paths
+        assert "/notes/{note_id}/edit" in paths
+        assert "/notes/{note_id}/delete" in paths
