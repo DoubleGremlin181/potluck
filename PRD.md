@@ -143,18 +143,46 @@ Expose knowledge to LLMs via stdio transport for Claude Desktop integration.
 
 ### Web Interface
 
-FastAPI + HTMX server-side rendered interface.
+Server-side rendered interface using FastAPI + HTMX + Jinja2 with Tailwind CSS + DaisyUI for styling. No JavaScript build step required — all JS libraries are vendored or loaded via CDN.
+
+**Design:**
+- Custom DaisyUI themes (light: warm cream/amber, dark: charcoal/amber) using oklch color space
+- Typography: Fraunces (serif, headings) + DM Sans (body text)
+- Responsive layout with mobile hamburger menu
+- Sticky navbar with backdrop blur, light/dark theme toggle
+- HTMX-powered partial page updates (fragments detected via `HX-Request` header)
+- Real-time import progress via SSE (Server-Sent Events) with notification bell dropdown
+
+**Authentication:**
+- Optional password protection via `WEB_PASSWORD` env var (no auth by default)
+- Session tokens via signed cookies (`itsdangerous` library, 30-day expiry)
+- Middleware skips auth for `/login`, `/static`, `/favicon.ico`
 
 **Pages:**
-- Dashboard with statistics
-- Search with hybrid results
-- Media gallery with filtering
-- Notes management
-- People/contacts view
-- Timeline view
-- Data sources documentation
-- Settings and import history
-- File upload with progress tracking
+
+| Page | Description |
+|------|-------------|
+| Dashboard | Entity count cards, recent activity feed, active import status |
+| Search | Hybrid/FTS/vector mode selector, entity type filters, HTMX result loading |
+| Media Gallery | Responsive grid, type/OCR/caption filters, lightbox detail view, pagination |
+| Notes | Full CRUD for knowledge notes with create/edit/delete |
+| People | Paginated list, detail view with aliases and linked entities, merge UI |
+| Timeline | vis-timeline.js interactive timeline with date range and type filters |
+| Map | Leaflet.js map with clustered markers, viewport-based loading, type filters |
+| Imports | File upload, server-side file browser, cancel in-progress, import history |
+| Settings | Database statistics, configuration display |
+| Login | Simple password form (only shown when `WEB_PASSWORD` is set) |
+
+**Reusable Components:**
+- `entity_card.html` — Jinja2 macros for rendering entity summaries across pages
+- `pagination.html` — Shared pagination controls
+- HTMX partials: `search_results`, `media_grid`, `media_detail`, `progress_dropdown`
+
+**Static Assets (vendored, no CDN for JS):**
+- HTMX 2.0.4 + SSE extension
+- vis-timeline 7.7.3 (+ CSS)
+- Leaflet 1.9.4 (+ CSS)
+- Theme toggle script (prevents flash on load)
 
 ---
 
@@ -165,7 +193,8 @@ FastAPI + HTMX server-side rendered interface.
 | Component | Technology |
 |-----------|------------|
 | Language | Python 3.12+ |
-| Web Framework | FastAPI + HTMX + Jinja2 |
+| Web Framework | FastAPI + HTMX 2.0 + Jinja2 |
+| Web Styling | Tailwind CSS 3.4 + DaisyUI 4 (CDN, no build step) |
 | ORM | SQLModel + Alembic migrations |
 | Database | Percona PostgreSQL 17 with pgvector + pg_tde |
 | Task Queue | Celery + Redis |
@@ -174,6 +203,9 @@ FastAPI + HTMX server-side rendered interface.
 | OCR | EasyOCR |
 | Face Recognition | DeepFace (FaceNet backend) |
 | Image Captioning | BLIP-2 (transformers) |
+| Web Auth | itsdangerous (signed session cookies) |
+| Interactive Maps | Leaflet.js 1.9 (vendored) |
+| Timeline Visualization | vis-timeline 7.7 (vendored) |
 | MCP Protocol | mcp library |
 | Data Processing | Polars |
 | Package Manager | uv |
@@ -249,6 +281,8 @@ FastAPI + HTMX server-side rendered interface.
 - No telemetry or analytics
 - No external embedding APIs (all local models)
 - File uploads validated and sanitized
+- Web UI: optional password auth with signed session cookies (no auth by default)
+- Media files served by ID lookup only — no filesystem paths exposed to browser
 
 ---
 
