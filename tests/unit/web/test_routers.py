@@ -8,6 +8,7 @@ from potluck.web.routers import (
     notes,
     people,
     search,
+    settings,
     timeline,
 )
 from potluck.web.routers import media as media_router
@@ -77,3 +78,8 @@ class TestRouterConfiguration:
         """Events router should have SSE progress endpoint."""
         paths = _route_paths(events.router)
         assert "/events/progress" in paths
+
+    def test_settings_router_has_page(self) -> None:
+        """Settings router should handle /settings."""
+        paths = _route_paths(settings.router)
+        assert "/settings" in paths

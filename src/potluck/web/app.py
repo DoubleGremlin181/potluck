@@ -27,6 +27,7 @@ from potluck.web.routers import (
     notes,
     people,
     search,
+    settings,
     timeline,
 )
 from potluck.web.routers import media as media_router
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(timeline.router)
     app.include_router(imports.router)
     app.include_router(events.router)
+    app.include_router(settings.router)
 
     # Media file serving
     @app.get("/media/file/{media_id}", dependencies=[Depends(require_auth)])

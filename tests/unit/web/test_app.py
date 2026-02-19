@@ -28,6 +28,7 @@ class TestAppFactory:
         assert "/timeline/data" in paths
         assert "/imports" in paths
         assert "/events/progress" in paths
+        assert "/settings" in paths
 
     def test_media_serving_routes(self) -> None:
         """Media serving routes should be registered."""
