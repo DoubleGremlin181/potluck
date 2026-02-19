@@ -25,6 +25,8 @@ logger = get_logger(__name__)
 
 # Constants
 HASH_PREFIX_LENGTH = 32  # Length of hash prefix for URL hashing
+# PostgreSQL btree index limit is 2704 bytes; truncate URLs to stay safely under it
+MAX_URL_LENGTH = 2048
 
 
 def ingest_browsing_history(
@@ -132,18 +134,21 @@ def _parse_history_entry(entry: dict[str, Any]) -> BrowsingHistory | None:
     # Extract domain from URL
     domain = _extract_domain(url)
 
-    # Compute URL hash for deduplication
+    # Compute hashes from the FULL url before any truncation
     url_hash = hashlib.sha256(url.encode()).hexdigest()[:HASH_PREFIX_LENGTH]
 
     # Compute content hash for deduplication (url + timestamp)
     content = f"{url}|{time_usec}"
     content_hash = hashlib.sha256(content.encode()).hexdigest()
 
+    # Truncate URL for storage (btree index limit is 2704 bytes)
+    stored_url = url[:MAX_URL_LENGTH]
+
     return BrowsingHistory(
         source_type=SourceType.GOOGLE_TAKEOUT,
         source_id=f"chrome-history-{url_hash}-{time_usec}",
         content_hash=content_hash,
-        url=url,
+        url=stored_url,
         url_hash=url_hash,
         domain=domain,
         title=entry.get("title"),
@@ -348,17 +353,20 @@ class _BookmarkHTMLParser(HTMLParser):
         # Extract domain
         domain = _extract_domain(url)
 
-        # Compute URL hash
+        # Compute hashes from the FULL url before any truncation
         url_hash = hashlib.sha256(url.encode()).hexdigest()[:HASH_PREFIX_LENGTH]
 
         # Compute content hash (url is unique identifier)
         content_hash = hashlib.sha256(url.encode()).hexdigest()
 
+        # Truncate URL for storage (btree index limit is 2704 bytes)
+        stored_url = url[:MAX_URL_LENGTH]
+
         bookmark = Bookmark(
             source_type=SourceType.GOOGLE_TAKEOUT,
             source_id=f"chrome-bookmark-{url_hash}",
             content_hash=content_hash,
-            url=url,
+            url=stored_url,
             url_hash=url_hash,
             domain=domain,
             title=title or None,
