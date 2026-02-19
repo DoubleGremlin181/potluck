@@ -20,7 +20,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from potluck.core.exceptions import PipelineError
 from potluck.core.logging import get_logger
@@ -119,7 +119,7 @@ async def check_file_duplicate(
         select(ImportRun)
         .where(ImportRun.file_hash == file_hash)
         .where(ImportRun.status == ImportStatus.COMPLETED)
-        .order_by(ImportRun.started_at.desc())  # type: ignore[attr-defined]
+        .order_by(col(ImportRun.started_at).desc())
         .limit(1)
     )
 
@@ -166,7 +166,7 @@ def check_file_duplicate_sync(
         select(ImportRun)
         .where(ImportRun.file_hash == file_hash)
         .where(ImportRun.status == ImportStatus.COMPLETED)
-        .order_by(ImportRun.started_at.desc())  # type: ignore[attr-defined]
+        .order_by(col(ImportRun.started_at).desc())
         .limit(1)
     )
 

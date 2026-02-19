@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
@@ -235,7 +235,7 @@ class PipelineOrchestrator:
             select(ImportRun)
             .where(ImportRun.file_hash == file_hash)
             .where(ImportRun.status == ImportStatus.COMPLETED)
-            .order_by(ImportRun.completed_at.desc())  # type: ignore[union-attr]
+            .order_by(col(ImportRun.completed_at).desc())
             .limit(1)
         )
         result = self.session.exec(stmt)

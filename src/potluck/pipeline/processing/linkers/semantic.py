@@ -8,7 +8,7 @@ from typing import ClassVar
 from uuid import UUID
 
 import numpy as np
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
@@ -125,7 +125,7 @@ class SemanticLinker(BaseLinker):
         # Fetch embeddings for these media items
         stmt = (
             select(MediaEmbedding)
-            .where(MediaEmbedding.media_id.in_(entity_ids))  # type: ignore[attr-defined]
+            .where(col(MediaEmbedding.media_id).in_(entity_ids))
             .where(MediaEmbedding.embedding_type == self._embedding_type)
         )
         result = session.exec(stmt)
@@ -180,8 +180,8 @@ class SemanticLinker(BaseLinker):
         # Fetch notes with embeddings
         stmt = (
             select(KnowledgeNote)
-            .where(KnowledgeNote.id.in_(entity_ids))  # type: ignore[attr-defined]
-            .where(KnowledgeNote.embedding.isnot(None))  # type: ignore[union-attr]
+            .where(col(KnowledgeNote.id).in_(entity_ids))
+            .where(col(KnowledgeNote.embedding).isnot(None))
         )
         result = session.exec(stmt)
         notes = list(result.all())
@@ -237,8 +237,8 @@ class SemanticLinker(BaseLinker):
         # Fetch documents with embeddings
         stmt = (
             select(Document)
-            .where(Document.id.in_(entity_ids))  # type: ignore[attr-defined]
-            .where(Document.embedding.isnot(None))  # type: ignore[union-attr]
+            .where(col(Document.id).in_(entity_ids))
+            .where(col(Document.embedding).isnot(None))
         )
         result = session.exec(stmt)
         documents = list(result.all())
