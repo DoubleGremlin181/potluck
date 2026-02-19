@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% from "components/pagination.html" import pagination %}
+
+{% block title %}Imports — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <h1 class="text-3xl font-display font-bold">Imports</h1>
+
+  <!-- Active Imports -->
+  {% if active_imports %}
+  <section>
+    <h2 class="text-lg font-display font-semibold mb-3">Active Imports</h2>
+    <div class="space-y-3">
+      {% for run in active_imports %}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body p-4 gap-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+              <span class="font-semibold text-sm">
+                {{ run.source.name if run.source else 'Import' }}
+              </span>
+              <span class="badge badge-sm badge-warning">{{ run.status.value }}</span>
+            </div>
+            <form method="POST" action="/imports/{{ run.id }}/cancel">
+              <button type="submit" class="btn btn-ghost btn-xs text-error"
+                onclick="return confirm('Cancel this import?')">Cancel</button>
+            </form>
+          </div>
+
+          {% if run.progress_percent is not none %}
+          <progress class="progress progress-primary w-full h-2" value="{{ run.progress_percent }}" max="100"></progress>
+          <div class="flex justify-between text-xs text-base-content/50">
+            <span>{{ run.progress_current }}/{{ run.progress_total }}</span>
+            <span>
+              {{ run.entities_created }} created &middot;
+              {{ run.entities_skipped }} skipped &middot;
+              {{ run.entities_failed }} failed
+            </span>
+          </div>
+          {% else %}
+          <progress class="progress progress-primary w-full h-2"></progress>
+          {% endif %}
+
+          {% if run.current_file %}
+          <p class="text-xs text-base-content/50 truncate">{{ run.current_file }}</p>
+          {% endif %}
+
+          {% if run.error_message %}
+          <div class="collapse collapse-arrow bg-error/10 rounded-lg mt-1">
+            <input type="checkbox">
+            <div class="collapse-title text-xs text-error py-1 min-h-0">Error details</div>
+            <div class="collapse-content text-xs"><pre class="whitespace-pre-wrap">{{ run.error_message }}</pre></div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- New Import -->
+  <section>
+    <h2 class="text-lg font-display font-semibold mb-3">New Import</h2>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+      <!-- File Upload -->
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body p-5">
+          <h3 class="font-semibold text-sm mb-3">Upload File</h3>
+          <form method="POST" action="/imports/upload" enctype="multipart/form-data" class="space-y-3">
+            <div class="border-2 border-dashed border-base-300 rounded-lg p-8 text-center hover:border-primary/40 transition-colors">
+              <input type="file" name="file" required
+                class="file-input file-input-bordered file-input-sm w-full max-w-xs">
+              <p class="text-xs text-base-content/50 mt-2">Upload a data export file (ZIP, JSON, CSV, MBOX)</p>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm w-full">Upload &amp; Import</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Server Path -->
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body p-5">
+          <h3 class="font-semibold text-sm mb-3">Import from Server Path</h3>
+          <form method="POST" action="/imports/start" class="space-y-3">
+            <input type="text" name="path" placeholder="/path/to/data/export"
+              class="input input-bordered input-sm w-full" required>
+            <p class="text-xs text-base-content/50">
+              Enter a path on this server. Source type will be auto-detected.
+            </p>
+            <button type="submit" class="btn btn-primary btn-sm w-full">Start Import</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Supported Sources -->
+  <section>
+    <h2 class="text-lg font-display font-semibold mb-3">Supported Sources</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for source in sources %}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body p-4 gap-2">
+          <h3 class="font-semibold text-sm">{{ source.name }}</h3>
+          <div class="flex flex-wrap gap-1">
+            {% for et in source.entity_types %}
+            <span class="badge badge-outline badge-xs">{{ et | replace('_', ' ') }}</span>
+            {% endfor %}
+          </div>
+          <p class="text-xs text-base-content/50 mt-1">
+            Patterns: {{ source.patterns | join(', ') }}
+          </p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- Import History -->
+  <section>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-display font-semibold">Import History</h2>
+      <select
+        onchange="window.location.href='/imports?status_filter='+this.value"
+        class="select select-bordered select-xs">
+        <option value="" {{ 'selected' if not status_filter }}>All statuses</option>
+        {% for s in statuses %}
+        <option value="{{ s }}" {{ 'selected' if s == status_filter }}>{{ s | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {% if history %}
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Created</th>
+            <th>Skipped</th>
+            <th>Failed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in history %}
+          <tr>
+            <td class="font-medium text-sm">{{ run.source.name if run.source else '—' }}</td>
+            <td>
+              <span class="badge badge-sm badge-{{
+                'success' if run.status.value == 'completed' else
+                'error' if run.status.value == 'failed' else
+                'warning' if run.status.value == 'running' else
+                'ghost'
+              }}">{{ run.status.value }}</span>
+            </td>
+            <td class="text-xs">{{ run.started_at.strftime('%b %d, %Y %H:%M') }}</td>
+            <td>{{ run.entities_created }}</td>
+            <td>{{ run.entities_skipped }}</td>
+            <td>{{ run.entities_failed }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {{ pagination(total, page, per_page, "/imports?status_filter=" ~ status_filter, "main") }}
+
+    {% else %}
+    <p class="text-sm text-base-content/50">No import history</p>
+    {% endif %}
+  </section>
+
+</div>
+{% endblock %}

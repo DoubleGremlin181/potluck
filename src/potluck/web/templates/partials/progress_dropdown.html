@@ -1,0 +1,27 @@
+{# SSE-updated progress dropdown content #}
+{% if jobs %}
+  <h3 class="font-semibold text-sm mb-2">Active Imports</h3>
+  {% for job in jobs %}
+  <div class="mb-3 last:mb-0">
+    <div class="flex justify-between text-xs mb-1">
+      <span class="font-medium">{{ job.current_file or 'Processing...' }}</span>
+      <span class="badge badge-xs badge-{{ 'warning' if job.status == 'running' else 'ghost' }}">
+        {{ job.status }}
+      </span>
+    </div>
+    {% if job.progress_percent is not none %}
+    <progress class="progress progress-primary w-full h-1.5" value="{{ job.progress_percent }}" max="100"></progress>
+    <div class="flex justify-between text-xs text-base-content/50 mt-0.5">
+      <span>{{ job.progress_current }}/{{ job.progress_total }}</span>
+      <span>{{ job.entities_created }} created</span>
+    </div>
+    {% else %}
+    <progress class="progress progress-primary w-full h-1.5"></progress>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <div class="divider my-1"></div>
+  <a href="/imports" class="link link-primary text-xs">View all imports &rarr;</a>
+{% else %}
+  <p class="text-sm text-base-content/60">No active imports</p>
+{% endif %}

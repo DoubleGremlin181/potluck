@@ -1,6 +1,15 @@
 """Tests for web router configuration."""
 
-from potluck.web.routers import auth, dashboard, notes, people, search, timeline
+from potluck.web.routers import (
+    auth,
+    dashboard,
+    events,
+    imports,
+    notes,
+    people,
+    search,
+    timeline,
+)
 from potluck.web.routers import media as media_router
 
 
@@ -54,3 +63,17 @@ class TestRouterConfiguration:
         paths = _route_paths(timeline.router)
         assert "/timeline" in paths
         assert "/timeline/data" in paths
+
+    def test_imports_router_has_routes(self) -> None:
+        """Imports router should have upload, start, cancel, browse."""
+        paths = _route_paths(imports.router)
+        assert "/imports" in paths
+        assert "/imports/upload" in paths
+        assert "/imports/start" in paths
+        assert "/imports/{run_id}/cancel" in paths
+        assert "/imports/browse" in paths
+
+    def test_events_router_has_sse(self) -> None:
+        """Events router should have SSE progress endpoint."""
+        paths = _route_paths(events.router)
+        assert "/events/progress" in paths
