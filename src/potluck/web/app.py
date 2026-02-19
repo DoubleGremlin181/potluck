@@ -30,6 +30,7 @@ from potluck.web.routers import (
     settings,
     timeline,
 )
+from potluck.web.routers import map as map_router
 from potluck.web.routers import media as media_router
 
 _WEB_DIR = Path(__file__).parent
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(imports.router)
     app.include_router(events.router)
     app.include_router(settings.router)
+    app.include_router(map_router.router)
 
     # Media file serving
     @app.get("/media/file/{media_id}", dependencies=[Depends(require_auth)])

@@ -11,6 +11,7 @@ from potluck.web.routers import (
     settings,
     timeline,
 )
+from potluck.web.routers import map as map_router
 from potluck.web.routers import media as media_router
 
 
@@ -83,3 +84,9 @@ class TestRouterConfiguration:
         """Settings router should handle /settings."""
         paths = _route_paths(settings.router)
         assert "/settings" in paths
+
+    def test_map_router_has_routes(self) -> None:
+        """Map router should have page and markers endpoints."""
+        paths = _route_paths(map_router.router)
+        assert "/map" in paths
+        assert "/map/markers" in paths
