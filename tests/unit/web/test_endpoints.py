@@ -359,6 +359,55 @@ class TestImportEndpoints:
         assert 'hx-trigger="every 3s"' in response.text
 
 
+class TestHTMXPartials:
+    """Test HTMX partial responses are fragments, not full pages."""
+
+    async def test_search_htmx_returns_partial(self, authed_client: AsyncClient) -> None:
+        """GET /search with HX-Request header returns HTML fragment, not full page."""
+        response = await authed_client.get(
+            "/search",
+            params={"q": "test"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+        assert "<html" not in response.text
+
+    async def test_search_browse_htmx_returns_partial(self, authed_client: AsyncClient) -> None:
+        """GET /search in browse mode with HX-Request returns HTML fragment."""
+        response = await authed_client.get(
+            "/search",
+            params={"type": "email"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+        assert "<html" not in response.text
+
+    async def test_media_htmx_returns_grid_partial(self, authed_client: AsyncClient) -> None:
+        """GET /media with HX-Request header returns grid fragment, not full page."""
+        response = await authed_client.get(
+            "/media",
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+        assert "<html" not in response.text
+
+    async def test_timeline_items_returns_partial(self, authed_client: AsyncClient) -> None:
+        """GET /timeline/items returns a partial (always a fragment endpoint)."""
+        response = await authed_client.get(
+            "/timeline/items",
+            params={"before": "2025-01-01T00:00:00"},
+        )
+        assert response.status_code == 200
+        assert "<html" not in response.text
+
+    async def test_active_imports_empty_still_polls(self, authed_client: AsyncClient) -> None:
+        """Active imports partial keeps hx-get polling attribute even when empty."""
+        response = await authed_client.get("/imports/active")
+        assert response.status_code == 200
+        assert "<html" not in response.text
+        assert 'hx-get="/imports/active"' in response.text
+
+
 class TestMediaServing:
     """Test media file serving endpoints."""
 

@@ -28,10 +28,12 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "ml: tests requiring ML dependencies (torch, facenet-pytorch, etc.)"
     )
+    config.addinivalue_line("markers", "browser: browser E2E tests requiring Playwright")
 
     if config.getoption("--run-e2e"):
-        # Remove the default marker filter when --run-e2e is specified
-        config.option.markexpr = ""
+        # Include e2e tests but keep browser tests excluded (they must run
+        # in a separate invocation due to Playwright/asyncio event loop conflict).
+        config.option.markexpr = "not browser"
 
 
 def pytest_collection_modifyitems(
@@ -42,13 +44,13 @@ def pytest_collection_modifyitems(
     if not config.getoption("--run-e2e"):
         skip_e2e = pytest.mark.skip(reason="Need --run-e2e option to run")
         for item in items:
-            if "e2e" in item.keywords:
+            if item.get_closest_marker("e2e"):
                 item.add_marker(skip_e2e)
 
     if not config.getoption("--run-ml"):
         skip_ml = pytest.mark.skip(reason="Need --run-ml option to run (or use Docker test env)")
         for item in items:
-            if "ml" in item.keywords:
+            if item.get_closest_marker("ml"):
                 item.add_marker(skip_ml)
 
 
