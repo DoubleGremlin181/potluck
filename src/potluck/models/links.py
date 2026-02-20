@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
 
-from potluck.models.base import EntityType
+from potluck.models.base import EntityType, enum_field
 from potluck.models.utils import utc_now
 
 
@@ -64,7 +64,7 @@ class EntityLink(SQLModel, table=True):
     )
 
     # Source entity
-    source_type: EntityType = Field(
+    source_type: EntityType = enum_field(
         description="Type of the source entity",
     )
     source_id: UUID = Field(
@@ -73,7 +73,7 @@ class EntityLink(SQLModel, table=True):
     )
 
     # Target entity
-    target_type: EntityType = Field(
+    target_type: EntityType = enum_field(
         description="Type of the target entity",
     )
     target_id: UUID = Field(
@@ -82,7 +82,7 @@ class EntityLink(SQLModel, table=True):
     )
 
     # Relationship
-    link_type: LinkType = Field(
+    link_type: LinkType = enum_field(
         description="Type of relationship between entities",
     )
     custom_type: str | None = Field(

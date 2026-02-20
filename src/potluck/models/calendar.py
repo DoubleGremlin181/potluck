@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import GeolocatedEntity, SimpleEntity
+from potluck.models.base import GeolocatedEntity, SimpleEntity, enum_field
 from potluck.models.utils import IANATimezone
 
 
@@ -127,11 +127,11 @@ class CalendarEvent(GeolocatedEntity, table=True):
     )
 
     # Status and visibility
-    status: EventStatus = Field(
+    status: EventStatus = enum_field(
         default=EventStatus.CONFIRMED,
         description="Event status",
     )
-    visibility: EventVisibility = Field(
+    visibility: EventVisibility = enum_field(
         default=EventVisibility.DEFAULT,
         description="Event visibility",
     )
@@ -268,7 +268,7 @@ class EventParticipant(SimpleEntity, table=True):
         default=False,
         description="Whether attendance is optional",
     )
-    response_status: ResponseStatus = Field(
+    response_status: ResponseStatus = enum_field(
         default=ResponseStatus.NEEDS_ACTION,
         description="Participant's response",
     )

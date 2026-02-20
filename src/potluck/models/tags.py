@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import SimpleEntity
+from potluck.models.base import SimpleEntity, enum_field
 from potluck.models.links import EntityType
 
 
@@ -94,7 +94,7 @@ class TagAssignment(SimpleEntity, table=True):
         index=True,
         description="The tag being assigned",
     )
-    entity_type: EntityType = Field(
+    entity_type: EntityType = enum_field(
         index=True,
         description="Type of the entity being tagged",
     )

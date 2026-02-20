@@ -88,11 +88,8 @@ def ingest_transactions(
         occurred_at = parse_datetime(date_str)
 
         # Apply date filters
-        if filters and occurred_at:
-            if filters.since and occurred_at < filters.since:
-                continue
-            if filters.until and occurred_at >= filters.until:
-                continue
+        if filters and not filters.passes(occurred_at):
+            continue
 
         payee = row.get("Payee", "")
         memo = row.get("Memo")

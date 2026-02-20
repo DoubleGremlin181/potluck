@@ -2,19 +2,25 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import ClassVar
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import String
 from sqlmodel import Field, SQLModel
-from sqlmodel.main import default_registry
 
 from potluck.models.utils import IANATimezone, UTCDatetime, utc_now
 
-# Store Python str-Enums as VARCHAR, not PostgreSQL native enum types.
-# The migration creates all enum columns as VARCHAR (sa.String), so SQLAlchemy
-# must not attempt to cast parameters to non-existent PG enum types.
-default_registry.type_annotation_map[Enum] = String
+
+def enum_field(*, default: Any = ..., **kwargs: Any) -> Any:
+    """Field helper for str-Enum columns that stores as VARCHAR, not PG native enum.
+
+    Our migrations create enum columns as sa.String (VARCHAR). Without sa_type=String(),
+    SQLAlchemy auto-creates a PG native enum type and casts parameters to it, causing
+    'type "xyz" does not exist' errors on queries.
+    """
+    if default is ...:
+        return Field(sa_type=String, **kwargs)
+    return Field(default=default, sa_type=String, **kwargs)
 
 
 class IngestableEntity:
@@ -159,7 +165,7 @@ class BaseEntity(SimpleEntity):
 
     __abstract__: ClassVar[bool] = True
 
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="The source system this entity was imported from",
     )
     source_id: str | None = Field(
@@ -202,7 +208,7 @@ class TimestampedEntity(BaseEntity):
         index=True,
         description="When this entity actually occurred in UTC (e.g., photo taken, message sent)",
     )
-    occurred_at_precision: TimestampPrecision = Field(
+    occurred_at_precision: TimestampPrecision = enum_field(
         default=TimestampPrecision.SECOND,
         description="Precision of the occurred_at timestamp",
     )

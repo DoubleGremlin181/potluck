@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import SimpleEntity, SourceType, TimestampedEntity
+from potluck.models.base import SimpleEntity, SourceType, TimestampedEntity, enum_field
 
 
 class MessageType(str, Enum):
@@ -49,7 +49,7 @@ class ChatThread(SimpleEntity, table=True):
 
     __tablename__ = "chat_threads"
 
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="Source platform (e.g., whatsapp, telegram)",
     )
     source_id: str | None = Field(
@@ -59,7 +59,7 @@ class ChatThread(SimpleEntity, table=True):
     )
 
     # Thread metadata
-    thread_type: ThreadType = Field(
+    thread_type: ThreadType = enum_field(
         default=ThreadType.DIRECT,
         description="Type of thread (direct, group, channel)",
     )
@@ -158,7 +158,7 @@ class ChatMessage(TimestampedEntity, table=True):
     )
 
     # Message content
-    message_type: MessageType = Field(
+    message_type: MessageType = enum_field(
         default=MessageType.TEXT,
         description="Type of message content",
     )

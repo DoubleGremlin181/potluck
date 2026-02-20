@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import BaseEntity, TimestampedEntity
+from potluck.models.base import BaseEntity, TimestampedEntity, enum_field
 
 
 class Platform(str, Enum):
@@ -76,7 +76,7 @@ class SocialPost(TimestampedEntity, table=True):
     platform: Platform = Field(
         description="Social media platform",
     )
-    post_type: PostType = Field(
+    post_type: PostType = enum_field(
         default=PostType.TEXT,
         description="Type of post content",
     )
@@ -431,7 +431,7 @@ class SocialFollow(BaseEntity, table=True):
     platform: Platform = Field(
         description="Social media platform",
     )
-    follow_type: SocialFollowType = Field(
+    follow_type: SocialFollowType = enum_field(
         description="Type of social follow",
     )
 

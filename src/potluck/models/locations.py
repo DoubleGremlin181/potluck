@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import IngestableEntity, SourceType
+from potluck.models.base import IngestableEntity, SourceType, enum_field
 from potluck.models.utils import utc_now
 
 
@@ -73,7 +73,7 @@ class Location(SQLModel, IngestableEntity, table=True):
         sa_column_kwargs={"onupdate": utc_now},
         description="When the location was last updated",
     )
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="Source of the location data",
     )
     source_id: str | None = Field(
@@ -98,7 +98,7 @@ class Location(SQLModel, IngestableEntity, table=True):
     name: str = Field(
         description="Location name (e.g., 'Home', 'Starbucks on Main St')",
     )
-    location_type: LocationType = Field(
+    location_type: LocationType = enum_field(
         default=LocationType.OTHER,
         description="Category of location",
     )
@@ -214,7 +214,7 @@ class LocationVisit(SQLModel, IngestableEntity, table=True):
         index=True,
         description="The location visited (if matched)",
     )
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="Source of the visit data",
     )
     source_id: str | None = Field(
@@ -308,7 +308,7 @@ class LocationHistory(SQLModel, IngestableEntity, table=True):
         primary_key=True,
         description="Unique identifier",
     )
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="Source of the location data",
     )
     source_id: str | None = Field(

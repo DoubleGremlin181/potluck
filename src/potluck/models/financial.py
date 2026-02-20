@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import BaseEntity, TimestampedEntity
+from potluck.models.base import BaseEntity, TimestampedEntity, enum_field
 
 
 class AccountType(str, Enum):
@@ -51,7 +51,7 @@ class Account(BaseEntity, table=True):
     name: str = Field(
         description="Account name",
     )
-    account_type: AccountType = Field(
+    account_type: AccountType = enum_field(
         default=AccountType.CHECKING,
         description="Type of account",
     )
@@ -138,7 +138,7 @@ class Transaction(TimestampedEntity, table=True):
     )
 
     # Transaction details
-    transaction_type: TransactionType = Field(
+    transaction_type: TransactionType = enum_field(
         default=TransactionType.EXPENSE,
         description="Type of transaction",
     )

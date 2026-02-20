@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import FACE_EMBEDDING_DIM, MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import SourceType
+from potluck.models.base import SourceType, enum_field
 from potluck.models.utils import utc_now
 
 
@@ -126,7 +126,7 @@ class PersonAlias(SQLModel, table=True):
         index=True,
         description="The person this alias belongs to",
     )
-    alias_type: AliasType = Field(
+    alias_type: AliasType = enum_field(
         description="Type of alias (name, email, phone, etc.)",
     )
     value: str = Field(
@@ -138,7 +138,7 @@ class PersonAlias(SQLModel, table=True):
         index=True,
         description="Normalized/canonical form of the value for matching",
     )
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="Source where this alias was discovered",
     )
     is_primary: bool = Field(

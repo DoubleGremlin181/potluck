@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship, SQLModel
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM
-from potluck.models.base import GeolocatedEntity
+from potluck.models.base import GeolocatedEntity, enum_field
 from potluck.models.utils import utc_now
 
 
@@ -77,7 +77,7 @@ class Media(GeolocatedEntity, table=True):
         default=None,
         description="MIME type of the file (e.g., image/jpeg)",
     )
-    media_type: MediaType = Field(
+    media_type: MediaType = enum_field(
         default=MediaType.OTHER,
         description="High-level media type category",
     )
@@ -183,7 +183,7 @@ class MediaEmbedding(SQLModel, table=True):
         index=True,
         description="The media item this embedding belongs to",
     )
-    embedding_type: EmbeddingType = Field(
+    embedding_type: EmbeddingType = enum_field(
         description="Type of embedding (CLIP, OCR, etc.)",
     )
     model_name: str = Field(

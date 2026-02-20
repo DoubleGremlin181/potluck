@@ -62,9 +62,13 @@ class PipelineFilter(BaseModel):
         """Check if a timestamp falls within this filter's date range.
 
         Returns True when there is no timestamp or no active filters.
+        Handles mixed naive/aware datetimes by normalizing naive to UTC.
         """
         if not occurred_at:
             return True
+        # Normalize naive occurred_at to UTC for safe comparison
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=UTC)
         if self.since and occurred_at < self.since:
             return False
         return not (self.until and occurred_at >= self.until)

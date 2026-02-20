@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity
+from potluck.models.base import BaseEntity, SimpleEntity, SourceType, TimestampedEntity, enum_field
 
 
 class BrowsingHistory(TimestampedEntity, table=True):
@@ -225,7 +225,7 @@ class BookmarkFolder(SimpleEntity, table=True):
 
     __tablename__ = "bookmark_folders"
 
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="The source system this folder was imported from",
     )
 

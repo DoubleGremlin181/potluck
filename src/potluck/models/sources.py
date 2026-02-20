@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import SourceType
+from potluck.models.base import SourceType, enum_field
 from potluck.models.utils import utc_now
 
 
@@ -52,7 +52,7 @@ class ImportSource(SQLModel, table=True):
         sa_column_kwargs={"onupdate": utc_now},
         description="When the source was last updated",
     )
-    source_type: SourceType = Field(
+    source_type: SourceType = enum_field(
         description="Type of data source (e.g., google_takeout, reddit)",
     )
     name: str = Field(
@@ -113,7 +113,7 @@ class ImportRun(SQLModel, table=True):
         default=None,
         description="When the import run completed (if finished)",
     )
-    status: ImportStatus = Field(
+    status: ImportStatus = enum_field(
         default=ImportStatus.PENDING,
         description="Current status of the import run",
     )
