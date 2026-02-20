@@ -21,6 +21,7 @@ from potluck.db.session import get_engine
 from potluck.models.base import EntityType, SourceType
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
 from potluck.models.utils import utc_now
+from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.orchestrator import PipelineOrchestrator
 from potluck.pipeline.utils.hashing import compute_file_hash
 
@@ -61,6 +62,9 @@ def run_ingestion(
     import_run_id: str,
     path: str,
     entity_types: list[str] | None = None,
+    source_type: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
 ) -> dict[str, Any]:
     """Celery task for ingesting a file.
 
@@ -69,6 +73,9 @@ def run_ingestion(
         import_run_id: UUID of the ImportRun to update.
         path: Path to the file or directory to ingest.
         entity_types: Optional list of entity type values to ingest.
+        source_type: Optional source type value to override auto-detection.
+        since: Optional ISO date string — only ingest entities after this date.
+        until: Optional ISO date string — only ingest entities before this date.
 
     Returns:
         Dict with task result summary.
@@ -89,6 +96,31 @@ def run_ingestion(
             _mark_import_failed(import_run_id, error_msg)
             raise Reject(error_msg, requeue=False) from e
 
+    # Parse source type override
+    source_type_override: SourceType | None = None
+    if source_type:
+        try:
+            source_type_override = SourceType(source_type)
+        except ValueError as e:
+            error_msg = f"Invalid source type '{source_type}': {e}"
+            _mark_import_failed(import_run_id, error_msg)
+            raise Reject(error_msg, requeue=False) from e
+
+    # Parse date filters
+    filters: PipelineFilter | None = None
+    if since or until:
+        from datetime import datetime
+
+        try:
+            filters = PipelineFilter(
+                since=datetime.fromisoformat(since) if since else None,
+                until=datetime.fromisoformat(until) if until else None,
+            )
+        except ValueError as e:
+            error_msg = f"Invalid date filter (since={since}, until={until}): {e}"
+            _mark_import_failed(import_run_id, error_msg)
+            raise Reject(error_msg, requeue=False) from e
+
     # Create progress callback that updates Celery task state
     def on_progress(current: int, total: int, message: str | None) -> None:
         percent = (current / total * 100) if total > 0 else 0
@@ -105,14 +137,20 @@ def run_ingestion(
     try:
         engine = get_engine()
         with Session(engine) as session:
-            # Verify ImportRun exists
+            # Load existing ImportRun (created by start_ingestion)
             stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
             result = session.exec(stmt)
             import_run = result.first()
             if import_run is None:
                 raise Reject(f"ImportRun not found: {import_run_id}", requeue=False)
 
-            # Run ingestion
+            # Load the associated ImportSource
+            source_stmt = select(ImportSource).where(ImportSource.id == import_run.source_id)
+            import_source = session.exec(source_stmt).first()
+            if import_source is None:
+                raise Reject(f"ImportSource not found for run {import_run_id}", requeue=False)
+
+            # Run ingestion, passing existing records to avoid duplicates
             orchestrator = PipelineOrchestrator(
                 session=session,
                 on_progress=on_progress,
@@ -120,6 +158,10 @@ def run_ingestion(
             pipeline_result = orchestrator.run(
                 path=Path(path),
                 entity_types=types_to_ingest,
+                filters=filters,
+                import_source=import_source,
+                import_run=import_run,
+                source_type_override=source_type_override,
             )
 
             return {
@@ -183,6 +225,9 @@ def cancel_ingestion(import_run_id: str) -> dict[str, Any]:
 def start_ingestion(
     path: Path,
     entity_types: list[EntityType] | None = None,
+    source_type: SourceType | None = None,
+    since: str | None = None,
+    until: str | None = None,
 ) -> tuple[str, str]:
     """Start an ingestion task and return task and run IDs.
 
@@ -191,6 +236,9 @@ def start_ingestion(
     Args:
         path: Path to ingest.
         entity_types: Optional list of entity types to ingest.
+        source_type: Optional source type override (skips auto-detection).
+        since: Optional ISO date string for filtering entities after this date.
+        until: Optional ISO date string for filtering entities before this date.
 
     Returns:
         Tuple of (task_id, import_run_id).
@@ -198,7 +246,7 @@ def start_ingestion(
     engine = get_engine()
     with Session(engine) as session:
         source = ImportSource(
-            source_type=SourceType.GENERIC,
+            source_type=source_type or SourceType.GENERIC,
             name=path.name,
         )
         session.add(source)
@@ -216,6 +264,14 @@ def start_ingestion(
 
     # Start Celery task
     types_list = [et.value for et in entity_types] if entity_types else None
-    task = run_ingestion.delay(import_run_id, str(path), types_list)
+    source_type_str = source_type.value if source_type else None
+    task = run_ingestion.delay(
+        import_run_id,
+        str(path),
+        types_list,
+        source_type_str,
+        since,
+        until,
+    )
 
     return task.id, import_run_id

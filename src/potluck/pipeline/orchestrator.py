@@ -18,7 +18,7 @@ from potluck.pipeline.dtos import (
     PipelineStats,
 )
 from potluck.pipeline.ingestion.base import BaseIngestionStage
-from potluck.pipeline.ingestion.registry import detect_stage
+from potluck.pipeline.ingestion.registry import detect_stage, get_stage
 from potluck.pipeline.utils.archive import extracted
 from potluck.pipeline.utils.hashing import compute_file_hash
 
@@ -86,8 +86,10 @@ class PipelineOrchestrator:
         entity_types: set[EntityType] | None = None,
         filters: PipelineFilter | None = None,
         import_source: ImportSource | None = None,
+        import_run: ImportRun | None = None,
         resume_failed: bool = False,
         content_path: Path | None = None,
+        source_type_override: SourceType | None = None,
     ) -> PipelineResult:
         """Run the pipeline for a path.
 
@@ -96,11 +98,17 @@ class PipelineOrchestrator:
             entity_types: Entity types to ingest (None = all available).
             filters: Optional date range filters.
             import_source: Optional existing ImportSource (created if None).
+            import_run: Optional existing ImportRun to reuse (created if None).
+                When provided, the orchestrator updates this run instead of
+                creating a new one. Used by the Celery task path to avoid
+                duplicate ImportRun records.
             resume_failed: If True, retry processing even if a previous run
                 completed. Default is False (skip if already processed).
             content_path: Optional pre-extracted content path. When provided, skips
                 internal archive extraction. Use this when the caller manages the
                 extraction lifecycle.
+            source_type_override: Optional source type to force a specific ingester
+                instead of auto-detecting from filename patterns.
 
         Returns:
             PipelineResult with statistics.
@@ -133,12 +141,28 @@ class PipelineOrchestrator:
 
         if content_path is not None:
             return self._run_inner(
-                path, content_path, entity_types, filters, import_source, file_hash
+                path,
+                content_path,
+                entity_types,
+                filters,
+                import_source,
+                import_run,
+                file_hash,
+                source_type_override,
             )
 
         # Extract archive if needed and run discovery + ingestion
         with extracted(path) as cp:
-            return self._run_inner(path, cp, entity_types, filters, import_source, file_hash)
+            return self._run_inner(
+                path,
+                cp,
+                entity_types,
+                filters,
+                import_source,
+                import_run,
+                file_hash,
+                source_type_override,
+            )
 
     def _run_inner(
         self,
@@ -147,15 +171,26 @@ class PipelineOrchestrator:
         entity_types: set[EntityType] | None,
         filters: PipelineFilter | None,
         import_source: ImportSource | None,
+        import_run: ImportRun | None,
         file_hash: str | None,
+        source_type_override: SourceType | None = None,
     ) -> PipelineResult:
         """Inner pipeline logic operating on already-extracted content."""
-        # Level 1: Detect source type from filename
-        stage_cls = detect_stage(path)
+        # Level 1: Resolve ingestion stage — use override or auto-detect from filename
+        if source_type_override is not None:
+            stage_cls = get_stage(source_type_override)
+        else:
+            stage_cls = detect_stage(path)
 
         if stage_cls is None:
             logger.warning(f"No ingestion stage found for: {path}")
-            return self._create_empty_result(path, file_hash, "No stage matched")
+            return self._create_empty_result(
+                path,
+                file_hash,
+                "No stage matched",
+                import_source=import_source,
+                import_run=import_run,
+            )
 
         # Level 2: Detect available entities
         stage = stage_cls()
@@ -169,14 +204,26 @@ class PipelineOrchestrator:
 
         if not discovery.has_content:
             logger.warning(f"No ingestable content found in: {path}")
-            return self._create_empty_result(path, file_hash, "No content found")
+            return self._create_empty_result(
+                path,
+                file_hash,
+                "No content found",
+                import_source=import_source,
+                import_run=import_run,
+            )
 
-        # Create or get import source
+        # Create or reuse import source
         if import_source is None:
             import_source = self._create_import_source(discovery)
+        elif import_source.source_type == SourceType.GENERIC:
+            # Update pre-created source with detected type info
+            import_source.source_type = discovery.source_type
+            import_source.description = f"Import from {discovery.source_path}"
+            self.session.commit()
 
-        # Create import run
-        import_run = self._create_import_run(import_source, file_hash)
+        # Create or reuse import run
+        if import_run is None:
+            import_run = self._create_import_run(import_source, file_hash)
 
         # Determine entity types to ingest
         types_to_ingest = entity_types or set(discovery.available_entities.keys())
@@ -270,29 +317,44 @@ class PipelineOrchestrator:
         return run
 
     def _create_empty_result(
-        self, path: Path, file_hash: str | None, reason: str
+        self,
+        path: Path,
+        file_hash: str | None,
+        reason: str,
+        import_source: ImportSource | None = None,
+        import_run: ImportRun | None = None,
     ) -> PipelineResult:
-        """Create an empty result for paths with no content."""
-        source = ImportSource(
-            source_type=SourceType.GENERIC,
-            name=path.name,
-            description=f"Empty import from {path}: {reason}",
-        )
-        self.session.add(source)
-        self.session.commit()
-        self.session.refresh(source)
+        """Create an empty result for paths with no content.
 
-        run = ImportRun(
-            source_id=source.id,
-            status=ImportStatus.COMPLETED,
-            file_hash=file_hash,
-            completed_at=utc_now(),
-        )
-        self.session.add(run)
-        self.session.commit()
-        self.session.refresh(run)
+        Reuses existing import_source/import_run when provided (e.g., from
+        the Celery task path) to avoid creating duplicate records.
+        """
+        if import_source is None:
+            import_source = ImportSource(
+                source_type=SourceType.GENERIC,
+                name=path.name,
+                description=f"Empty import from {path}: {reason}",
+            )
+            self.session.add(import_source)
+            self.session.commit()
+            self.session.refresh(import_source)
 
-        return PipelineResult(import_run=run, stats=PipelineStats())
+        if import_run is None:
+            import_run = ImportRun(
+                source_id=import_source.id,
+                status=ImportStatus.COMPLETED,
+                file_hash=file_hash,
+                completed_at=utc_now(),
+            )
+            self.session.add(import_run)
+        else:
+            import_run.status = ImportStatus.COMPLETED
+            import_run.completed_at = utc_now()
+            import_run.error_message = reason
+        self.session.commit()
+        self.session.refresh(import_run)
+
+        return PipelineResult(import_run=import_run, stats=PipelineStats())
 
     def _ingest_entities(
         self,
@@ -607,8 +669,11 @@ def ingest(
     entity_types: set[EntityType] | None = None,
     filters: PipelineFilter | None = None,
     on_progress: ProgressCallback | None = None,
+    import_source: ImportSource | None = None,
+    import_run: ImportRun | None = None,
     resume_failed: bool = False,
     content_path: Path | None = None,
+    source_type_override: SourceType | None = None,
 ) -> PipelineResult:
     """Run the pipeline for a path.
 
@@ -622,9 +687,12 @@ def ingest(
         entity_types: Entity types to ingest (None = all available).
         filters: Optional date range filters.
         on_progress: Optional progress callback (current, total, message).
+        import_source: Optional existing ImportSource to reuse.
+        import_run: Optional existing ImportRun to reuse.
         resume_failed: If True, retry failed entities from previous runs.
         content_path: Optional pre-extracted content path. When provided, skips
             internal archive extraction.
+        source_type_override: Optional source type to force a specific ingester.
 
     Returns:
         PipelineResult with import run and statistics.
@@ -637,6 +705,9 @@ def ingest(
         path,
         entity_types=entity_types,
         filters=filters,
+        import_source=import_source,
+        import_run=import_run,
         resume_failed=resume_failed,
         content_path=content_path,
+        source_type_override=source_type_override,
     )
