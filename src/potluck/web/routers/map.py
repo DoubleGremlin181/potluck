@@ -1,5 +1,8 @@
 """Map router — Leaflet map view for geolocated entities."""
 
+import contextlib
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
@@ -23,7 +26,11 @@ _GEO_TYPES = {
 
 
 @router.get("", response_class=HTMLResponse)
-async def map_page(request: Request) -> Response:
+async def map_page(
+    request: Request,
+    since: str = Query(default=""),
+    until: str = Query(default=""),
+) -> Response:
     """Render the map page."""
     templates = request.app.state.templates
     return templates.TemplateResponse(  # type: ignore[no-any-return]
@@ -32,6 +39,8 @@ async def map_page(request: Request) -> Response:
         {
             "active_page": "map",
             "entity_types": [et.value for et in _GEO_TYPES],
+            "since": since,
+            "until": until,
         },
     )
 
@@ -44,9 +53,20 @@ async def map_markers(
     west: float = Query(default=-180),
     east: float = Query(default=180),
     types: list[str] = Query(default=[], alias="type"),
+    since: str = Query(default=""),
+    until: str = Query(default=""),
 ) -> JSONResponse:
     """Return markers for the viewport bounds."""
     entity_map = get_entity_type_model_map()
+
+    since_dt: datetime | None = None
+    until_dt: datetime | None = None
+    if since:
+        with contextlib.suppress(ValueError):
+            since_dt = datetime.fromisoformat(since)
+    if until:
+        with contextlib.suppress(ValueError):
+            until_dt = datetime.fromisoformat(until)
 
     target_types = set()
     if types:
@@ -79,6 +99,13 @@ async def map_markers(
             )
             .limit(1000)
         )
+
+        if hasattr(model, "occurred_at"):
+            if since_dt is not None:
+                stmt = stmt.where(col(model.occurred_at) >= since_dt)
+            if until_dt is not None:
+                stmt = stmt.where(col(model.occurred_at) <= until_dt)
+
         result = await db.execute(stmt)
 
         for entity in result.scalars().all():

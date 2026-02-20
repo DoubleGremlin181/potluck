@@ -247,6 +247,20 @@ class TestMapEndpoints:
         assert "markers" in data
         assert isinstance(data["markers"], list)
 
+    async def test_map_markers_accepts_date_params(self, authed_client: AsyncClient) -> None:
+        """Map markers should accept since/until date parameters."""
+        response = await authed_client.get("/map/markers?since=2025-01-01&until=2025-12-31")
+        assert response.status_code == 200
+        data = response.json()
+        assert "markers" in data
+
+    async def test_map_markers_ignores_invalid_dates(self, authed_client: AsyncClient) -> None:
+        """Map markers should gracefully ignore invalid date strings."""
+        response = await authed_client.get("/map/markers?since=bad-date&until=also-bad")
+        assert response.status_code == 200
+        data = response.json()
+        assert "markers" in data
+
 
 class TestTimelineEndpoints:
     """Test timeline page and items endpoints."""
@@ -275,6 +289,49 @@ class TestSearchBrowseMode:
             or "Emails" in response.text
             or "No items" in response.text
         )
+
+
+class TestTagsEndpoints:
+    """Test tags CRUD endpoints."""
+
+    async def test_tags_list_200(self, authed_client: AsyncClient) -> None:
+        """Tags list should return 200."""
+        response = await authed_client.get("/tags")
+        assert response.status_code == 200
+
+    async def test_edit_nonexistent_tag_404(self, authed_client: AsyncClient) -> None:
+        """Editing a non-existent tag should return 404."""
+        fake_id = uuid4()
+        response = await authed_client.post(
+            f"/tags/{fake_id}/edit",
+            data={"name": "updated"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 404
+
+    async def test_delete_nonexistent_tag_404(self, authed_client: AsyncClient) -> None:
+        """Deleting a non-existent tag should return 404."""
+        fake_id = uuid4()
+        response = await authed_client.post(
+            f"/tags/{fake_id}/delete",
+            follow_redirects=False,
+        )
+        assert response.status_code == 404
+
+
+class TestImportEndpoints:
+    """Test import page endpoints."""
+
+    async def test_imports_page_200(self, authed_client: AsyncClient) -> None:
+        """Imports page should return 200."""
+        response = await authed_client.get("/imports")
+        assert response.status_code == 200
+
+    async def test_imports_shows_upload_form(self, authed_client: AsyncClient) -> None:
+        """Imports page should contain an upload form."""
+        response = await authed_client.get("/imports")
+        assert response.status_code == 200
+        assert "upload" in response.text.lower() or "import" in response.text.lower()
 
 
 class TestMediaServing:

@@ -44,6 +44,9 @@
               <p class="text-sm whitespace-pre-wrap break-words leading-relaxed">{{ note.content }}</p>
               <div class="flex items-center gap-3 mt-3 text-xs text-base-content/40">
                 <span>{{ note.updated_at.strftime('%b %d, %Y at %H:%M') }}</span>
+                {% if note.note_type and note.note_type != 'knowledge' %}
+                <span class="badge badge-primary badge-xs">{{ note.note_type }}</span>
+                {% endif %}
                 {% if note.created_by %}
                 <span class="badge badge-ghost badge-xs">{{ note.created_by }}</span>
                 {% endif %}
@@ -54,7 +57,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
               </div>
               <ul tabindex="0" class="dropdown-content z-[1] menu p-1 shadow-lg bg-base-300 rounded-xl w-32">
-                <li><button onclick="editNote('{{ note.id }}', `{{ note.content | e }}`)" class="text-xs">Edit</button></li>
+                <li><button onclick="editNote('{{ note.id }}', `{{ note.content | e }}`, '{{ note.note_type or 'knowledge' }}')" class="text-xs">Edit</button></li>
                 <li>
                   <form method="POST" action="/notes/{{ note.id }}/delete"
                     onsubmit="return confirm('Delete this note?')">
@@ -92,6 +95,14 @@
   <div class="modal-box bg-base-200 rounded-2xl">
     <h3 class="font-display font-semibold text-lg mb-4">New Note</h3>
     <form method="POST" action="/notes">
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Type</span></label>
+        <select name="note_type" class="select select-bordered bg-base-100 select-sm">
+          {% for nt in note_types %}
+          <option value="{{ nt }}">{{ nt | title }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <textarea
         name="content"
         placeholder="Write your note..."
@@ -112,6 +123,14 @@
   <div class="modal-box bg-base-200 rounded-2xl">
     <h3 class="font-display font-semibold text-lg mb-4">Edit Note</h3>
     <form method="POST" id="edit-note-form">
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Type</span></label>
+        <select name="note_type" id="edit-note-type" class="select select-bordered bg-base-100 select-sm">
+          {% for nt in note_types %}
+          <option value="{{ nt }}">{{ nt | title }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <textarea
         name="content"
         id="edit-note-content"
@@ -130,9 +149,10 @@
 
 {% block scripts %}
 <script>
-function editNote(id, content) {
+function editNote(id, content, noteType) {
   document.getElementById('edit-note-form').action = '/notes/' + id + '/edit';
   document.getElementById('edit-note-content').value = content;
+  document.getElementById('edit-note-type').value = noteType || 'knowledge';
   document.getElementById('edit-note-modal').showModal();
 }
 </script>

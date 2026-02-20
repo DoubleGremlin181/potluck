@@ -15,6 +15,8 @@ from potluck.web.dependencies import get_db, require_auth
 
 router = APIRouter(prefix="/notes", tags=["notes"], dependencies=[Depends(require_auth)])
 
+NOTE_TYPES = ["knowledge", "task", "reminder", "observation"]
+
 
 @router.get("", response_class=HTMLResponse)
 async def notes_list(
@@ -50,6 +52,7 @@ async def notes_list(
             "page": page,
             "per_page": per_page,
             "q": q,
+            "note_types": NOTE_TYPES,
         },
     )
 
@@ -59,11 +62,13 @@ async def create_note(
     request: Request,
     db: AsyncSession = Depends(get_db),
     content: str = Form(...),
+    note_type: str = Form(default="knowledge"),
 ) -> RedirectResponse:
     """Create a new KnowledgeNote."""
     note = KnowledgeNote(
         content=content.strip(),
         content_hash=hashlib.sha256(content.strip().encode()).hexdigest(),
+        note_type=note_type if note_type in NOTE_TYPES else "knowledge",
         created_by="web",
     )
     db.add(note)
@@ -77,6 +82,7 @@ async def edit_note(
     note_id: UUID,
     db: AsyncSession = Depends(get_db),
     content: str = Form(...),
+    note_type: str = Form(default=""),
 ) -> RedirectResponse:
     """Update a KnowledgeNote."""
     stmt = select(KnowledgeNote).where(col(KnowledgeNote.id) == note_id)
@@ -88,6 +94,8 @@ async def edit_note(
 
     note.content = content.strip()
     note.content_hash = hashlib.sha256(content.strip().encode()).hexdigest()
+    if note_type and note_type in NOTE_TYPES:
+        note.note_type = note_type
     db.add(note)
     await db.commit()
 

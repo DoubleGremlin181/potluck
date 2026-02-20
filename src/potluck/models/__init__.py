@@ -125,6 +125,8 @@ _ENTITY_TYPE_MODEL_MAP: dict[EntityType, type[SQLModel]] = {
     EntityType.LOCATION_VISIT: LocationVisit,
     EntityType.BROWSING_HISTORY: BrowsingHistory,
     EntityType.BOOKMARK: Bookmark,
+    EntityType.SOCIAL_FOLLOW: SocialFollow,
+    EntityType.BUDGET: Budget,
     EntityType.PERSON: Person,
     EntityType.TAG: Tag,
 }

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% from "components/pagination.html" import pagination %}
+
+{% block title %}Tags — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="animate-in flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-4xl font-display font-bold tracking-tight">Tags</h1>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="divider-accent"></div>
+        <p class="text-base-content/50">{{ "{:,}".format(total) }} tags</p>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1.5" onclick="document.getElementById('new-tag-modal').showModal()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+      New Tag
+    </button>
+  </div>
+
+  <!-- Search -->
+  <form
+    hx-get="/tags"
+    hx-target="#tags-list"
+    hx-swap="outerHTML"
+    hx-push-url="true"
+    class="animate-in animate-in-delay-1 join w-full sm:w-auto"
+  >
+    <input type="text" name="q" value="{{ q }}" placeholder="Filter tags..."
+      class="input input-bordered join-item w-full sm:w-72 bg-base-200/50 focus:bg-base-100">
+    <button type="submit" class="btn btn-ghost join-item">Search</button>
+  </form>
+
+  <!-- Tags list -->
+  <div id="tags-list" class="animate-in animate-in-delay-2 space-y-2">
+    {% if tags %}
+      {% for tag in tags %}
+      <div class="card bg-base-200/60 border border-base-300/40 hover:border-primary/20 transition-all rounded-xl">
+        <div class="card-body p-4 gap-2">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-semibold text-sm">{{ tag.name or '(unnamed)' }}</span>
+                {% if tag.category %}
+                <span class="badge badge-outline badge-xs">{{ tag.category }}</span>
+                {% endif %}
+              </div>
+              {% if tag.description %}
+              <p class="text-sm text-base-content/60 mt-1 line-clamp-2">{{ tag.description }}</p>
+              {% endif %}
+              <div class="flex items-center gap-3 mt-3 text-xs text-base-content/40">
+                <span>{{ tag.updated_at.strftime('%b %d, %Y at %H:%M') }}</span>
+              </div>
+            </div>
+            <div class="dropdown dropdown-end shrink-0">
+              <div tabindex="0" role="button" class="btn btn-ghost btn-xs btn-circle opacity-40 hover:opacity-100">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+              </div>
+              <ul tabindex="0" class="dropdown-content z-[1] menu p-1 shadow-lg bg-base-300 rounded-xl w-32">
+                <li><button onclick="editTag('{{ tag.id }}', `{{ (tag.name or '') | e }}`, `{{ (tag.category or '') | e }}`, `{{ (tag.description or '') | e }}`)" class="text-xs">Edit</button></li>
+                <li>
+                  <form method="POST" action="/tags/{{ tag.id }}/delete"
+                    onsubmit="return confirm('Delete this tag?')">
+                    <button type="submit" class="text-xs text-error">Delete</button>
+                  </form>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      {{ pagination(total, page, per_page, "/tags?q=" ~ q, "#tags-list") }}
+
+    {% else %}
+      <div class="text-center py-16">
+        <div class="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+          <span class="text-3xl">&#127991;</span>
+        </div>
+        <p class="text-base-content/60 font-medium">{{ 'No tags match your search' if q else 'No tags yet' }}</p>
+        {% if not q %}
+        <button class="btn btn-primary btn-sm mt-4" onclick="document.getElementById('new-tag-modal').showModal()">
+          Create your first tag
+        </button>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- New tag modal -->
+<dialog id="new-tag-modal" class="modal">
+  <div class="modal-box bg-base-200 rounded-2xl">
+    <h3 class="font-display font-semibold text-lg mb-4">New Tag</h3>
+    <form method="POST" action="/tags">
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Name</span></label>
+        <input type="text" name="name" placeholder="Tag name" class="input input-bordered bg-base-100" required>
+      </div>
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Category</span></label>
+        <input type="text" name="category" placeholder="e.g. topic, project, location" class="input input-bordered bg-base-100">
+      </div>
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Description</span></label>
+        <textarea name="description" placeholder="Optional description..." class="textarea textarea-bordered bg-base-100 h-24"></textarea>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('new-tag-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Tag</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Edit tag modal -->
+<dialog id="edit-tag-modal" class="modal">
+  <div class="modal-box bg-base-200 rounded-2xl">
+    <h3 class="font-display font-semibold text-lg mb-4">Edit Tag</h3>
+    <form method="POST" id="edit-tag-form">
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Name</span></label>
+        <input type="text" name="name" id="edit-tag-name" class="input input-bordered bg-base-100" required>
+      </div>
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Category</span></label>
+        <input type="text" name="category" id="edit-tag-category" class="input input-bordered bg-base-100">
+      </div>
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text text-xs">Description</span></label>
+        <textarea name="description" id="edit-tag-description" class="textarea textarea-bordered bg-base-100 h-24"></textarea>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('edit-tag-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function editTag(id, name, category, description) {
+  document.getElementById('edit-tag-form').action = '/tags/' + id + '/edit';
+  document.getElementById('edit-tag-name').value = name;
+  document.getElementById('edit-tag-category').value = category;
+  document.getElementById('edit-tag-description').value = description;
+  document.getElementById('edit-tag-modal').showModal();
+}
+</script>
+{% endblock %}

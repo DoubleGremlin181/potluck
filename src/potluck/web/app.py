@@ -29,6 +29,7 @@ from potluck.web.routers import (
     people,
     search,
     settings,
+    tags,
     timeline,
 )
 from potluck.web.routers import map as map_router
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(settings.router)
     app.include_router(map_router.router)
+    app.include_router(tags.router)
     app.include_router(entity.router)
 
     async def _resolve_media_file(media_id: UUID, db: AsyncSession) -> tuple[Path, str]:

@@ -41,7 +41,16 @@
     </div>
   </div>
 
-  <div id="map-container" class="animate-in animate-in-delay-1"></div>
+  <!-- Date filter -->
+  <div class="animate-in animate-in-delay-1 flex flex-wrap items-center gap-3">
+    <label class="text-xs text-base-content/50">From</label>
+    <input type="date" id="map-since" value="{{ since }}" class="input input-bordered input-sm bg-base-200/50 w-40">
+    <label class="text-xs text-base-content/50">To</label>
+    <input type="date" id="map-until" value="{{ until }}" class="input input-bordered input-sm bg-base-200/50 w-40">
+    <button type="button" onclick="loadMarkers()" class="btn btn-ghost btn-sm">Filter</button>
+  </div>
+
+  <div id="map-container" class="animate-in animate-in-delay-2"></div>
   <p id="marker-count" class="text-xs text-base-content/40"></p>
 
 </div>
@@ -59,6 +68,13 @@
 
   var markerLayer = L.layerGroup().addTo(map);
 
+  var typeColors = {
+    media: '#b87333',
+    location: '#3b8686',
+    location_visit: '#1e7070',
+    calendar_event: '#4aba7c'
+  };
+
   function loadMarkers() {
     var bounds = map.getBounds();
     var types = [];
@@ -73,12 +89,24 @@
     params.append('east', bounds.getEast());
     types.forEach(function(t) { params.append('type', t); });
 
+    var sinceVal = document.getElementById('map-since');
+    var untilVal = document.getElementById('map-until');
+    if (sinceVal && sinceVal.value) params.append('since', sinceVal.value);
+    if (untilVal && untilVal.value) params.append('until', untilVal.value);
+
     fetch('/map/markers?' + params.toString())
       .then(function(r) { return r.json(); })
       .then(function(data) {
         markerLayer.clearLayers();
         data.markers.forEach(function(m) {
-          L.marker([m.lat, m.lng])
+          var color = typeColors[m.type] || '#6366f1';
+          L.circleMarker([m.lat, m.lng], {
+            radius: 7,
+            fillColor: color,
+            fillOpacity: 0.85,
+            color: '#fff',
+            weight: 1.5
+          })
             .bindPopup('<a href="/entity/' + encodeURIComponent(m.type) + '/' + encodeURIComponent(m.id) + '" style="font-weight:600;text-decoration:none">' + escapeHtml(m.title) + '</a><br><small>' + escapeHtml(m.type.replace('_', ' ')) + '</small>')
             .addTo(markerLayer);
         });

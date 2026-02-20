@@ -32,6 +32,7 @@ class TestAppFactory:
         assert "/settings" in paths
         assert "/map" in paths
         assert "/map/markers" in paths
+        assert "/tags" in paths
 
     def test_media_serving_routes(self) -> None:
         """Media serving routes should be registered."""
