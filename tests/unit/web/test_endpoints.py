@@ -1,10 +1,15 @@
 """Behavioral tests for web endpoints using HTTP client."""
 
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+
+from potluck.models.base import EntityType
+from potluck.web.routers.map import _extract_marker_extras
 
 
 class TestAuthMiddleware:
@@ -261,6 +266,12 @@ class TestMapEndpoints:
         data = response.json()
         assert "markers" in data
 
+    async def test_map_page_loads_markercluster_js(self, authed_client: AsyncClient) -> None:
+        """Map page should include leaflet.markercluster script."""
+        response = await authed_client.get("/map")
+        assert response.status_code == 200
+        assert "leaflet.markercluster" in response.text
+
 
 class TestTimelineEndpoints:
     """Test timeline page and items endpoints."""
@@ -333,6 +344,20 @@ class TestImportEndpoints:
         assert response.status_code == 200
         assert "upload" in response.text.lower() or "import" in response.text.lower()
 
+    async def test_active_imports_partial_200(self, authed_client: AsyncClient) -> None:
+        """Active imports partial should return 200."""
+        response = await authed_client.get("/imports/active")
+        assert response.status_code == 200
+
+    async def test_active_imports_partial_contains_polling_attr(
+        self, authed_client: AsyncClient
+    ) -> None:
+        """Active imports partial should contain HTMX polling attributes."""
+        response = await authed_client.get("/imports/active")
+        assert response.status_code == 200
+        assert 'hx-get="/imports/active"' in response.text
+        assert 'hx-trigger="every 3s"' in response.text
+
 
 class TestMediaServing:
     """Test media file serving endpoints."""
@@ -348,3 +373,97 @@ class TestMediaServing:
         fake_id = uuid4()
         response = await authed_client.get(f"/media/thumb/{fake_id}")
         assert response.status_code == 404
+
+
+class TestExtractMarkerExtras:
+    """Unit tests for _extract_marker_extras helper."""
+
+    def test_location_visit_extras(self) -> None:
+        """Location visit should return place, time, duration, activity, address."""
+        entity = SimpleNamespace(
+            id=uuid4(),
+            place_name="Central Park",
+            started_at=datetime(2025, 6, 15, 14, 30, tzinfo=UTC),
+            duration_minutes=45,
+            activity_type="walking",
+            address="New York, NY",
+        )
+        extras = _extract_marker_extras(entity, EntityType.LOCATION_VISIT)
+        assert extras["Place"] == "Central Park"
+        assert "Jun 15, 2025" in extras["Time"]
+        assert extras["Duration (min)"] == "45"
+        assert extras["Activity"] == "walking"
+        assert extras["Address"] == "New York, NY"
+
+    def test_location_extras(self) -> None:
+        """Location should return type, address, city, country."""
+        entity = SimpleNamespace(
+            id=uuid4(),
+            location_type="restaurant",
+            address="123 Main St",
+            city="Austin",
+            country="US",
+        )
+        extras = _extract_marker_extras(entity, EntityType.LOCATION)
+        assert extras["Type"] == "restaurant"
+        assert extras["Address"] == "123 Main St"
+        assert extras["City"] == "Austin"
+        assert extras["Country"] == "US"
+
+    def test_media_extras_includes_media_id(self) -> None:
+        """Media should return media_type, date, caption, and _media_id for thumbnails."""
+        mid = uuid4()
+        entity = SimpleNamespace(
+            id=mid,
+            media_type="image",
+            occurred_at=datetime(2025, 3, 10, 9, 0, tzinfo=UTC),
+            caption="Sunset over the lake",
+        )
+        extras = _extract_marker_extras(entity, EntityType.MEDIA)
+        assert extras["Media"] == "image"
+        assert "Mar 10, 2025" in extras["Date"]
+        assert extras["Caption"] == "Sunset over the lake"
+        assert extras["_media_id"] == str(mid)
+
+    def test_calendar_event_extras(self) -> None:
+        """Calendar event should return summary, start, end, location."""
+        entity = SimpleNamespace(
+            id=uuid4(),
+            summary="Team standup",
+            start_time=datetime(2025, 7, 1, 10, 0, tzinfo=UTC),
+            end_time=datetime(2025, 7, 1, 10, 30, tzinfo=UTC),
+            location_text="Room 4B",
+        )
+        extras = _extract_marker_extras(entity, EntityType.CALENDAR_EVENT)
+        assert extras["Event"] == "Team standup"
+        assert "Jul 01, 2025" in extras["Start"]
+        assert extras["Location"] == "Room 4B"
+
+    def test_none_values_omitted(self) -> None:
+        """None and empty string values should be omitted from extras."""
+        entity = SimpleNamespace(
+            id=uuid4(),
+            place_name=None,
+            started_at=datetime(2025, 1, 1, tzinfo=UTC),
+            duration_minutes=None,
+            activity_type="",
+            address=None,
+        )
+        extras = _extract_marker_extras(entity, EntityType.LOCATION_VISIT)
+        assert "Place" not in extras
+        assert "Duration (min)" not in extras
+        assert "Activity" not in extras
+        assert "Address" not in extras
+        assert "Time" in extras  # started_at is set
+
+    def test_long_caption_truncated(self) -> None:
+        """Captions longer than 80 chars should be truncated."""
+        entity = SimpleNamespace(
+            id=uuid4(),
+            media_type="image",
+            occurred_at=None,
+            caption="A" * 100,
+        )
+        extras = _extract_marker_extras(entity, EntityType.MEDIA)
+        assert len(extras["Caption"]) == 80
+        assert extras["Caption"].endswith("...")

@@ -4,6 +4,7 @@
 
 {% block head %}
 <link rel="stylesheet" href="/static/css/leaflet.css">
+<link rel="stylesheet" href="/static/css/leaflet.markercluster.css">
 <style>
   #map-container {
     height: 600px;
@@ -12,8 +13,46 @@
     border: 1px solid oklch(var(--b3) / 0.6);
     box-shadow: 0 4px 24px oklch(var(--bc) / 0.04);
   }
-  .leaflet-popup-content { font-family: 'DM Sans', sans-serif; font-size: 13px; }
-  .leaflet-popup-content-wrapper { border-radius: 0.75rem; }
+  /* Theme-aware popups */
+  .leaflet-popup-content-wrapper {
+    background: oklch(var(--b1));
+    color: oklch(var(--bc));
+    border-radius: 0.75rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    box-shadow: 0 4px 24px oklch(var(--bc) / 0.12);
+  }
+  .leaflet-popup-tip { background: oklch(var(--b1)); }
+  .leaflet-popup-content { margin: 10px 14px; }
+  /* divIcon cleanup — remove default leaflet marker background */
+  .potluck-marker { background: transparent !important; border: none !important; }
+  /* Popup detail styling */
+  .popup-title {
+    font-weight: 600;
+    text-decoration: none;
+    color: oklch(var(--p));
+    display: block;
+    margin-bottom: 4px;
+  }
+  .popup-title:hover { text-decoration: underline; }
+  .popup-badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    background: oklch(var(--b2));
+    color: oklch(var(--bc) / 0.6);
+    margin-bottom: 6px;
+  }
+  .popup-details { font-size: 12px; color: oklch(var(--bc) / 0.7); line-height: 1.5; }
+  .popup-details b { color: oklch(var(--bc) / 0.9); }
+  .popup-thumb {
+    width: 100%;
+    max-height: 140px;
+    object-fit: cover;
+    border-radius: 0.5rem;
+    margin-bottom: 6px;
+  }
 </style>
 {% endblock %}
 
@@ -58,6 +97,7 @@
 
 {% block scripts %}
 <script src="/static/js/leaflet.min.js"></script>
+<script src="/static/js/leaflet.markercluster.min.js"></script>
 <script>
   var map = L.map('map-container').setView([20, 0], 2);
 
@@ -66,7 +106,14 @@
     maxZoom: 19,
   }).addTo(map);
 
-  var markerLayer = L.layerGroup().addTo(map);
+  var markerLayer = L.markerClusterGroup({
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    disableClusteringAtZoom: 18,
+  });
+  map.addLayer(markerLayer);
 
   var typeColors = {
     media: '#b87333',
@@ -74,6 +121,50 @@
     location_visit: '#1e7070',
     calendar_event: '#4aba7c'
   };
+
+  function makeDotIcon(color) {
+    return L.divIcon({
+      className: 'potluck-marker',
+      html: '<div style="width:12px;height:12px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+      popupAnchor: [0, -8],
+    });
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+  }
+
+  function buildPopup(m) {
+    var html = '';
+    var extras = m.extras || {};
+
+    // Thumbnail for media
+    if (extras._media_id) {
+      html += '<img class="popup-thumb" src="/media/thumb/' + encodeURIComponent(extras._media_id) + '" loading="lazy" onerror="this.style.display=\'none\'">';
+    }
+
+    // Title link
+    html += '<a class="popup-title" href="/entity/' + encodeURIComponent(m.type) + '/' + encodeURIComponent(m.id) + '">' + escapeHtml(m.title) + '</a>';
+
+    // Type badge
+    html += '<span class="popup-badge">' + escapeHtml(m.type.replace(/_/g, ' ')) + '</span>';
+
+    // Detail lines from extras
+    var details = '';
+    for (var key in extras) {
+      if (key.charAt(0) === '_') continue;
+      details += '<b>' + escapeHtml(key) + ':</b> ' + escapeHtml(extras[key]) + '<br>';
+    }
+    if (details) {
+      html += '<div class="popup-details">' + details + '</div>';
+    }
+
+    return html;
+  }
 
   function loadMarkers() {
     var bounds = map.getBounds();
@@ -100,24 +191,12 @@
         markerLayer.clearLayers();
         data.markers.forEach(function(m) {
           var color = typeColors[m.type] || '#6366f1';
-          L.circleMarker([m.lat, m.lng], {
-            radius: 7,
-            fillColor: color,
-            fillOpacity: 0.85,
-            color: '#fff',
-            weight: 1.5
-          })
-            .bindPopup('<a href="/entity/' + encodeURIComponent(m.type) + '/' + encodeURIComponent(m.id) + '" style="font-weight:600;text-decoration:none">' + escapeHtml(m.title) + '</a><br><small>' + escapeHtml(m.type.replace('_', ' ')) + '</small>')
+          L.marker([m.lat, m.lng], { icon: makeDotIcon(color) })
+            .bindPopup(buildPopup(m), { maxWidth: 280, minWidth: 180 })
             .addTo(markerLayer);
         });
         document.getElementById('marker-count').textContent = data.markers.length + ' markers loaded';
       });
-  }
-
-  function escapeHtml(text) {
-    var div = document.createElement('div');
-    div.appendChild(document.createTextNode(text));
-    return div.textContent;
   }
 
   map.on('moveend', loadMarkers);

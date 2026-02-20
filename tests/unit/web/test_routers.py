@@ -67,13 +67,14 @@ class TestRouterConfiguration:
         assert "/timeline/items" in paths
 
     def test_imports_router_has_routes(self) -> None:
-        """Imports router should have upload, start, cancel, browse."""
+        """Imports router should have upload, start, cancel, browse, active."""
         paths = _route_paths(imports.router)
         assert "/imports" in paths
         assert "/imports/upload" in paths
         assert "/imports/start" in paths
         assert "/imports/{run_id}/cancel" in paths
         assert "/imports/browse" in paths
+        assert "/imports/active" in paths
 
     def test_events_router_has_sse(self) -> None:
         """Events router should have SSE progress endpoint."""

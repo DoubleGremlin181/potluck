@@ -2,6 +2,7 @@
 
 import contextlib
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -23,6 +24,60 @@ _GEO_TYPES = {
     EntityType.LOCATION_VISIT,
     EntityType.CALENDAR_EVENT,
 }
+
+# Fields to extract per entity type: list of (attr, label) tuples.
+# Datetime attrs are auto-formatted; strings are truncated at 80 chars.
+_EXTRAS_FIELDS: dict[EntityType, list[tuple[str, str]]] = {
+    EntityType.LOCATION_VISIT: [
+        ("place_name", "Place"),
+        ("started_at", "Time"),
+        ("duration_minutes", "Duration (min)"),
+        ("activity_type", "Activity"),
+        ("address", "Address"),
+    ],
+    EntityType.LOCATION: [
+        ("location_type", "Type"),
+        ("address", "Address"),
+        ("city", "City"),
+        ("country", "Country"),
+    ],
+    EntityType.MEDIA: [
+        ("media_type", "Media"),
+        ("occurred_at", "Date"),
+        ("caption", "Caption"),
+    ],
+    EntityType.CALENDAR_EVENT: [
+        ("summary", "Event"),
+        ("start_time", "Start"),
+        ("end_time", "End"),
+        ("location_text", "Location"),
+    ],
+}
+
+
+def _fmt_value(val: object) -> str:
+    """Format a value for display in a map popup."""
+    if isinstance(val, datetime):
+        return val.strftime("%b %d, %Y %H:%M")
+    s = str(val)
+    if len(s) > 80:
+        return s[:77] + "..."
+    return s
+
+
+def _extract_marker_extras(entity: Any, entity_type: EntityType) -> dict[str, str]:
+    """Pull type-specific display fields from an entity for map popups."""
+    fields = _EXTRAS_FIELDS.get(entity_type, [])
+    extras: dict[str, str] = {}
+    for attr, label in fields:
+        val = getattr(entity, attr, None)
+        if val is None or val == "":
+            continue
+        extras[label] = _fmt_value(val)
+    # For media, include the id for thumbnail rendering
+    if entity_type == EntityType.MEDIA:
+        extras["_media_id"] = str(entity.id)
+    return extras
 
 
 @router.get("", response_class=HTMLResponse)
@@ -97,7 +152,7 @@ async def map_markers(
                 col(model.longitude) >= west,
                 col(model.longitude) <= east,
             )
-            .limit(1000)
+            .limit(5000)
         )
 
         if hasattr(model, "occurred_at"):
@@ -125,6 +180,7 @@ async def map_markers(
                     "lng": entity.longitude,
                     "title": title,
                     "type": entity_type.value,
+                    "extras": _extract_marker_extras(entity, entity_type),
                 }
             )
 

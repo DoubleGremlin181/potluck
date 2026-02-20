@@ -95,6 +95,29 @@ async def imports_page(
     )
 
 
+@router.get("/active", response_class=HTMLResponse)
+async def active_imports_partial(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Return the active imports HTML partial for HTMX polling."""
+    stmt = (
+        select(ImportRun)
+        .where(col(ImportRun.status).in_([ImportStatus.PENDING, ImportStatus.RUNNING]))
+        .options(selectinload(ImportRun.source))  # type: ignore[arg-type]
+        .order_by(col(ImportRun.started_at).desc())
+    )
+    result = await db.execute(stmt)
+    active_imports = list(result.scalars().all())
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(  # type: ignore[no-any-return]
+        request,
+        "partials/active_imports.html",
+        {"active_imports": active_imports},
+    )
+
+
 @router.post("/upload")
 async def upload_file(
     request: Request,

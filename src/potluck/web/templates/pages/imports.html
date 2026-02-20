@@ -14,59 +14,8 @@
     </div>
   </div>
 
-  <!-- Active Imports -->
-  {% if active_imports %}
-  <section class="animate-in animate-in-delay-1">
-    <h2 class="text-lg font-display font-semibold mb-3">Active Imports</h2>
-    <div class="space-y-3">
-      {% for run in active_imports %}
-      <div class="card bg-base-200/60 border border-primary/20 rounded-xl">
-        <div class="card-body p-4 gap-2">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-              <span class="font-semibold text-sm">
-                {{ run.source.name if run.source else 'Import' }}
-              </span>
-              <span class="badge badge-sm badge-warning">{{ run.status | enum_val }}</span>
-            </div>
-            <form method="POST" action="/imports/{{ run.id }}/cancel">
-              <button type="submit" class="btn btn-ghost btn-xs text-error"
-                onclick="return confirm('Cancel this import?')">Cancel</button>
-            </form>
-          </div>
-
-          {% if run.progress_percent is not none %}
-          <progress class="progress progress-primary w-full h-2" value="{{ run.progress_percent }}" max="100"></progress>
-          <div class="flex justify-between text-xs text-base-content/40">
-            <span>{{ run.progress_current }}/{{ run.progress_total }}</span>
-            <span>
-              {{ run.entities_created }} created &middot;
-              {{ run.entities_skipped }} skipped &middot;
-              {{ run.entities_failed }} failed
-            </span>
-          </div>
-          {% else %}
-          <progress class="progress progress-primary w-full h-2"></progress>
-          {% endif %}
-
-          {% if run.current_file %}
-          <p class="text-xs text-base-content/40 truncate">{{ run.current_file }}</p>
-          {% endif %}
-
-          {% if run.error_message %}
-          <div class="collapse collapse-arrow bg-error/10 rounded-lg mt-1">
-            <input type="checkbox">
-            <div class="collapse-title text-xs text-error py-1 min-h-0">Error details</div>
-            <div class="collapse-content text-xs"><pre class="whitespace-pre-wrap">{{ run.error_message }}</pre></div>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
+  <!-- Active Imports (auto-refreshes via HTMX) -->
+  {% include "partials/active_imports.html" %}
 
   <!-- New Import -->
   <section class="animate-in animate-in-delay-1">
