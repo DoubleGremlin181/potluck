@@ -65,7 +65,17 @@ class AndroidTimelineStage(BaseIngestionStage):
         if timeline_file.exists() and timeline_file.is_file():
             try:
                 data = json.loads(timeline_file.read_text(encoding="utf-8"))
-                count = len(data.get("semanticSegments", []))
+                # Count entities matching what execute() actually yields:
+                # +1 per visit segment, +1 per activity segment,
+                # +len(timelinePath) per segment with path points
+                count = 0
+                for segment in data.get("semanticSegments", []):
+                    if "visit" in segment:
+                        count += 1
+                    if "activity" in segment:
+                        count += 1
+                    if "timelinePath" in segment:
+                        count += len(segment["timelinePath"])
             except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning(f"Failed to parse {timeline_file}: {e}")
                 count = 0

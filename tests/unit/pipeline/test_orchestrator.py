@@ -583,6 +583,69 @@ class TestSourceTypeOverride:
             mock_get.assert_not_called()
 
 
+class TestIncrementalCounterSync:
+    """Tests for incremental import_run counter updates during ingestion."""
+
+    def _make_mock_session(self) -> MockSession:
+        session = MockSession()
+        session.refresh = MagicMock()  # type: ignore[attr-defined]
+        return session
+
+    def test_import_run_counters_update_during_ingestion(self) -> None:
+        """import_run.entities_created and entities_skipped update during ingestion,
+        not just at completion."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        # Create entities — first is new, second is a duplicate (same content_hash)
+        entity1 = BrowsingHistory(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            url="https://example.com/1",
+            url_hash="hash1",
+            content_hash="unique_hash",
+        )
+        entity2 = BrowsingHistory(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            url="https://example.com/2",
+            url_hash="hash2",
+            content_hash="unique_hash",  # duplicate
+        )
+
+        existing_source = ImportSource(source_type=SourceType.GENERIC, name="test.zip")
+        existing_run = ImportRun(
+            source_id=existing_source.id,
+            status=ImportStatus.PENDING,
+        )
+
+        mock_stage_cls = MagicMock()
+        mock_stage = MagicMock()
+        mock_stage_cls.return_value = mock_stage
+        mock_stage_cls.SOURCE_TYPE = SourceType.GOOGLE_TAKEOUT
+        mock_stage.detect.return_value = MagicMock(
+            entity_counts={EntityType.BROWSING_HISTORY: 2},
+            metadata={},
+        )
+        mock_stage.execute.return_value = iter([entity1, entity2])
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage", return_value=mock_stage_cls),
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value=None),
+            patch.object(orchestrator, "_find_completed_run", return_value=None),
+            patch.object(orchestrator, "_queue_entity_processing"),
+            patch.object(orchestrator, "_queue_linkers"),
+        ):
+            result = orchestrator.run(
+                Path("/tmp/test.zip"),
+                content_path=Path("/tmp/content"),
+                import_source=existing_source,
+                import_run=existing_run,
+            )
+
+            # Counters should reflect what happened: 1 created, 1 skipped
+            assert result.import_run.entities_created == 1
+            assert result.import_run.entities_skipped == 1
+
+
 class TestFilterPassthrough:
     """Tests for PipelineFilter passthrough to stage.execute()."""
 

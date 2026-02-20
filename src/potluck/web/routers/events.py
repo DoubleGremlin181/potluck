@@ -45,6 +45,7 @@ async def _progress_stream() -> AsyncGenerator[str, None]:
                         "progress_percent": run.progress_percent,
                         "current_file": run.current_file,
                         "entities_created": run.entities_created,
+                        "entities_skipped": run.entities_skipped,
                         "entities_failed": run.entities_failed,
                     }
                     for run in runs

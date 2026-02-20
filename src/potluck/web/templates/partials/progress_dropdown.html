@@ -13,7 +13,7 @@
     <progress class="progress progress-primary w-full h-1.5" value="{{ job.progress_percent }}" max="100"></progress>
     <div class="flex justify-between text-xs text-base-content/50 mt-0.5">
       <span>{{ job.progress_current }}/{{ job.progress_total }}</span>
-      <span>{{ job.entities_created }} created</span>
+      <span>{{ job.entities_created }} created · {{ job.entities_skipped }} skipped</span>
     </div>
     {% else %}
     <progress class="progress progress-primary w-full h-1.5"></progress>

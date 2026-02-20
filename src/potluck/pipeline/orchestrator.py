@@ -380,12 +380,14 @@ class PipelineOrchestrator:
                 if entity_id:
                     self._skipped_entity_ids.add(str(entity_id))
                 stats.entities_skipped += 1
+                import_run.entities_skipped = stats.entities_skipped
                 self._update_progress(current, total, import_run, "Skipping duplicate")
                 continue
 
             # Check if this entity references a skipped parent entity
             if self._references_skipped_entity(entity):
                 stats.entities_skipped += 1
+                import_run.entities_skipped = stats.entities_skipped
                 self._update_progress(
                     current, total, import_run, "Skipping orphan (parent skipped)"
                 )
@@ -397,6 +399,7 @@ class PipelineOrchestrator:
             # Flush batch if full
             if len(batch) >= self.batch_size:
                 self._flush_batch(batch, stats)
+                import_run.entities_created = stats.entities_created
                 batch.clear()
 
             self._update_progress(current, total, import_run)
@@ -404,6 +407,7 @@ class PipelineOrchestrator:
         # Flush remaining entities
         if batch:
             self._flush_batch(batch, stats)
+            import_run.entities_created = stats.entities_created
 
         return stats
 

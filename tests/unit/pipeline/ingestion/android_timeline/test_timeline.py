@@ -94,6 +94,53 @@ class TestAndroidTimelineStageDetectionCounts:
             assert result.metadata.get("source") == "Android Timeline"
 
 
+class TestDetectCountMatchesExecute:
+    """Tests that detect() entity count matches what execute() yields."""
+
+    def test_detect_count_includes_timeline_path_points(self) -> None:
+        """detect() counts timelinePath points, not just segments."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            timeline_data = {
+                "semanticSegments": [
+                    {
+                        "startTime": "2024-01-15T10:00:00Z",
+                        "endTime": "2024-01-15T12:00:00Z",
+                        "visit": {
+                            "topCandidate": {
+                                "placeLocation": {"latLng": "40.7128°, -74.0060°"},
+                            }
+                        },
+                    },
+                    {
+                        "startTime": "2024-01-15T12:00:00Z",
+                        "timelinePath": [
+                            {"point": "40.7128°, -74.0060°", "time": "2024-01-15T12:00:00Z"},
+                            {"point": "40.7130°, -74.0062°", "time": "2024-01-15T12:01:00Z"},
+                            {"point": "40.7132°, -74.0064°", "time": "2024-01-15T12:02:00Z"},
+                        ],
+                    },
+                    {
+                        "startTime": "2024-01-15T12:30:00Z",
+                        "endTime": "2024-01-15T13:00:00Z",
+                        "activity": {
+                            "start": {"latLng": "40.7132°, -74.0064°"},
+                            "topCandidate": {"type": "WALKING", "probability": 0.8},
+                        },
+                    },
+                ]
+            }
+            timeline_file = Path(tmpdir) / "Timeline.json"
+            timeline_file.write_text(json.dumps(timeline_data))
+
+            stage = AndroidTimelineStage()
+            detection = stage.detect(Path(tmpdir))
+            execute_count = len(list(stage.execute(Path(tmpdir))))
+
+            # detect count should match execute count: 1 visit + 3 path + 1 activity = 5
+            assert detection.entity_counts[EntityType.LOCATION_VISIT] == 5
+            assert detection.entity_counts[EntityType.LOCATION_VISIT] == execute_count
+
+
 class TestAndroidTimelineIngestion:
     """Tests for timeline ingestion logic."""
 
