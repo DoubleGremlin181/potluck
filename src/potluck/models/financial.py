@@ -52,6 +52,7 @@ class Account(BaseEntity, table=True):
         description="Account name",
     )
     account_type: AccountType = enum_field(
+        AccountType,
         default=AccountType.CHECKING,
         description="Type of account",
     )
@@ -139,6 +140,7 @@ class Transaction(TimestampedEntity, table=True):
 
     # Transaction details
     transaction_type: TransactionType = enum_field(
+        TransactionType,
         default=TransactionType.EXPENSE,
         description="Type of transaction",
     )

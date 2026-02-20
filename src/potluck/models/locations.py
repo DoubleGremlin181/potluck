@@ -74,6 +74,7 @@ class Location(SQLModel, IngestableEntity, table=True):
         description="When the location was last updated",
     )
     source_type: SourceType = enum_field(
+        SourceType,
         description="Source of the location data",
     )
     source_id: str | None = Field(
@@ -99,6 +100,7 @@ class Location(SQLModel, IngestableEntity, table=True):
         description="Location name (e.g., 'Home', 'Starbucks on Main St')",
     )
     location_type: LocationType = enum_field(
+        LocationType,
         default=LocationType.OTHER,
         description="Category of location",
     )
@@ -215,6 +217,7 @@ class LocationVisit(SQLModel, IngestableEntity, table=True):
         description="The location visited (if matched)",
     )
     source_type: SourceType = enum_field(
+        SourceType,
         description="Source of the visit data",
     )
     source_id: str | None = Field(
@@ -309,6 +312,7 @@ class LocationHistory(SQLModel, IngestableEntity, table=True):
         description="Unique identifier",
     )
     source_type: SourceType = enum_field(
+        SourceType,
         description="Source of the location data",
     )
     source_id: str | None = Field(

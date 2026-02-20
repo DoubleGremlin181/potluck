@@ -53,6 +53,7 @@ class ImportSource(SQLModel, table=True):
         description="When the source was last updated",
     )
     source_type: SourceType = enum_field(
+        SourceType,
         description="Type of data source (e.g., google_takeout, reddit)",
     )
     name: str = Field(
@@ -114,6 +115,7 @@ class ImportRun(SQLModel, table=True):
         description="When the import run completed (if finished)",
     )
     status: ImportStatus = enum_field(
+        ImportStatus,
         default=ImportStatus.PENDING,
         description="Current status of the import run",
     )

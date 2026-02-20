@@ -78,6 +78,7 @@ class Media(GeolocatedEntity, table=True):
         description="MIME type of the file (e.g., image/jpeg)",
     )
     media_type: MediaType = enum_field(
+        MediaType,
         default=MediaType.OTHER,
         description="High-level media type category",
     )
@@ -184,6 +185,7 @@ class MediaEmbedding(SQLModel, table=True):
         description="The media item this embedding belongs to",
     )
     embedding_type: EmbeddingType = enum_field(
+        EmbeddingType,
         description="Type of embedding (CLIP, OCR, etc.)",
     )
     model_name: str = Field(

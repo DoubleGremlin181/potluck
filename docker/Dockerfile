@@ -115,5 +115,5 @@ COPY src/ src/
 COPY alembic/ alembic/
 COPY alembic.ini .
 
-# Run migrations, download models (cached in volume), and start web server
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run potluck download-models && uv run potluck web"]
+# Run migrations, download models, start Celery worker in background, then web server
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run potluck download-models && { uv run celery -A potluck.core.celery:celery_app worker --loglevel=info --queues=ingest,process,embed --concurrency=2 & exec uv run potluck web; }"]

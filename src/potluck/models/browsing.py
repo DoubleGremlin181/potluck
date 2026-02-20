@@ -226,6 +226,7 @@ class BookmarkFolder(SimpleEntity, table=True):
     __tablename__ = "bookmark_folders"
 
     source_type: SourceType = enum_field(
+        SourceType,
         description="The source system this folder was imported from",
     )
 

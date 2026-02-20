@@ -6,21 +6,62 @@ from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import String
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
 from potluck.models.utils import IANATimezone, UTCDatetime, utc_now
 
 
-def enum_field(*, default: Any = ..., **kwargs: Any) -> Any:
+class EnumStr(TypeDecorator[str]):
+    """SQLAlchemy type that stores str-Enums as VARCHAR and coerces back on load.
+
+    Without this, SQLAlchemy returns plain strings from the DB for VARCHAR columns.
+    Code that calls `entity.status.value` or compares `entity.status == SomeEnum.X`
+    would break or behave inconsistently depending on whether the object was freshly
+    created (enum) vs loaded from DB (string).
+
+    This type transparently handles both directions:
+    - Write: enum → string value for storage
+    - Read:  string → enum instance on load
+    """
+
+    impl = String
+    cache_ok = True
+
+    def __init__(self, enum_class: type[Enum]) -> None:
+        super().__init__()
+        self.enum_class = enum_class
+
+    def process_bind_param(self, value: Any, dialect: Any) -> str | None:  # noqa: ANN401
+        if value is None:
+            return None
+        if isinstance(value, self.enum_class):
+            return value.value  # type: ignore[no-any-return]
+        return str(value)
+
+    def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ANN401
+        if value is None:
+            return None
+        return self.enum_class(value)
+
+
+def enum_field(enum_cls: type[Enum], /, *, default: Any = ..., **kwargs: Any) -> Any:
     """Field helper for str-Enum columns that stores as VARCHAR, not PG native enum.
 
-    Our migrations create enum columns as sa.String (VARCHAR). Without sa_type=String(),
-    SQLAlchemy auto-creates a PG native enum type and casts parameters to it, causing
-    'type "xyz" does not exist' errors on queries.
+    Uses EnumStr TypeDecorator to auto-coerce DB strings back into enum instances,
+    so code like ``entity.status.value`` works regardless of whether the object
+    was freshly created or loaded from the database.
+
+    Args:
+        enum_cls: The enum class for this field (e.g., ``SourceType``, ``ImportStatus``).
+        default: Optional default value for the field.
+        **kwargs: Additional keyword arguments passed to ``Field()``.
     """
+    # TypeDecorator instances work with sa_type at runtime; mypy expects a type
+    sa_type: Any = EnumStr(enum_cls)
     if default is ...:
-        return Field(sa_type=String, **kwargs)
-    return Field(default=default, sa_type=String, **kwargs)
+        return Field(sa_type=sa_type, **kwargs)
+    return Field(default=default, sa_type=sa_type, **kwargs)
 
 
 class IngestableEntity:
@@ -166,6 +207,7 @@ class BaseEntity(SimpleEntity):
     __abstract__: ClassVar[bool] = True
 
     source_type: SourceType = enum_field(
+        SourceType,
         description="The source system this entity was imported from",
     )
     source_id: str | None = Field(
@@ -209,6 +251,7 @@ class TimestampedEntity(BaseEntity):
         description="When this entity actually occurred in UTC (e.g., photo taken, message sent)",
     )
     occurred_at_precision: TimestampPrecision = enum_field(
+        TimestampPrecision,
         default=TimestampPrecision.SECOND,
         description="Precision of the occurred_at timestamp",
     )

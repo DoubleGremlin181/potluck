@@ -94,8 +94,8 @@
       {% endif %}
 
       <div class="pt-2 border-t border-base-300/30 flex gap-2">
-        <span class="badge badge-outline badge-sm">{{ media.source_type | replace('_', ' ') | title }}</span>
-        <span class="badge badge-ghost badge-sm">{{ media.media_type | title }}</span>
+        <span class="badge badge-outline badge-sm">{{ media.source_type | enum_val | replace('_', ' ') | title }}</span>
+        <span class="badge badge-ghost badge-sm">{{ media.media_type | enum_val | title }}</span>
       </div>
     </div>
   </div>

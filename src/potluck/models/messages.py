@@ -50,6 +50,7 @@ class ChatThread(SimpleEntity, table=True):
     __tablename__ = "chat_threads"
 
     source_type: SourceType = enum_field(
+        SourceType,
         description="Source platform (e.g., whatsapp, telegram)",
     )
     source_id: str | None = Field(
@@ -60,6 +61,7 @@ class ChatThread(SimpleEntity, table=True):
 
     # Thread metadata
     thread_type: ThreadType = enum_field(
+        ThreadType,
         default=ThreadType.DIRECT,
         description="Type of thread (direct, group, channel)",
     )
@@ -159,6 +161,7 @@ class ChatMessage(TimestampedEntity, table=True):
 
     # Message content
     message_type: MessageType = enum_field(
+        MessageType,
         default=MessageType.TEXT,
         description="Type of message content",
     )

@@ -6,7 +6,7 @@
     <div class="flex justify-between text-xs mb-1">
       <span class="font-medium">{{ job.current_file or 'Processing...' }}</span>
       <span class="badge badge-xs badge-{{ 'warning' if job.status == 'running' else 'ghost' }}">
-        {{ job.status }}
+        {{ job.status | enum_val }}
       </span>
     </div>
     {% if job.progress_percent is not none %}

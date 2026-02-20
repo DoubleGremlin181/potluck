@@ -65,6 +65,7 @@ class EntityLink(SQLModel, table=True):
 
     # Source entity
     source_type: EntityType = enum_field(
+        EntityType,
         description="Type of the source entity",
     )
     source_id: UUID = Field(
@@ -74,6 +75,7 @@ class EntityLink(SQLModel, table=True):
 
     # Target entity
     target_type: EntityType = enum_field(
+        EntityType,
         description="Type of the target entity",
     )
     target_id: UUID = Field(
@@ -83,6 +85,7 @@ class EntityLink(SQLModel, table=True):
 
     # Relationship
     link_type: LinkType = enum_field(
+        LinkType,
         description="Type of relationship between entities",
     )
     custom_type: str | None = Field(

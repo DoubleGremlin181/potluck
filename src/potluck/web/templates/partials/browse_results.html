@@ -48,7 +48,7 @@
           {% endif %}
 
           {% if item.entity.source_type is defined and item.entity.source_type %}
-          <div class="badge badge-ghost badge-xs">{{ item.entity.source_type | replace('_', ' ') }}</div>
+          <div class="badge badge-ghost badge-xs">{{ item.entity.source_type | enum_val | replace('_', ' ') }}</div>
           {% endif %}
         </div>
       </div>

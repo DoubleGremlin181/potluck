@@ -128,10 +128,12 @@ class CalendarEvent(GeolocatedEntity, table=True):
 
     # Status and visibility
     status: EventStatus = enum_field(
+        EventStatus,
         default=EventStatus.CONFIRMED,
         description="Event status",
     )
     visibility: EventVisibility = enum_field(
+        EventVisibility,
         default=EventVisibility.DEFAULT,
         description="Event visibility",
     )
@@ -269,6 +271,7 @@ class EventParticipant(SimpleEntity, table=True):
         description="Whether attendance is optional",
     )
     response_status: ResponseStatus = enum_field(
+        ResponseStatus,
         default=ResponseStatus.NEEDS_ACTION,
         description="Participant's response",
     )

@@ -45,7 +45,7 @@
               <div class="flex items-center gap-3 mt-3 text-xs text-base-content/40">
                 <span>{{ note.updated_at.strftime('%b %d, %Y at %H:%M') }}</span>
                 {% if note.note_type and note.note_type != 'knowledge' %}
-                <span class="badge badge-primary badge-xs">{{ note.note_type }}</span>
+                <span class="badge badge-primary badge-xs">{{ note.note_type | enum_val }}</span>
                 {% endif %}
                 {% if note.created_by %}
                 <span class="badge badge-ghost badge-xs">{{ note.created_by }}</span>

@@ -77,6 +77,7 @@ class SocialPost(TimestampedEntity, table=True):
         description="Social media platform",
     )
     post_type: PostType = enum_field(
+        PostType,
         default=PostType.TEXT,
         description="Type of post content",
     )
@@ -432,6 +433,7 @@ class SocialFollow(BaseEntity, table=True):
         description="Social media platform",
     )
     follow_type: SocialFollowType = enum_field(
+        SocialFollowType,
         description="Type of social follow",
     )
 

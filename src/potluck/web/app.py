@@ -1,6 +1,7 @@
 """Web application for Potluck."""
 
 import mimetypes
+from enum import Enum
 from pathlib import Path
 from uuid import UUID
 
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     # Jinja2 templates
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.filters["basename"] = lambda path: Path(path).name if path else ""
+    templates.env.filters["enum_val"] = lambda v: v.value if isinstance(v, Enum) else v
     app.state.templates = templates
 
     # Static files

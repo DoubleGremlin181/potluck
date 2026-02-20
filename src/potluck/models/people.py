@@ -127,6 +127,7 @@ class PersonAlias(SQLModel, table=True):
         description="The person this alias belongs to",
     )
     alias_type: AliasType = enum_field(
+        AliasType,
         description="Type of alias (name, email, phone, etc.)",
     )
     value: str = Field(
@@ -139,6 +140,7 @@ class PersonAlias(SQLModel, table=True):
         description="Normalized/canonical form of the value for matching",
     )
     source_type: SourceType = enum_field(
+        SourceType,
         description="Source where this alias was discovered",
     )
     is_primary: bool = Field(

@@ -95,6 +95,7 @@ class TagAssignment(SimpleEntity, table=True):
         description="The tag being assigned",
     )
     entity_type: EntityType = enum_field(
+        EntityType,
         index=True,
         description="Type of the entity being tagged",
     )
