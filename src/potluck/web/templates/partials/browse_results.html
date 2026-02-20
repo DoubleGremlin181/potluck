@@ -1,0 +1,72 @@
+{% from "components/entity_card.html" import entity_type_icon %}
+{% from "components/pagination.html" import pagination %}
+
+{% if browse_results %}
+  <div class="flex items-center justify-between text-sm text-base-content/50 mb-5 pb-3 border-b border-base-300/40">
+    <span>{{ "{:,}".format(browse_total) }} item{{ 's' if browse_total != 1 }} — Browsing {{ selected_types[0] | replace('_', ' ') | title if selected_types | length == 1 else 'multiple types' }}</span>
+    <span class="badge badge-ghost badge-sm">browse</span>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    {% for item in browse_results %}
+    <a href="/entity/{{ item.entity_type }}/{{ item.entity.id }}" class="block">
+      <div class="card bg-base-200/60 border border-base-300/40 hover:border-primary/25 hover:bg-base-200/80 transition-all rounded-xl card-hover h-full">
+        <div class="card-body p-4 gap-2">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-base-300/50 flex items-center justify-center shrink-0">
+              <span class="text-sm">{{ entity_type_icon(item.entity_type) }}</span>
+            </div>
+            <span class="badge badge-outline badge-xs">{{ item.entity_type | replace('_', ' ') }}</span>
+          </div>
+
+          <h3 class="text-sm font-semibold line-clamp-2 mt-1">
+            {% if item.entity.subject is defined and item.entity.subject %}
+              {{ item.entity.subject }}
+            {% elif item.entity.caption is defined and item.entity.caption %}
+              {{ item.entity.caption }}
+            {% elif item.entity.title is defined and item.entity.title %}
+              {{ item.entity.title }}
+            {% elif item.entity.name is defined and item.entity.name %}
+              {{ item.entity.name }}
+            {% elif item.entity.place_name is defined and item.entity.place_name %}
+              {{ item.entity.place_name }}
+            {% elif item.entity.url is defined and item.entity.url %}
+              {{ item.entity.url | truncate(60) }}
+            {% elif item.entity.content is defined and item.entity.content %}
+              {{ item.entity.content | truncate(80) }}
+            {% elif item.entity.body is defined and item.entity.body %}
+              {{ item.entity.body | truncate(80) }}
+            {% else %}
+              {{ item.entity_type | replace('_', ' ') | title }}
+            {% endif %}
+          </h3>
+
+          {% if item.entity.occurred_at is defined and item.entity.occurred_at %}
+          <p class="text-xs text-base-content/40">{{ item.entity.occurred_at.strftime('%b %d, %Y at %H:%M') }}</p>
+          {% elif item.entity.created_at is defined and item.entity.created_at %}
+          <p class="text-xs text-base-content/40">{{ item.entity.created_at.strftime('%b %d, %Y') }}</p>
+          {% endif %}
+
+          {% if item.entity.source_type is defined and item.entity.source_type %}
+          <div class="badge badge-ghost badge-xs">{{ item.entity.source_type | replace('_', ' ') }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% set base_url = "/search?" %}
+  {% for t in selected_types %}{% set base_url = base_url ~ "type=" ~ t ~ "&" %}{% endfor %}
+  {{ pagination(browse_total, page, per_page, base_url, "#results") }}
+
+{% else %}
+  <div class="text-center py-16">
+    <div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center mx-auto mb-4">
+      <span class="text-3xl">&#128196;</span>
+    </div>
+    <p class="text-base-content/60 font-medium">No items found</p>
+    <p class="text-sm text-base-content/35 mt-1">This entity type has no data yet</p>
+  </div>
+{% endif %}

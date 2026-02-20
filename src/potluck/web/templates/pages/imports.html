@@ -28,7 +28,7 @@
               <span class="font-semibold text-sm">
                 {{ run.source.name if run.source else 'Import' }}
               </span>
-              <span class="badge badge-sm badge-warning">{{ run.status.value }}</span>
+              <span class="badge badge-sm badge-warning">{{ run.status }}</span>
             </div>
             <form method="POST" action="/imports/{{ run.id }}/cancel">
               <button type="submit" class="btn btn-ghost btn-xs text-error"
@@ -160,11 +160,11 @@
             <td class="font-medium text-sm">{{ run.source.name if run.source else '—' }}</td>
             <td>
               <span class="badge badge-sm badge-{{
-                'success' if run.status.value == 'completed' else
-                'error' if run.status.value == 'failed' else
-                'warning' if run.status.value == 'running' else
+                'success' if run.status == 'completed' else
+                'error' if run.status == 'failed' else
+                'warning' if run.status == 'running' else
                 'ghost'
-              }}">{{ run.status.value }}</span>
+              }}">{{ run.status }}</span>
             </td>
             <td class="text-xs text-base-content/50">{{ run.started_at.strftime('%b %d, %Y %H:%M') }}</td>
             <td>{{ run.entities_created }}</td>

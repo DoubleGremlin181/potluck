@@ -60,11 +60,11 @@ class TestRouterConfiguration:
         assert "/people/merge" in paths
         assert "/people/{person_id}/alias" in paths
 
-    def test_timeline_router_has_data_endpoint(self) -> None:
-        """Timeline router should have page and data endpoints."""
+    def test_timeline_router_has_items_endpoint(self) -> None:
+        """Timeline router should have page and items endpoints."""
         paths = _route_paths(timeline.router)
         assert "/timeline" in paths
-        assert "/timeline/data" in paths
+        assert "/timeline/items" in paths
 
     def test_imports_router_has_routes(self) -> None:
         """Imports router should have upload, start, cancel, browse."""

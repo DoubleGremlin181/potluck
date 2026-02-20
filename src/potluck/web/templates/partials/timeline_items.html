@@ -1,0 +1,36 @@
+{% from "components/entity_card.html" import entity_type_icon %}
+
+{% for date_label, items in date_groups.items() %}
+<div class="pt-4 pb-2 flex items-center gap-3">
+  <h2 class="text-sm font-semibold text-base-content/60 whitespace-nowrap">{{ date_label }}</h2>
+  <span class="badge badge-ghost badge-xs">{{ items | length }}</span>
+  <div class="flex-1 border-t border-base-300/30"></div>
+</div>
+{% for item in items %}
+<a href="/entity/{{ item.entity_type }}/{{ item.id }}" class="block">
+  <div class="flex items-center gap-3 p-3 rounded-xl bg-base-200/60 border border-base-300/40 border-l-4 tl-border-{{ item.entity_type }} hover:bg-base-200/80 hover:border-base-300 transition-all group">
+    <div class="w-8 h-8 rounded-lg bg-base-300/50 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+      <span class="text-sm">{{ entity_type_icon(item.entity_type) }}</span>
+    </div>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm font-medium truncate">{{ item.title }}</p>
+      <div class="flex items-center gap-2 mt-0.5">
+        <span class="text-xs text-base-content/40">{{ item.occurred_at.strftime('%H:%M') }}</span>
+        <span class="badge badge-outline badge-xs">{{ item.entity_type | replace('_', ' ') }}</span>
+      </div>
+    </div>
+  </div>
+</a>
+{% endfor %}
+{% endfor %}
+
+{% if next_before %}
+<!-- Next infinite scroll trigger -->
+<div hx-get="/timeline/items?before={{ next_before }}{% for t in selected_types %}&type={{ t }}{% endfor %}{% if since %}&since={{ since }}{% endif %}{% if until %}&until={{ until }}{% endif %}"
+     hx-trigger="revealed"
+     hx-swap="outerHTML"
+     class="flex items-center justify-center py-8 text-base-content/40">
+  <span class="loading loading-spinner loading-sm mr-2"></span>
+  Loading more...
+</div>
+{% endif %}

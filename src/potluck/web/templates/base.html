@@ -198,6 +198,22 @@
       <ul class="flex items-center gap-0.5 text-[13px] font-medium">
         <li><a href="/" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'dashboard' %}active text-primary{% endif %}">Dashboard</a></li>
         <li><a href="/search" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'search' %}active text-primary{% endif %}">Search</a></li>
+        <li class="dropdown dropdown-hover">
+          <div tabindex="0" role="button" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 cursor-pointer flex items-center gap-1 {% if active_page == 'browse' %}active text-primary{% endif %}">
+            Browse
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-2xl bg-base-200 border border-base-300 rounded-xl w-52 mt-1">
+            <li><a href="/search?type=email">&#9993; Emails</a></li>
+            <li><a href="/search?type=browsing_history">&#127760; Browsing History</a></li>
+            <li><a href="/search?type=chat_message">&#128172; Chat Messages</a></li>
+            <li><a href="/search?type=calendar_event">&#128197; Calendar Events</a></li>
+            <li><a href="/search?type=bookmark">&#128278; Bookmarks</a></li>
+            <li><a href="/search?type=document">&#128196; Documents</a></li>
+            <li><a href="/search?type=location_visit">&#128204; Location Visits</a></li>
+            <li><a href="/search?type=transaction">&#128176; Transactions</a></li>
+          </ul>
+        </li>
         <li><a href="/media" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'media' %}active text-primary{% endif %}">Media</a></li>
         <li><a href="/notes" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'notes' %}active text-primary{% endif %}">Notes</a></li>
         <li><a href="/people" class="nav-link px-3 py-2 rounded-lg hover:bg-base-300/50 {% if active_page == 'people' %}active text-primary{% endif %}">People</a></li>
@@ -242,12 +258,19 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
         </div>
         <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-2xl bg-base-200 border border-base-300 rounded-xl w-52 mt-3">
-          <li class="menu-title text-xs">Browse</li>
+          <li class="menu-title text-xs">Main</li>
           <li><a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a></li>
           <li><a href="/search" class="{% if active_page == 'search' %}active{% endif %}">Search</a></li>
           <li><a href="/media" class="{% if active_page == 'media' %}active{% endif %}">Media</a></li>
           <li><a href="/notes" class="{% if active_page == 'notes' %}active{% endif %}">Notes</a></li>
           <li><a href="/people" class="{% if active_page == 'people' %}active{% endif %}">People</a></li>
+          <li class="menu-title text-xs mt-1">Browse</li>
+          <li><a href="/search?type=email">Emails</a></li>
+          <li><a href="/search?type=browsing_history">Browsing History</a></li>
+          <li><a href="/search?type=chat_message">Chat Messages</a></li>
+          <li><a href="/search?type=calendar_event">Calendar Events</a></li>
+          <li><a href="/search?type=bookmark">Bookmarks</a></li>
+          <li><a href="/search?type=document">Documents</a></li>
           <li class="menu-title text-xs mt-1">Explore</li>
           <li><a href="/timeline" class="{% if active_page == 'timeline' %}active{% endif %}">Timeline</a></li>
           <li><a href="/map" class="{% if active_page == 'map' %}active{% endif %}">Map</a></li>

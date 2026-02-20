@@ -3,14 +3,14 @@
 <div class="flex flex-col lg:flex-row w-full">
   <!-- Image/preview -->
   <div class="flex-1 bg-black/95 flex items-center justify-center min-h-[300px] lg:min-h-[500px]">
-    {% if media.media_type.value == 'image' %}
+    {% if media.media_type == 'image' %}
     <img src="/media/file/{{ media.id }}" alt="{{ media.caption or '' }}"
       class="max-w-full max-h-[80vh] object-contain">
-    {% elif media.media_type.value == 'video' %}
+    {% elif media.media_type == 'video' %}
     <video controls class="max-w-full max-h-[80vh]">
       <source src="/media/file/{{ media.id }}" type="{{ media.mime_type or 'video/mp4' }}">
     </video>
-    {% elif media.media_type.value == 'audio' %}
+    {% elif media.media_type == 'audio' %}
     <div class="p-8 text-center">
       <span class="text-6xl mb-4 block">&#127911;</span>
       <audio controls class="w-full max-w-md">
@@ -94,8 +94,8 @@
       {% endif %}
 
       <div class="pt-2 border-t border-base-300/30 flex gap-2">
-        <span class="badge badge-outline badge-sm">{{ media.source_type.value | replace('_', ' ') | title }}</span>
-        <span class="badge badge-ghost badge-sm">{{ media.media_type.value | title }}</span>
+        <span class="badge badge-outline badge-sm">{{ media.source_type | replace('_', ' ') | title }}</span>
+        <span class="badge badge-ghost badge-sm">{{ media.media_type | title }}</span>
       </div>
     </div>
   </div>

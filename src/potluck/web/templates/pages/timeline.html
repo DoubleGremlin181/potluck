@@ -1,47 +1,19 @@
 {% extends "base.html" %}
+{% from "components/entity_card.html" import entity_type_icon %}
 
 {% block title %}Timeline — Potluck{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="/static/css/vis-timeline.css">
 <style>
-  .vis-timeline {
-    border: 1px solid oklch(var(--b3));
-    border-radius: 0.75rem;
-    font-family: 'DM Sans', sans-serif;
-  }
-  .vis-item {
-    border-radius: 0.375rem;
-    font-size: 0.75rem;
-    border-color: oklch(var(--p));
-    background-color: oklch(var(--p) / 0.2);
-    color: oklch(var(--bc));
-  }
-  .vis-item.vis-selected {
-    border-color: oklch(var(--a));
-    background-color: oklch(var(--a) / 0.3);
-  }
-  .vis-label {
-    color: oklch(var(--bc));
-    font-size: 0.75rem;
-  }
-  .vis-panel.vis-background,
-  .vis-panel.vis-center,
-  .vis-panel.vis-left,
-  .vis-panel.vis-right,
-  .vis-panel.vis-top,
-  .vis-panel.vis-bottom {
-    background: oklch(var(--b1));
-    border-color: oklch(var(--b3));
-  }
-  .vis-time-axis .vis-text {
-    color: oklch(var(--bc) / 0.6);
-    font-size: 0.7rem;
-  }
-  .vis-time-axis .vis-grid.vis-minor { border-color: oklch(var(--b3) / 0.5); }
-  .vis-time-axis .vis-grid.vis-major { border-color: oklch(var(--b3)); }
-  .vis-labelset .vis-label { border-color: oklch(var(--b3)); }
-  .vis-group { border-color: oklch(var(--b3)); }
+  .tl-border-media { border-left-color: oklch(0.65 0.15 50); }
+  .tl-border-chat_message { border-left-color: oklch(0.65 0.14 280); }
+  .tl-border-email { border-left-color: oklch(0.62 0.16 25); }
+  .tl-border-social_post { border-left-color: oklch(0.60 0.17 350); }
+  .tl-border-social_comment { border-left-color: oklch(0.58 0.14 310); }
+  .tl-border-calendar_event { border-left-color: oklch(0.65 0.15 155); }
+  .tl-border-transaction { border-left-color: oklch(0.72 0.14 85); }
+  .tl-border-location_visit { border-left-color: oklch(0.60 0.12 185); }
+  .tl-border-browsing_history { border-left-color: oklch(0.55 0.12 240); }
 </style>
 {% endblock %}
 
@@ -59,111 +31,78 @@
   </div>
 
   <!-- Filters -->
-  <div class="animate-in animate-in-delay-1 flex flex-wrap items-end gap-3 p-4 bg-base-200/40 rounded-xl border border-base-300/30">
+  <form class="animate-in animate-in-delay-1 flex flex-wrap items-end gap-3 p-4 bg-base-200/40 rounded-xl border border-base-300/30"
+        method="GET" action="/timeline">
     <div class="form-control">
       <label class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-1">From</label>
-      <input type="date" id="tl-start" class="input input-bordered input-sm bg-base-100">
+      <input type="date" name="since" value="{{ since }}" class="input input-bordered input-sm bg-base-100">
     </div>
     <div class="form-control">
       <label class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-1">To</label>
-      <input type="date" id="tl-end" class="input input-bordered input-sm bg-base-100">
+      <input type="date" name="until" value="{{ until }}" class="input input-bordered input-sm bg-base-100">
     </div>
     <div class="form-control flex-1">
       <label class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-1">Types</label>
       <div class="flex flex-wrap gap-1.5">
         {% for et in entity_types %}
         <label class="filter-chip cursor-pointer flex items-center gap-1 px-2.5 py-1 rounded-full border border-base-300/60 text-xs">
-          <input type="checkbox" value="{{ et }}" class="checkbox checkbox-xs checkbox-primary tl-type-filter" checked>
+          <input type="checkbox" name="type" value="{{ et }}" class="checkbox checkbox-xs checkbox-primary"
+            {% if et in selected_types %}checked{% endif %}>
           <span>{{ et | replace('_', ' ') | title }}</span>
         </label>
         {% endfor %}
       </div>
     </div>
-    <button onclick="loadTimeline()" class="btn btn-primary btn-sm">Load</button>
-  </div>
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+  </form>
 
-  <!-- Timeline container -->
-  <div id="timeline-container" class="animate-in animate-in-delay-2" style="min-height: 400px;">
-    <div id="timeline-loading" class="flex items-center justify-center h-[400px] text-base-content/40">
-      <span class="loading loading-spinner loading-md mr-2"></span>
-      Loading timeline...
-    </div>
+  <!-- Timeline feed -->
+  <div id="timeline-feed" class="animate-in animate-in-delay-2 space-y-1">
+    {% if date_groups %}
+      {% for date_label, items in date_groups.items() %}
+      <div class="pt-4 pb-2 flex items-center gap-3">
+        <h2 class="text-sm font-semibold text-base-content/60 whitespace-nowrap">{{ date_label }}</h2>
+        <span class="badge badge-ghost badge-xs">{{ items | length }}</span>
+        <div class="flex-1 border-t border-base-300/30"></div>
+      </div>
+      {% for item in items %}
+      <a href="/entity/{{ item.entity_type }}/{{ item.id }}" class="block">
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-base-200/60 border border-base-300/40 border-l-4 tl-border-{{ item.entity_type }} hover:bg-base-200/80 hover:border-base-300 transition-all group">
+          <div class="w-8 h-8 rounded-lg bg-base-300/50 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+            <span class="text-sm">{{ entity_type_icon(item.entity_type) }}</span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium truncate">{{ item.title }}</p>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span class="text-xs text-base-content/40">{{ item.occurred_at.strftime('%H:%M') }}</span>
+              <span class="badge badge-outline badge-xs">{{ item.entity_type | replace('_', ' ') }}</span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+      {% endfor %}
+
+      {% if next_before %}
+      <!-- Infinite scroll trigger -->
+      <div hx-get="/timeline/items?before={{ next_before }}{% for t in selected_types %}&type={{ t }}{% endfor %}{% if since %}&since={{ since }}{% endif %}{% if until %}&until={{ until }}{% endif %}"
+           hx-trigger="revealed"
+           hx-swap="outerHTML"
+           class="flex items-center justify-center py-8 text-base-content/40">
+        <span class="loading loading-spinner loading-sm mr-2"></span>
+        Loading more...
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="text-center py-16">
+        <div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center mx-auto mb-4">
+          <span class="text-3xl">&#128197;</span>
+        </div>
+        <p class="text-base-content/60 font-medium">No timeline data found</p>
+        <p class="text-sm text-base-content/35 mt-1">Try adjusting your filters or import more data</p>
+      </div>
+    {% endif %}
   </div>
 
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="/static/js/vis-timeline.min.js"></script>
-<script>
-  var timeline = null;
-
-  function loadTimeline() {
-    var start = document.getElementById('tl-start').value;
-    var end = document.getElementById('tl-end').value;
-    var types = [];
-    document.querySelectorAll('.tl-type-filter:checked').forEach(function(cb) {
-      types.push(cb.value);
-    });
-
-    var params = new URLSearchParams();
-    if (start) params.append('start', start);
-    if (end) params.append('end', end);
-    types.forEach(function(t) { params.append('type', t); });
-
-    var container = document.getElementById('timeline-container');
-    var loading = document.getElementById('timeline-loading');
-    if (loading) loading.style.display = 'flex';
-
-    fetch('/timeline/data?' + params.toString())
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        // Clear container safely
-        while (container.firstChild) {
-          container.removeChild(container.firstChild);
-        }
-
-        if (data.items.length === 0) {
-          var emptyMsg = document.createElement('div');
-          emptyMsg.className = 'flex items-center justify-center h-[400px] text-base-content/40';
-          var p = document.createElement('p');
-          p.textContent = 'No timeline data found for the selected filters';
-          emptyMsg.appendChild(p);
-          container.appendChild(emptyMsg);
-          return;
-        }
-
-        var items = new vis.DataSet(data.items);
-        var groups = new vis.DataSet(data.groups);
-
-        var options = {
-          height: '500px',
-          stack: true,
-          showMajorLabels: true,
-          showMinorLabels: true,
-          groupOrder: 'content',
-          zoomMin: 1000 * 60 * 60,       // 1 hour
-          zoomMax: 1000 * 60 * 60 * 24 * 365 * 10,  // 10 years
-          tooltip: { followMouse: true },
-        };
-
-        if (timeline) timeline.destroy();
-        timeline = new vis.Timeline(container, items, groups, options);
-      })
-      .catch(function(err) {
-        while (container.firstChild) {
-          container.removeChild(container.firstChild);
-        }
-        var errDiv = document.createElement('div');
-        errDiv.className = 'alert alert-error rounded-xl';
-        var errP = document.createElement('p');
-        errP.textContent = 'Failed to load timeline: ' + err.message;
-        errDiv.appendChild(errP);
-        container.appendChild(errDiv);
-      });
-  }
-
-  // Load on page ready
-  loadTimeline();
-</script>
 {% endblock %}

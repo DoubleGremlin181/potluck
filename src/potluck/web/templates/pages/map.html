@@ -79,7 +79,7 @@
         markerLayer.clearLayers();
         data.markers.forEach(function(m) {
           L.marker([m.lat, m.lng])
-            .bindPopup('<strong>' + escapeHtml(m.title) + '</strong><br><small>' + escapeHtml(m.type.replace('_', ' ')) + '</small>')
+            .bindPopup('<a href="/entity/' + encodeURIComponent(m.type) + '/' + encodeURIComponent(m.id) + '" style="font-weight:600;text-decoration:none">' + escapeHtml(m.title) + '</a><br><small>' + escapeHtml(m.type.replace('_', ' ')) + '</small>')
             .addTo(markerLayer);
         });
         document.getElementById('marker-count').textContent = data.markers.length + ' markers loaded';

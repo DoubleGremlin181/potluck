@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "components/entity_card.html" import entity_type_icon %}
+
+{% block title %}{{ display_name }} — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Header -->
+  <div class="animate-in flex items-start gap-4">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-sm btn-circle mt-1 shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </a>
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="text-2xl">{{ entity_type_icon(entity_type) }}</span>
+        <span class="badge badge-outline badge-sm">{{ display_name }}</span>
+      </div>
+      <h1 class="text-3xl font-display font-bold tracking-tight">{{ display_name }} Detail</h1>
+      {% if text_repr %}
+      <p class="text-base-content/50 text-sm mt-1 truncate">{{ text_repr }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Fields -->
+  <div class="animate-in animate-in-delay-1 card bg-base-200/60 border border-base-300/40 rounded-xl">
+    <div class="card-body p-0">
+      <dl class="divide-y divide-base-300/30">
+        {% for field in fields %}
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 px-5 py-3.5">
+          <dt class="text-xs font-semibold uppercase tracking-wider text-base-content/40">
+            {{ field.name | replace('_', ' ') }}
+          </dt>
+          <dd class="sm:col-span-2 text-sm break-words">
+            {% set val = field.value %}
+
+            {# DateTime formatting #}
+            {% if val is not string and val.__class__.__name__ == 'datetime' %}
+              {{ val.strftime('%B %d, %Y at %H:%M') }}
+
+            {# UUID formatting #}
+            {% elif val is not string and val.__class__.__name__ == 'UUID' %}
+              <code class="text-xs font-mono bg-base-300/40 px-1.5 py-0.5 rounded">{{ val }}</code>
+
+            {# Boolean formatting #}
+            {% elif val is sameas true %}
+              <span class="badge badge-success badge-sm">Yes</span>
+            {% elif val is sameas false %}
+              <span class="badge badge-ghost badge-sm">No</span>
+
+            {# Enum formatting #}
+            {% elif val.__class__.__bases__ is defined and val.value is defined %}
+              <span class="badge badge-outline badge-sm">{{ val.value | replace('_', ' ') | title }}</span>
+
+            {# Long strings — scrollable pre #}
+            {% elif val is string and val | length > 200 %}
+              <pre class="text-xs bg-base-300/30 rounded-lg p-3 max-h-48 overflow-auto whitespace-pre-wrap">{{ val }}</pre>
+
+            {# URL detection #}
+            {% elif val is string and val.startswith('http') %}
+              <a href="{{ val }}" target="_blank" rel="noopener" class="link link-primary text-sm break-all">{{ val | truncate(80) }}</a>
+
+            {# Default string/number #}
+            {% else %}
+              {{ val }}
+            {% endif %}
+          </dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </div>
+  </div>
+
+  <!-- Footer metadata -->
+  <div class="animate-in animate-in-delay-2 text-xs text-base-content/30 flex items-center gap-4">
+    <span>ID: <code class="font-mono">{{ entity.id }}</code></span>
+    {% if entity.created_at is defined and entity.created_at %}
+    <span>Created: {{ entity.created_at.strftime('%b %d, %Y at %H:%M') }}</span>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

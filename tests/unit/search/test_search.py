@@ -1,11 +1,15 @@
 """Tests for main search API."""
 
+from unittest.mock import patch
+from uuid import uuid4
+
 from potluck.models.base import EntityType
 from potluck.search import (
     SearchMode,
     SearchQuery,
     get_searchable_entity_types,
 )
+from potluck.search.dtos import RankingConfig, RetrievalResult
 
 
 class TestGetSearchableEntityTypes:
@@ -95,3 +99,61 @@ class TestSearchModes:
         """Hybrid mode combines FTS and vector."""
         query = SearchQuery(query="test", mode=SearchMode.HYBRID)
         assert query.mode == SearchMode.HYBRID
+
+
+class TestHybridSearchFallback:
+    """Tests for graceful degradation when a retriever fails in hybrid mode."""
+
+    async def test_vector_failure_falls_back_to_fts(self) -> None:
+        """When vector retriever fails in hybrid mode, search should return FTS results."""
+        from potluck.search import _run_retrievers_parallel
+
+        fts_results = [
+            RetrievalResult(
+                entity_id=uuid4(),
+                entity_type=EntityType.EMAIL,
+                score=0.9,
+                rank=1,
+            )
+        ]
+
+        query = SearchQuery(query="test", mode=SearchMode.HYBRID)
+        target_types = {EntityType.EMAIL}
+        config = RankingConfig()
+
+        with (
+            patch("potluck.search._run_fts_retriever", return_value=fts_results),
+            patch(
+                "potluck.search._run_vector_retriever",
+                side_effect=ValueError("expected ndim to be 1"),
+            ),
+        ):
+            from unittest.mock import AsyncMock
+
+            mock_session = AsyncMock()
+            result = await _run_retrievers_parallel(mock_session, query, target_types, 60, config)
+
+        assert "fts" in result
+        assert len(result["fts"]) == 1
+        assert "vector" not in result
+
+    async def test_fts_only_mode_still_raises(self) -> None:
+        """In FTS-only mode, FTS failure should re-raise."""
+        from potluck.search import _run_retrievers_parallel
+
+        query = SearchQuery(query="test", mode=SearchMode.FTS)
+        target_types = {EntityType.EMAIL}
+        config = RankingConfig()
+
+        with patch(
+            "potluck.search._run_fts_retriever",
+            side_effect=ValueError("FTS error"),
+        ):
+            from unittest.mock import AsyncMock
+
+            mock_session = AsyncMock()
+            try:
+                await _run_retrievers_parallel(mock_session, query, target_types, 60, config)
+                raise AssertionError("Expected ValueError to be raised")
+            except ValueError as e:
+                assert "FTS error" in str(e)

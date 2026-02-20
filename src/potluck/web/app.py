@@ -22,6 +22,7 @@ from potluck.web.dependencies import SESSION_MAX_AGE, get_db, require_auth
 from potluck.web.routers import (
     auth,
     dashboard,
+    entity,
     events,
     imports,
     notes,
@@ -99,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(settings.router)
     app.include_router(map_router.router)
+    app.include_router(entity.router)
 
     async def _resolve_media_file(media_id: UUID, db: AsyncSession) -> tuple[Path, str]:
         """Look up a media file by database ID and return its path and content type.

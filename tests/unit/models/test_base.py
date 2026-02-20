@@ -162,11 +162,12 @@ class TestTimestampedEntity:
         )
         assert entity.source_timezone == "America/New_York"
 
-    def test_naive_datetime_converted_to_utc_on_validate(self) -> None:
-        """Naive datetimes are assumed UTC and made aware during model_validate.
+    def test_naive_datetime_preserved_on_validate(self) -> None:
+        """Naive datetimes are assumed UTC and kept naive during model_validate.
 
         Note: SQLModel table classes skip validators on direct init by design.
         Validators run during model_validate() which is used by ingesters.
+        All datetimes are stored as naive UTC (TIMESTAMP WITHOUT TIME ZONE).
         """
         naive_dt = datetime(2024, 6, 15, 12, 0, 0)  # no tzinfo
         entity = ConcreteTimestamped.model_validate(
@@ -175,16 +176,15 @@ class TestTimestampedEntity:
 
         occurred = entity.occurred_at
         assert occurred is not None
-        assert occurred.tzinfo is not None
-        assert occurred.tzinfo == UTC
-        # The time should be the same, just with UTC timezone added
+        assert occurred.tzinfo is None  # stays naive
+        # The time should be unchanged
         assert occurred.year == 2024
         assert occurred.month == 6
         assert occurred.day == 15
         assert occurred.hour == 12
 
-    def test_utc_datetime_preserved_on_validate(self) -> None:
-        """UTC-aware datetimes are preserved as-is during model_validate."""
+    def test_utc_datetime_stripped_on_validate(self) -> None:
+        """UTC-aware datetimes are stripped to naive UTC during model_validate."""
         utc_dt = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         entity = ConcreteTimestamped.model_validate(
             {"source_type": SourceType.MANUAL, "occurred_at": utc_dt}
@@ -192,11 +192,11 @@ class TestTimestampedEntity:
 
         occurred = entity.occurred_at
         assert occurred is not None
-        assert occurred == utc_dt
-        assert occurred.tzinfo == UTC
+        assert occurred.tzinfo is None  # stripped to naive
+        assert occurred.hour == 12  # time preserved
 
-    def test_non_utc_datetime_converted_to_utc_on_validate(self) -> None:
-        """Non-UTC aware datetimes are converted to UTC during model_validate."""
+    def test_non_utc_datetime_converted_to_naive_utc_on_validate(self) -> None:
+        """Non-UTC aware datetimes are converted to naive UTC during model_validate."""
         # Create a datetime in EST (UTC-5)
         est = timezone(timedelta(hours=-5))
         est_dt = datetime(2024, 6, 15, 12, 0, 0, tzinfo=est)  # 12:00 EST
@@ -207,7 +207,7 @@ class TestTimestampedEntity:
 
         occurred = entity.occurred_at
         assert occurred is not None
-        assert occurred.tzinfo == UTC
+        assert occurred.tzinfo is None  # naive UTC
         # 12:00 EST = 17:00 UTC
         assert occurred.hour == 17
 

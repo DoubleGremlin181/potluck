@@ -45,6 +45,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from potluck.core.exceptions import NoSearchableEntitiesError
+from potluck.core.logging import get_logger
 from potluck.db.session import get_async_session, get_session
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType, SourceType
@@ -64,6 +65,8 @@ from potluck.search.utils import (
     get_primary_date_field,
     get_searchable_entity_types,
 )
+
+logger = get_logger("search")
 
 __all__ = [
     # Main API
@@ -255,6 +258,7 @@ async def _run_retrievers_parallel(
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Process results based on what retrievers were run
+        is_hybrid = query.mode == SearchMode.HYBRID
         result_idx = 0
         if query.mode in (SearchMode.FTS, SearchMode.HYBRID):
             fts_result = results[result_idx]
@@ -262,14 +266,26 @@ async def _run_retrievers_parallel(
             if isinstance(fts_result, list):
                 retriever_results["fts"] = fts_result
             elif isinstance(fts_result, Exception):
-                raise fts_result
+                if is_hybrid:
+                    logger.warning(
+                        "FTS retriever failed in hybrid mode, continuing with vector: %s",
+                        fts_result,
+                    )
+                else:
+                    raise fts_result
 
         if query.mode in (SearchMode.VECTOR_TEXT, SearchMode.HYBRID, SearchMode.VECTOR_MULTIMODAL):
             vector_result = results[result_idx]
             if isinstance(vector_result, list):
                 retriever_results["vector"] = vector_result
             elif isinstance(vector_result, Exception):
-                raise vector_result
+                if is_hybrid:
+                    logger.warning(
+                        "Vector retriever failed in hybrid mode, continuing with FTS: %s",
+                        vector_result,
+                    )
+                else:
+                    raise vector_result
 
     return retriever_results
 

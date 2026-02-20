@@ -44,11 +44,11 @@ class PipelineFilter(BaseModel):
 
     @model_validator(mode="after")
     def validate_and_normalize(self) -> Self:
-        """Normalize naive datetimes to UTC and validate range.
+        """Normalize naive datetimes to UTC-aware and validate range.
 
         CLI parsers (e.g. Typer) produce naive datetimes from date strings.
-        Entity timestamps are timezone-aware (UTC), so we must normalize here
-        to avoid TypeError on comparison.
+        We add UTC timezone for safe comparison with both aware and naive
+        timestamps (passes() handles the normalization).
         """
         if self.since and self.since.tzinfo is None:
             self.since = self.since.replace(tzinfo=UTC)

@@ -51,9 +51,9 @@
           <tbody>
             {% for alias in person.aliases %}
             <tr class="hover:bg-base-300/30">
-              <td><span class="badge badge-outline badge-xs">{{ alias.alias_type.value }}</span></td>
+              <td><span class="badge badge-outline badge-xs">{{ alias.alias_type }}</span></td>
               <td class="font-medium text-sm">{{ alias.value }}</td>
-              <td class="text-xs text-base-content/40">{{ alias.source_type.value | replace('_', ' ') }}</td>
+              <td class="text-xs text-base-content/40">{{ alias.source_type | replace('_', ' ') }}</td>
               <td>
                 {% if alias.is_primary %}
                 <span class="badge badge-primary badge-xs">Primary</span>

@@ -9,18 +9,18 @@
     hx-target="#lightbox-content"
     hx-swap="innerHTML"
   >
-    {% if media.media_type.value == 'image' %}
+    {% if media.media_type == 'image' %}
     <img
       src="/media/thumb/{{ media.id }}"
       alt="{{ media.caption or media.original_filename or 'Media' }}"
       class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
       loading="lazy"
     >
-    {% elif media.media_type.value == 'video' %}
+    {% elif media.media_type == 'video' %}
     <div class="w-full h-full flex items-center justify-center bg-base-300/80">
       <span class="text-4xl opacity-60 group-hover:opacity-80 transition-opacity">&#127909;</span>
     </div>
-    {% elif media.media_type.value == 'audio' %}
+    {% elif media.media_type == 'audio' %}
     <div class="w-full h-full flex items-center justify-center bg-base-300/80">
       <span class="text-4xl opacity-60 group-hover:opacity-80 transition-opacity">&#127911;</span>
     </div>

@@ -8,7 +8,7 @@ from sqlmodel import col
 from starlette.responses import Response
 
 from potluck.models import get_entity_type_model_map
-from potluck.models.base import EntityType, GeolocatedEntity
+from potluck.models.base import EntityType
 from potluck.web.dependencies import get_db, require_auth
 
 router = APIRouter(prefix="/map", tags=["map"], dependencies=[Depends(require_auth)])
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/map", tags=["map"], dependencies=[Depends(require_au
 # Entity types that can have location
 _GEO_TYPES = {
     EntityType.MEDIA,
+    EntityType.LOCATION,
     EntityType.LOCATION_VISIT,
     EntityType.CALENDAR_EVENT,
 }
@@ -63,7 +64,7 @@ async def map_markers(
 
     for entity_type in target_types:
         model = entity_map.get(entity_type)
-        if model is None or not issubclass(model, GeolocatedEntity):
+        if model is None or not (hasattr(model, "latitude") and hasattr(model, "longitude")):
             continue
 
         stmt = (
@@ -82,7 +83,7 @@ async def map_markers(
 
         for entity in result.scalars().all():
             title = ""
-            for attr in ("caption", "location_name", "name", "subject"):
+            for attr in ("caption", "location_name", "place_name", "name", "subject", "summary"):
                 val = getattr(entity, attr, None)
                 if val:
                     title = str(val)[:80]
@@ -92,7 +93,7 @@ async def map_markers(
 
             markers.append(
                 {
-                    "id": str(entity.id),
+                    "id": str(entity.id),  # type: ignore[attr-defined]
                     "lat": entity.latitude,
                     "lng": entity.longitude,
                     "title": title,

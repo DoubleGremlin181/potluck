@@ -51,11 +51,8 @@ def ingest_android_timeline(
             continue
 
         # Apply date filters
-        if filters:
-            if filters.since and start_time < filters.since:
-                continue
-            if filters.until and start_time >= filters.until:
-                continue
+        if filters and not filters.passes(start_time):
+            continue
 
         end_time = _parse_iso_timestamp(segment.get("endTime"))
 

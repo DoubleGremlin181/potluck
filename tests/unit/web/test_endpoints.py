@@ -207,6 +207,76 @@ class TestSearchEndpoint:
         assert "Invalid start date" in response.text
 
 
+class TestEntityDetail:
+    """Test the generic entity detail endpoint."""
+
+    async def test_entity_detail_unknown_type_404(self, authed_client: AsyncClient) -> None:
+        """Unknown entity type should return 404."""
+        fake_id = uuid4()
+        response = await authed_client.get(f"/entity/nonexistent_type/{fake_id}")
+        assert response.status_code == 404
+
+    async def test_entity_detail_not_found_404(self, authed_client: AsyncClient) -> None:
+        """Non-existent entity should return 404."""
+        fake_id = uuid4()
+        response = await authed_client.get(f"/entity/email/{fake_id}")
+        assert response.status_code == 404
+
+    async def test_entity_person_redirects(self, authed_client: AsyncClient) -> None:
+        """Person entity type should redirect to /people/{id}."""
+        fake_id = uuid4()
+        response = await authed_client.get(f"/entity/person/{fake_id}", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/people/{fake_id}"
+
+
+class TestMapEndpoints:
+    """Test map page and marker endpoints."""
+
+    async def test_map_page_200(self, authed_client: AsyncClient) -> None:
+        """Map page should return 200."""
+        response = await authed_client.get("/map")
+        assert response.status_code == 200
+        assert "Map" in response.text
+
+    async def test_map_markers_json(self, authed_client: AsyncClient) -> None:
+        """Map markers endpoint should return JSON with markers array."""
+        response = await authed_client.get("/map/markers")
+        assert response.status_code == 200
+        data = response.json()
+        assert "markers" in data
+        assert isinstance(data["markers"], list)
+
+
+class TestTimelineEndpoints:
+    """Test timeline page and items endpoints."""
+
+    async def test_timeline_page_200(self, authed_client: AsyncClient) -> None:
+        """Timeline page should return 200."""
+        response = await authed_client.get("/timeline")
+        assert response.status_code == 200
+        assert "Timeline" in response.text
+
+    async def test_timeline_items_200(self, authed_client: AsyncClient) -> None:
+        """Timeline items partial should return 200."""
+        response = await authed_client.get("/timeline/items?before=2026-01-01T00:00:00")
+        assert response.status_code == 200
+
+
+class TestSearchBrowseMode:
+    """Test search browse mode (empty query with type filter)."""
+
+    async def test_search_browse_mode(self, authed_client: AsyncClient) -> None:
+        """Browse mode should return 200 with browse results when type is set but q is empty."""
+        response = await authed_client.get("/search?type=email")
+        assert response.status_code == 200
+        assert (
+            "browse" in response.text.lower()
+            or "Emails" in response.text
+            or "No items" in response.text
+        )
+
+
 class TestMediaServing:
     """Test media file serving endpoints."""
 

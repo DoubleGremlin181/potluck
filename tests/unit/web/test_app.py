@@ -25,7 +25,8 @@ class TestAppFactory:
         assert "/notes" in paths
         assert "/people" in paths
         assert "/timeline" in paths
-        assert "/timeline/data" in paths
+        assert "/timeline/items" in paths
+        assert "/entity/{entity_type}/{entity_id}" in paths
         assert "/imports" in paths
         assert "/events/progress" in paths
         assert "/settings" in paths

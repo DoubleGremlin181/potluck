@@ -39,7 +39,7 @@ async def _progress_stream() -> AsyncGenerator[str, None]:
                 jobs = [
                     {
                         "id": str(run.id),
-                        "status": run.status.value,
+                        "status": str(run.status),
                         "progress_current": run.progress_current,
                         "progress_total": run.progress_total,
                         "progress_percent": run.progress_percent,

@@ -68,6 +68,7 @@
       {% if recent_entities %}
       <div class="space-y-2">
         {% for item in recent_entities %}
+        <a href="/entity/{{ item.entity_type }}/{{ item.entity.id }}" class="block">
         <div class="flex items-center gap-3 p-3.5 rounded-xl bg-base-200/60 border border-base-300/40 hover:border-base-300 hover:bg-base-200 transition-all group">
           <div class="w-9 h-9 rounded-lg bg-base-300/60 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
             <span class="text-base">{{ entity_type_icon(item.entity_type) }}</span>
@@ -99,6 +100,7 @@
             </p>
           </div>
         </div>
+        </a>
         {% endfor %}
       </div>
       {% else %}
@@ -114,8 +116,8 @@
         {% for run in active_imports %}
         <div class="card bg-base-200/80 border border-base-300/60 p-4 rounded-xl">
           <div class="flex justify-between items-center mb-2">
-            <span class="badge badge-sm badge-{{ 'warning' if run.status.value == 'running' else 'ghost' }}">
-              {{ run.status.value }}
+            <span class="badge badge-sm badge-{{ 'warning' if run.status == 'running' else 'ghost' }}">
+              {{ run.status }}
             </span>
             <span class="text-xs text-base-content/40">{{ run.entities_created }} created</span>
           </div>
