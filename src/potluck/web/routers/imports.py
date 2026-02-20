@@ -14,7 +14,7 @@ from sqlmodel import col
 from starlette.responses import Response
 
 from potluck.core.logging import get_logger
-from potluck.models.base import EntityType
+from potluck.models.base import EntityType, SourceType
 from potluck.models.sources import ImportRun, ImportStatus
 from potluck.pipeline import start_ingestion
 from potluck.pipeline.ingestion.registry import list_stages
@@ -100,25 +100,36 @@ async def upload_file(
     request: Request,
     file: UploadFile,
     entity_types: list[str] = Form(default=[]),
+    source_type: str = Form(default=""),
+    since: str = Form(default=""),
+    until: str = Form(default=""),
 ) -> RedirectResponse:
     """Handle file upload and start ingestion."""
-    # Save uploaded file to temp directory
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=Path(file.filename or "upload").suffix,
-        prefix="potluck-upload-",
-    ) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
+    # Save uploaded file in a temp directory, preserving the original filename.
+    # Stage detection (detect_stage) matches path.name against FILENAME_PATTERNS,
+    # so the original name must be retained for auto-detection to work.
+    tmp_dir = tempfile.mkdtemp(prefix="potluck-upload-")
+    original_name = file.filename or "upload"
+    tmp_path = Path(tmp_dir) / original_name
+    content = await file.read()
+    tmp_path.write_bytes(content)
 
     # Convert entity types
     types: list[EntityType] | None = None
     if entity_types:
         types = [EntityType(t) for t in entity_types if t]
 
+    # Parse optional overrides
+    st = SourceType(source_type) if source_type else None
+
     try:
-        task_id, import_run_id = start_ingestion(tmp_path, types)
+        task_id, import_run_id = start_ingestion(
+            tmp_path,
+            types,
+            source_type=st,
+            since=since or None,
+            until=until or None,
+        )
     except Exception:
         os.unlink(tmp_path)
         raise
@@ -130,6 +141,9 @@ async def upload_file(
 async def start_import_from_path(
     path: str = Form(...),
     entity_types: list[str] = Form(default=[]),
+    source_type: str = Form(default=""),
+    since: str = Form(default=""),
+    until: str = Form(default=""),
 ) -> RedirectResponse:
     """Start ingestion from a server-side path."""
     file_path = Path(path)
@@ -140,8 +154,16 @@ async def start_import_from_path(
     if entity_types:
         types = [EntityType(t) for t in entity_types if t]
 
+    st = SourceType(source_type) if source_type else None
+
     try:
-        start_ingestion(file_path, types)
+        start_ingestion(
+            file_path,
+            types,
+            source_type=st,
+            since=since or None,
+            until=until or None,
+        )
     except Exception:
         logger.exception("Failed to start ingestion from path=%s", file_path)
         return RedirectResponse(url="/imports?error=ingestion_failed", status_code=303)

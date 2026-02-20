@@ -28,7 +28,7 @@
               <span class="font-semibold text-sm">
                 {{ run.source.name if run.source else 'Import' }}
               </span>
-              <span class="badge badge-sm badge-warning">{{ run.status }}</span>
+              <span class="badge badge-sm badge-warning">{{ run.status | enum_val }}</span>
             </div>
             <form method="POST" action="/imports/{{ run.id }}/cancel">
               <button type="submit" class="btn btn-ghost btn-xs text-error"
@@ -83,6 +83,30 @@
                 class="file-input file-input-bordered file-input-sm w-full max-w-xs">
               <p class="text-xs text-base-content/40 mt-2">Upload a data export file (ZIP, JSON, CSV, MBOX)</p>
             </div>
+
+            <details class="collapse collapse-arrow bg-base-100/30 border border-base-300/30 rounded-lg">
+              <summary class="collapse-title text-xs font-medium py-2 min-h-0">Advanced Options</summary>
+              <div class="collapse-content space-y-2 pb-3">
+                <label class="label py-0"><span class="label-text text-xs">Source Type</span></label>
+                <select name="source_type" class="select select-bordered select-xs w-full bg-base-100/50">
+                  <option value="">Auto-detect</option>
+                  {% for source in sources %}
+                  <option value="{{ source.source_type }}">{{ source.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="label py-0"><span class="label-text text-xs">Since</span></label>
+                    <input type="date" name="since" class="input input-bordered input-xs w-full bg-base-100/50">
+                  </div>
+                  <div>
+                    <label class="label py-0"><span class="label-text text-xs">Until</span></label>
+                    <input type="date" name="until" class="input input-bordered input-xs w-full bg-base-100/50">
+                  </div>
+                </div>
+              </div>
+            </details>
+
             <button type="submit" class="btn btn-primary btn-sm w-full">Upload &amp; Import</button>
           </form>
         </div>
@@ -95,9 +119,30 @@
           <form method="POST" action="/imports/start" class="space-y-3">
             <input type="text" name="path" placeholder="/path/to/data/export"
               class="input input-bordered input-sm w-full bg-base-100/50" required>
-            <p class="text-xs text-base-content/40">
-              Enter a path on this server. Source type will be auto-detected.
-            </p>
+
+            <details class="collapse collapse-arrow bg-base-100/30 border border-base-300/30 rounded-lg">
+              <summary class="collapse-title text-xs font-medium py-2 min-h-0">Advanced Options</summary>
+              <div class="collapse-content space-y-2 pb-3">
+                <label class="label py-0"><span class="label-text text-xs">Source Type</span></label>
+                <select name="source_type" class="select select-bordered select-xs w-full bg-base-100/50">
+                  <option value="">Auto-detect</option>
+                  {% for source in sources %}
+                  <option value="{{ source.source_type }}">{{ source.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="label py-0"><span class="label-text text-xs">Since</span></label>
+                    <input type="date" name="since" class="input input-bordered input-xs w-full bg-base-100/50">
+                  </div>
+                  <div>
+                    <label class="label py-0"><span class="label-text text-xs">Until</span></label>
+                    <input type="date" name="until" class="input input-bordered input-xs w-full bg-base-100/50">
+                  </div>
+                </div>
+              </div>
+            </details>
+
             <button type="submit" class="btn btn-primary btn-sm w-full">Start Import</button>
           </form>
         </div>
@@ -164,7 +209,7 @@
                 'error' if run.status == 'failed' else
                 'warning' if run.status == 'running' else
                 'ghost'
-              }}">{{ run.status }}</span>
+              }}">{{ run.status | enum_val }}</span>
             </td>
             <td class="text-xs text-base-content/50">{{ run.started_at.strftime('%b %d, %Y %H:%M') }}</td>
             <td>{{ run.entities_created }}</td>
