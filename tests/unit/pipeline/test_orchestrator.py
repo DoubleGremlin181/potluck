@@ -7,6 +7,8 @@ from uuid import uuid4
 from potluck.models.base import EntityType, IngestableEntity, SourceType
 from potluck.models.browsing import Bookmark, BookmarkFolder, BrowsingHistory
 from potluck.models.calendar import CalendarEvent, EventParticipant, ResponseStatus
+from potluck.models.sources import ImportRun, ImportSource, ImportStatus
+from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.orchestrator import PipelineOrchestrator, discover
 
 
@@ -334,3 +336,302 @@ class TestContentPathParameter:
             mock_extracted.assert_not_called()
             # detect_stage should still be called with original path
             mock_detect.assert_called_once_with(Path("/tmp/fake.tgz"))
+
+
+class TestImportRunReuse:
+    """Tests for reusing existing ImportRun/ImportSource (Celery task path)."""
+
+    def _make_mock_session(self) -> MockSession:
+        """Create a mock session that also tracks refreshes."""
+        session = MockSession()
+        session.refresh = MagicMock()  # type: ignore[attr-defined]
+        return session
+
+    def test_existing_import_run_not_duplicated(self) -> None:
+        """When import_run is provided, orchestrator does NOT create a new one."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        # Pre-create source and run (as start_ingestion would)
+        existing_source = ImportSource(
+            source_type=SourceType.GENERIC,
+            name="test.zip",
+        )
+        existing_run = ImportRun(
+            source_id=existing_source.id,
+            status=ImportStatus.PENDING,
+            file_hash="abc123",
+        )
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect,
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value="abc123"),
+            patch.object(orchestrator, "_find_completed_run", return_value=None),
+        ):
+            # Set up a mock stage that returns entities
+            mock_stage_cls = MagicMock()
+            mock_stage = MagicMock()
+            mock_stage_cls.return_value = mock_stage
+            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage.detect.return_value = MagicMock(
+                entity_counts={EntityType.TRANSACTION: 10},
+                metadata={},
+            )
+            mock_stage.execute.return_value = iter([])  # No entities for simplicity
+            mock_detect.return_value = mock_stage_cls
+
+            result = orchestrator.run(
+                Path("/tmp/test.zip"),
+                content_path=Path("/tmp/content"),
+                import_source=existing_source,
+                import_run=existing_run,
+            )
+
+            # The result should reference the SAME import run, not a new one
+            assert result.import_run.id == existing_run.id
+            # _create_import_run should not have been called (no new ImportRun in added)
+            import_runs_added = [obj for obj in session.added if isinstance(obj, ImportRun)]
+            assert len(import_runs_added) == 0
+
+    def test_existing_import_run_status_updated(self) -> None:
+        """When import_run is provided, its status transitions correctly."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        existing_source = ImportSource(
+            source_type=SourceType.GENERIC,
+            name="test.zip",
+        )
+        existing_run = ImportRun(
+            source_id=existing_source.id,
+            status=ImportStatus.PENDING,
+            file_hash="abc123",
+        )
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect,
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value="abc123"),
+            patch.object(orchestrator, "_find_completed_run", return_value=None),
+            patch.object(orchestrator, "_queue_linkers"),
+        ):
+            mock_stage_cls = MagicMock()
+            mock_stage = MagicMock()
+            mock_stage_cls.return_value = mock_stage
+            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage.detect.return_value = MagicMock(
+                entity_counts={EntityType.TRANSACTION: 1},
+                metadata={},
+            )
+            mock_stage.execute.return_value = iter([])
+            mock_detect.return_value = mock_stage_cls
+
+            result = orchestrator.run(
+                Path("/tmp/test.zip"),
+                content_path=Path("/tmp/content"),
+                import_source=existing_source,
+                import_run=existing_run,
+            )
+
+            assert result.import_run.status == ImportStatus.COMPLETED
+            assert result.import_run.completed_at is not None
+
+    def test_source_type_updated_from_generic(self) -> None:
+        """When existing ImportSource is GENERIC, it gets updated with detected type."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        existing_source = ImportSource(
+            source_type=SourceType.GENERIC,
+            name="test.zip",
+        )
+        existing_run = ImportRun(
+            source_id=existing_source.id,
+            status=ImportStatus.PENDING,
+        )
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect,
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value=None),
+            patch.object(orchestrator, "_find_completed_run", return_value=None),
+            patch.object(orchestrator, "_queue_linkers"),
+        ):
+            mock_stage_cls = MagicMock()
+            mock_stage = MagicMock()
+            mock_stage_cls.return_value = mock_stage
+            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage.detect.return_value = MagicMock(
+                entity_counts={EntityType.TRANSACTION: 1},
+                metadata={},
+            )
+            mock_stage.execute.return_value = iter([])
+            mock_detect.return_value = mock_stage_cls
+
+            orchestrator.run(
+                Path("/tmp/test.zip"),
+                content_path=Path("/tmp/content"),
+                import_source=existing_source,
+                import_run=existing_run,
+            )
+
+            # Source type should be updated from GENERIC to the detected type
+            assert existing_source.source_type == SourceType.YNAB
+
+    def test_without_import_run_creates_new(self) -> None:
+        """When import_run is NOT provided, orchestrator creates one (default behavior)."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect,
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value=None),
+            patch.object(orchestrator, "_find_completed_run", return_value=None),
+            patch.object(orchestrator, "_queue_linkers"),
+        ):
+            mock_stage_cls = MagicMock()
+            mock_stage = MagicMock()
+            mock_stage_cls.return_value = mock_stage
+            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage.detect.return_value = MagicMock(
+                entity_counts={EntityType.TRANSACTION: 1},
+                metadata={},
+            )
+            mock_stage.execute.return_value = iter([])
+            mock_detect.return_value = mock_stage_cls
+
+            result = orchestrator.run(
+                Path("/tmp/test.zip"),
+                content_path=Path("/tmp/content"),
+            )
+
+            # Should have created both ImportSource and ImportRun
+            import_sources_added = [obj for obj in session.added if isinstance(obj, ImportSource)]
+            import_runs_added = [obj for obj in session.added if isinstance(obj, ImportRun)]
+            assert len(import_sources_added) == 1
+            assert len(import_runs_added) == 1
+            assert result.import_run.status == ImportStatus.COMPLETED
+
+
+class TestSourceTypeOverride:
+    """Tests for source_type_override parameter."""
+
+    def _make_mock_session(self) -> MockSession:
+        session = MockSession()
+        session.refresh = MagicMock()  # type: ignore[attr-defined]
+        return session
+
+    def test_override_uses_get_stage_instead_of_detect(self) -> None:
+        """When source_type_override is provided, get_stage is used instead of detect_stage."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        mock_stage_cls = MagicMock()
+        mock_stage = MagicMock()
+        mock_stage_cls.return_value = mock_stage
+        mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+        mock_stage.detect.return_value = MagicMock(
+            entity_counts={EntityType.TRANSACTION: 5},
+            metadata={},
+        )
+        mock_stage.execute.return_value = iter([])
+
+        existing_source = ImportSource(source_type=SourceType.YNAB, name="test.zip")
+        existing_run = ImportRun(source_id=existing_source.id, status=ImportStatus.PENDING)
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage") as mock_detect,
+            patch(
+                "potluck.pipeline.orchestrator.get_stage", return_value=mock_stage_cls
+            ) as mock_get,
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value=None),
+            patch.object(orchestrator, "_find_completed_run", return_value=None),
+            patch.object(orchestrator, "_queue_linkers"),
+        ):
+            orchestrator.run(
+                Path("/tmp/renamed-file.zip"),
+                content_path=Path("/tmp/content"),
+                import_source=existing_source,
+                import_run=existing_run,
+                source_type_override=SourceType.YNAB,
+            )
+
+            # get_stage should be called with the override type
+            mock_get.assert_called_once_with(SourceType.YNAB)
+            # detect_stage should NOT be called
+            mock_detect.assert_not_called()
+
+    def test_no_override_uses_detect_stage(self) -> None:
+        """Without source_type_override, detect_stage is used (default behavior)."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage", return_value=None) as mock_detect,
+            patch("potluck.pipeline.orchestrator.get_stage") as mock_get,
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value=None),
+            patch.object(orchestrator, "_create_empty_result") as mock_empty,
+        ):
+            mock_empty.return_value = MagicMock()
+
+            orchestrator.run(
+                Path("/tmp/test.zip"),
+                content_path=Path("/tmp/content"),
+            )
+
+            # detect_stage should be called
+            mock_detect.assert_called_once_with(Path("/tmp/test.zip"))
+            # get_stage should NOT be called
+            mock_get.assert_not_called()
+
+
+class TestFilterPassthrough:
+    """Tests for PipelineFilter passthrough to stage.execute()."""
+
+    def _make_mock_session(self) -> MockSession:
+        session = MockSession()
+        session.refresh = MagicMock()  # type: ignore[attr-defined]
+        return session
+
+    def test_filters_passed_to_stage_execute(self) -> None:
+        """PipelineFilter is passed through to stage.execute() during ingestion."""
+        session = self._make_mock_session()
+        orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
+
+        mock_stage_cls = MagicMock()
+        mock_stage = MagicMock()
+        mock_stage_cls.return_value = mock_stage
+        mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+        mock_stage.detect.return_value = MagicMock(
+            entity_counts={EntityType.TRANSACTION: 3},
+            metadata={},
+        )
+        mock_stage.execute.return_value = iter([])
+
+        existing_source = ImportSource(source_type=SourceType.GENERIC, name="test.zip")
+        existing_run = ImportRun(source_id=existing_source.id, status=ImportStatus.PENDING)
+
+        from datetime import UTC, datetime
+
+        filters = PipelineFilter(
+            since=datetime(2024, 1, 1, tzinfo=UTC),
+            until=datetime(2024, 12, 31, tzinfo=UTC),
+        )
+
+        with (
+            patch("potluck.pipeline.orchestrator.detect_stage", return_value=mock_stage_cls),
+            patch("potluck.pipeline.orchestrator.compute_file_hash", return_value=None),
+            patch.object(orchestrator, "_find_completed_run", return_value=None),
+            patch.object(orchestrator, "_queue_linkers"),
+        ):
+            orchestrator.run(
+                Path("/tmp/test.zip"),
+                content_path=Path("/tmp/content"),
+                filters=filters,
+                import_source=existing_source,
+                import_run=existing_run,
+            )
+
+            # stage.execute should receive the filters
+            mock_stage.execute.assert_called_once()
+            call_args = mock_stage.execute.call_args
+            assert call_args[0][0] == Path("/tmp/content")  # content_path
+            assert call_args[0][2] is filters  # filters (3rd positional arg)
