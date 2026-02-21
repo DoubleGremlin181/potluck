@@ -19,27 +19,7 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 4. When milestone complete, update `pyproject.toml` version, merge to `main` and tag: `git tag v0.1.0`  (use semantic versioning, e.g. Phase 1 = `0.1.x`)
 5. Push tag to trigger GitHub release and Docker image publishing
 
-**Release Process** (triggered by pushing a tag):
-
-1. Update version in `pyproject.toml`
-2. Merge phase branch to `main`
-3. Create and push tag:
-   ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
-4. GitHub Actions will automatically:
-   - Build and push `ghcr.io/doublegremlin181/potluck:<version>` (CPU app image)
-   - Build and push `ghcr.io/doublegremlin181/potluck:<version>-gpu` (GPU app image)
-   - Build and push `ghcr.io/doublegremlin181/potluck-db:<version>` (database image)
-   - Create GitHub release with changelog
-
-**CI Base Image Caching**:
-
-- CI uses `docker/Dockerfile` with `--target deps` to cache dependencies in GHCR
-- Base image tag: `ghcr.io/doublegremlin181/potluck-base:cpu-<hash>` (hash of pyproject.toml + uv.lock)
-- Rebuilds only when dependencies change, not on code changes
-- If dependencies change, CI builds new base image (~8-10 min); otherwise uses cached (~2-3 min)
+**Release Process**: Update `pyproject.toml` version, merge to `main`, tag and push. See [docs/RELEASING.md](docs/RELEASING.md) for full steps.
 
 **Reminders**:
 
@@ -53,5 +33,5 @@ Privacy-first personal knowledge database exposing data to LLMs via MCP. All pro
 
 ## References
 
-- [PRD.md](PRD.md)
+- [PRD.md](docs/PRD.md)
 - [MCP Docs](https://modelcontextprotocol.io/)

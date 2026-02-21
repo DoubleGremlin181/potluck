@@ -1,4 +1,10 @@
-"""Embedding constants for ML models."""
+"""ML model configuration constants.
+
+Defines embedding dimensions and default model identifiers used across
+the processing pipeline. Dimensions must match the models specified here;
+changing a model requires updating the corresponding dimension constant
+and re-running embeddings.
+"""
 
 # Embedding dimensions
 TEXT_EMBEDDING_DIM = 384  # e5-small-v2 text embeddings

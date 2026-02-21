@@ -42,10 +42,11 @@ Users accumulate vast amounts of personal data across different platforms (Googl
 
 | Source | Data Types |
 |--------|------------|
-| Google Takeout | Photos, Location History, Chat, Calendar, Gmail, Chrome |
+| Google Takeout | Photos, Gmail, Calendar, Chat, Chrome (bookmarks, browsing history), Location History, Google Keep (notes) |
+| Android Timeline | Location history (Timeline.json) |
 | Reddit GDPR | Posts, Comments, Subscriptions, Saved items |
 | WhatsApp | Chat exports with media |
-| YNAB | Transactions, Accounts, Budgets |
+| YNAB | Transactions, Budgets |
 | Generic | Image folders, Text/Markdown files, MBOX email archives |
 
 **Capabilities:**
@@ -64,28 +65,45 @@ All entities are generic and not tied to a specific source. A `source_type` fiel
 | Entity | Description |
 |--------|-------------|
 | Person | Aggregated identity across sources (names, emails, phones, face encodings) |
-| ChatMessage | Messages from any platform (WhatsApp, Telegram, SMS, etc.) |
+| ChatMessage | Messages from any platform (WhatsApp, Google Chat, SMS, etc.) |
 | Media | Photos, videos, audio, documents with extracted metadata and embeddings |
 | Email | Email messages with threads and attachments |
+| Document | Ingested documents and notes from external sources (e.g., Google Keep) |
 | SocialPost | Posts from Reddit, Twitter, etc. |
 | SocialComment | Comments on social posts (Reddit, YouTube, etc.) |
+| SocialFollow | Subscriptions/follows (e.g., subreddit subscriptions) |
 | BrowsingHistory | Browser history entries |
 | Bookmark | Saved bookmarks with folder organization |
-| KnowledgeNote | User-created notes and annotations |
+| KnowledgeNote | User-created notes and annotations within Potluck |
 | Location | Named places with coordinates |
 | LocationVisit | Visit instances at specific locations |
 | CalendarEvent | Calendar events with participants |
-| Transaction | Financial transactions and accounts |
+| Transaction | Financial transactions |
+| Budget | Budget categories and allocations (e.g., YNAB budgets) |
+| Tag | User-defined tags for organizing any entity type |
 
 ### Media Processing
 
 - **Hashing**: SHA256 for content dedup + perceptual hashing (pHash) for visual similarity
 - **OCR**: Text extraction from images using EasyOCR
-- **Face Detection**: Face encoding using DeepFace library (FaceNet backend, 128-d vectors) with auto-clustering via DBSCAN
+- **Face Detection**: MTCNN for face detection (returns 160x160 crops, resized to 112x112 for recognition), ArcFace IResNet50 for 512-d face embeddings (vendored implementation, no DeepFace dependency), with auto-clustering via DBSCAN
 - **Face Clustering**: Google Photos-style auto-clustering of detected faces into groups, with user review UI for person assignment
 - **EXIF Extraction**: Location, timestamp, camera info from photo metadata
-- **Image Captioning**: AI-generated image descriptions (alt-text) using BLIP-2 model
-- **Embeddings**: CLIP multimodal embeddings for image+text similarity
+- **Image Captioning**: AI-generated image descriptions (alt-text) using BLIP-2 (`Salesforce/blip2-opt-2.7b`)
+- **Embeddings**: SigLIP (`google/siglip-base-patch16-224`, 768-d) multimodal embeddings for cross-modal image+text search; e5-small-v2 (`intfloat/e5-small-v2`, 384-d) text embeddings for text-to-text semantic search; additional per-media OCR and caption text embeddings
+
+**Processor Priority Order** (executed sequentially by priority):
+
+| Priority | Processor | Description |
+|----------|-----------|-------------|
+| 10 | Hashing | SHA256 content hash + perceptual hash (pHash) |
+| 20 | Metadata | EXIF extraction (location, timestamp, camera info) |
+| 25 | Text Embedding | e5-small-v2 text-only embeddings (384-d) for text entities |
+| 26 | Multimodal Text Embedding | SigLIP text embeddings (768-d) for cross-modal search |
+| 28 | Media Embedding | SigLIP visual embeddings + OCR/caption text embeddings |
+| 30 | OCR | EasyOCR text extraction from images |
+| 40 | Faces | MTCNN detection + ArcFace IResNet50 embedding (512-d) |
+| 50 | Captioning | BLIP-2 image captioning |
 
 ### Search
 
@@ -94,25 +112,27 @@ All entities are generic and not tied to a specific source. A `source_type` fiel
 | Method | Column | What it Finds | Example |
 |--------|--------|---------------|---------|
 | Full-Text Search (FTS) | `search_vector` (TSVECTOR) | Keyword matches with stemming | "running" → "run", "runs" |
-| Vector Similarity | `embedding` (384d) | Semantically similar content | "car" → "automobile", "vehicle" |
+| Vector Similarity (text) | `embedding` (384d, e5-small-v2) | Semantically similar text content | "car" → "automobile", "vehicle" |
+| Vector Similarity (multimodal) | `multimodal_embedding` (768d, SigLIP) | Cross-modal text-to-image search | "sunset over ocean" → matching photos |
 
-- **TSVECTOR**: PostgreSQL's pre-processed text format for fast keyword lookup via GIN indexes. Auto-populated by triggers.
-- **Embeddings**: Dense vectors encoding meaning (e5-small-v2 for text, SigLIP for cross-modal image search).
-- **Reciprocal Rank Fusion (RRF)**: Blends ranked results from both methods with configurable weights.
+- **FTS**: Uses `websearch_to_tsquery` for Google-like search syntax and `ts_rank_cd` (cover density ranking) for scoring. GIN indexes on TSVECTOR columns, auto-populated by triggers.
+- **Embeddings**: Dense vectors encoding meaning (e5-small-v2 for text, SigLIP for cross-modal image search). pgvector HNSW indexes with cosine distance.
+- **Reciprocal Rank Fusion (RRF)**: Blends ranked results from both methods with configurable weights (default: FTS 0.3, Vector 0.7, k=60).
+- **Caching**: In-memory LRU cache with TTL-based expiration for search results.
 
 Search modes: FTS-only, vector-only (text or multimodal), or hybrid (default).
 
 ### Entity Linking
 
-Automatic relationship detection between entities:
+Automatic relationship detection between entities. Linker implementations live under `pipeline/processing/linkers/` (the top-level `linkers/` module is a reserved empty placeholder for future use).
 
-| Linker | Description |
-|--------|-------------|
-| Temporal | Entities from same time period |
-| Spatial | Entities near same geographic location |
-| Semantic | Entities with similar embedding vectors |
-| Person | Entities involving the same person (faces, names, contact info) |
-| Entity | Named entity linking (places, organizations) |
+| Linker | Description | Status |
+|--------|-------------|--------|
+| Temporal | Creates SAME_TIME links for entities occurring close in time | Implemented |
+| Spatial | Creates SAME_LOCATION and NEAR links based on coordinates | Implemented |
+| Semantic | Creates SIMILAR links based on embedding similarity | Implemented |
+| Person | Entities involving the same person (faces, names, contact info) | Not yet implemented |
+| Entity | Named entity linking (places, organizations) | Not yet implemented |
 
 ### Tagging System
 
@@ -122,6 +142,8 @@ Flexible tagging for organizing any entity type:
 - Support for "lambda tags" (unnamed quick annotations)
 
 ### MCP Server
+
+**Status: Planned but not yet implemented.** The `mcp/server.py` module exists as a stub that raises `NotImplementedError`. The design below represents the intended feature set.
 
 Expose knowledge to LLMs via stdio transport for Claude Desktop integration.
 
@@ -199,9 +221,10 @@ Server-side rendered interface using FastAPI + HTMX + Jinja2 with Tailwind CSS +
 | Database | Percona PostgreSQL 17 with pgvector + pg_tde |
 | Task Queue | Celery + Redis |
 | Text Embeddings | sentence-transformers (configurable) |
-| Multimodal Embeddings | CLIP |
+| Multimodal Embeddings | SigLIP (`google/siglip-base-patch16-224`) |
 | OCR | EasyOCR |
-| Face Recognition | DeepFace (FaceNet backend) |
+| Face Detection | MTCNN (`facenet-pytorch`) |
+| Face Recognition | ArcFace IResNet50 (vendored, 512-d embeddings) |
 | Image Captioning | BLIP-2 (transformers) |
 | Web Auth | itsdangerous (signed session cookies) |
 | Interactive Maps | Leaflet.js 1.9 (vendored) |
@@ -213,9 +236,11 @@ Server-side rendered interface using FastAPI + HTMX + Jinja2 with Tailwind CSS +
 
 ### Database Design
 
-- **Encrypted at rest** using pg_tde from day one
-- **pgvector** for vector similarity with HNSW indexes
-- **Multiple embeddings per entity** stored in separate tables
+- **Percona PostgreSQL 17** (not standard PostgreSQL) with **pg_tde** for transparent data encryption at rest
+- **pgvector** for vector similarity with **17 HNSW indexes** (cosine distance) and **11 GIN indexes** (for FTS TSVECTOR columns)
+- **22 TSVECTOR triggers** auto-populating search vectors on insert/update
+- **41 tables** total across all entity types, embeddings, relationships, and metadata
+- **Multiple embeddings per entity** stored in separate tables (e.g., `media_embedding` for SigLIP/OCR/caption embeddings per media item)
 
 ### Deployment
 
@@ -302,20 +327,26 @@ Server-side rendered interface using FastAPI + HTMX + Jinja2 with Tailwind CSS +
 ```
 potluck/
 ├── src/potluck/
-│   ├── core/          # Config, logging, Celery, CLI, exceptions
-│   ├── models/        # SQLModel entities
-│   ├── ingesters/     # Source-specific importers with pipeline
-│   ├── embeddings/    # Embedding providers
-│   ├── processing/    # OCR, hashing, face detection
-│   ├── search/        # Hybrid search implementation
-│   ├── linkers/       # Entity relationship detection
-│   ├── mcp/           # MCP server and tools
-│   ├── web/           # FastAPI + HTMX web UI
-│   └── db/            # Database session and migration management
-├── alembic/           # Database migrations
-├── tests/             # Unit and integration tests
-├── docker/            # Docker configuration files
-└── scripts/           # Utility scripts
+│   ├── core/              # Config, logging, Celery, CLI, exceptions, constants
+│   ├── models/            # SQLModel entities
+│   ├── pipeline/          # Unified ingestion and processing pipeline
+│   │   ├── ingestion/     # Source-specific importers (Google Takeout, Reddit, WhatsApp, etc.)
+│   │   ├── processing/    # Media processors (OCR, hashing, faces, captioning, embeddings)
+│   │   │   ├── processors/  # Individual processor implementations
+│   │   │   ├── _arcface/    # Vendored ArcFace face recognition
+│   │   │   ├── linkers/     # Entity relationship linkers (temporal, spatial, semantic)
+│   │   │   └── core/        # Base infrastructure, registry, ML model loading
+│   │   ├── tasks/         # Celery task orchestration
+│   │   └── utils/         # Archive extraction, hashing, parsers
+│   ├── search/            # Hybrid search implementation (FTS + vector + RRF)
+│   ├── linkers/           # Reserved placeholder (actual linkers in pipeline/processing/linkers/)
+│   ├── mcp/               # MCP server stub (not yet implemented)
+│   ├── web/               # FastAPI + HTMX web UI
+│   └── db/                # Database session and migration management
+├── alembic/               # Database migrations
+├── tests/                 # Unit and integration tests
+├── docker/                # Docker configuration files
+└── scripts/               # Utility scripts
 ```
 
 ## Appendix: Architecture Diagram
@@ -341,26 +372,27 @@ flowchart TB
         Exceptions["core/exceptions.py"]
     end
 
-    subgraph Ingesters["ingesters/ - Source Importers"]
+    subgraph Ingesters["pipeline/ingestion/ - Source Importers"]
         Pipeline["IngestionPipeline"]
         Tasks["Celery Tasks"]
         subgraph Implementations["Ingester Implementations"]
-            IG["GoogleTakeoutIngester"]
-            IR["RedditIngester"]
-            IW["WhatsAppIngester"]
-            IY["YNABIngester"]
-            IGn["GenericIngester"]
+            IG["GoogleTakeoutStage"]
+            IAT["AndroidTimelineStage"]
+            IR["RedditStage"]
+            IW["WhatsAppStage"]
+            IY["YNABStage"]
+            IGn["GenericStages<br/>(ImageFolder, TextFiles, MBOX)"]
         end
     end
 
-    subgraph Processing["Processing Pipeline"]
-        Embed["embeddings/<br/>CLIP, Transformers"]
-        Proc["processing/<br/>OCR, Faces, Hash"]
+    subgraph Processing["pipeline/processing/ - Processing Pipeline"]
+        Embed["processors/embeddings.py<br/>SigLIP, e5-small-v2"]
+        Proc["processors/<br/>OCR, Faces (MTCNN+ArcFace),<br/>Hash, Captioning (BLIP-2),<br/>Metadata"]
     end
 
     subgraph Intelligence["Intelligence Layer"]
-        Search["search/<br/>Vector Similarity"]
-        Linkers["linkers/<br/>Temporal, Spatial,<br/>Semantic, Person"]
+        Search["search/<br/>Hybrid (FTS + Vector + RRF)"]
+        Linkers["pipeline/processing/linkers/<br/>Temporal, Spatial, Semantic"]
     end
 
     subgraph Models["models/ - SQLModel Entities"]
@@ -392,6 +424,7 @@ flowchart TB
 
     subgraph Sources["Data Sources"]
         S1["Google Takeout"]
+        S1a["Android Timeline"]
         S2["Reddit GDPR"]
         S3["WhatsApp"]
         S4["YNAB"]
@@ -416,6 +449,7 @@ flowchart TB
 
     %% Source to Ingester mapping
     S1 ==>|imports| IG
+    S1a ==>|imports| IAT
     S2 ==>|imports| IR
     S3 ==>|imports| IW
     S4 ==>|imports| IY
@@ -460,11 +494,11 @@ flowchart TB
     class U1,U2,U3 users
     class MCP,Web,CLI interface
     class Config,Celery,Logging,Exceptions core
-    class Pipeline,Tasks,IG,IR,IW,IY,IGn ingestion
+    class Pipeline,Tasks,IG,IAT,IR,IW,IY,IGn ingestion
     class Embed,Proc processing
     class Search,Linkers intelligence
     class Mmsg,Memail,Msocial,Mmedia,Mpeople,Mloc,Mcal,Mbrowse,Mfin,Mnotes,Mtags,Mlinks models
     class Session,Migration database
     class PG,Redis,FS storage
-    class S1,S2,S3,S4,S5 sources
+    class S1,S1a,S2,S3,S4,S5 sources
 ```

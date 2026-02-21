@@ -1,4 +1,10 @@
-"""People router — person management, aliases, and merging."""
+"""People router -- person management, aliases, and merging.
+
+Merge strategy: merging sets ``source.merged_into_id`` to the target person
+and reassigns all aliases from source to target. Merged persons are excluded
+from list queries (filtered by ``merged_into_id IS NULL``) but remain in the
+database so that foreign keys from other entities stay valid.
+"""
 
 from uuid import UUID
 

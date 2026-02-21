@@ -1,4 +1,10 @@
-"""Tags router — CRUD for Tag entities."""
+"""Tags router -- CRUD for Tag entities.
+
+Tag search uses case-insensitive ILIKE matching against both the tag
+name and description fields (OR'd together), so a query for "travel"
+matches tags named "Travel" as well as tags whose description mentions
+travel. Results are ordered by most recently updated.
+"""
 
 from uuid import UUID
 

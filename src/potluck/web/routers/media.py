@@ -1,4 +1,14 @@
-"""Media gallery router — browsing, filtering, and lightbox view."""
+"""Media gallery router -- browsing, filtering, and lightbox view.
+
+Supported filters (all combinable, applied via query params):
+    - media_type: Restrict to a specific MediaType (image, video, etc.)
+    - has_ocr: Show only items with extracted OCR text
+    - q: Case-insensitive ILIKE search across caption and OCR text fields
+
+Results are ordered by occurred_at descending (NULLS LAST), then by
+created_at descending as a tiebreaker. HTMX partial responses return
+only the media grid fragment for infinite-scroll pagination.
+"""
 
 from uuid import UUID
 

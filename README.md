@@ -74,79 +74,21 @@ cd potluck
 ./scripts/setup.sh --db-only  # Start only DB, run app locally with: uv run potluck web
 ```
 
-## Encryption Key Management
+## Encryption
 
-Potluck uses [pg_tde](https://docs.percona.com/pg-tde/) for transparent data encryption. All database tables are encrypted at rest.
-
-### Development (File-Based Keys)
-
-By default, encryption keys are stored in a local file. This is **suitable for development only**:
-
-```bash
-# Default setup uses file-based keys
-./scripts/setup.sh
-```
-
-You'll see a warning:
-```
-⚠️  SECURITY WARNING: Using file-based encryption keys
-```
-
-### Production (HashiCorp Vault)
-
-For production, configure [HashiCorp Vault](https://www.vaultproject.io/) as the key provider:
-
-1. **Set up Vault** with a KV v2 secrets engine:
-   ```bash
-   # Enable KV v2 secrets engine (if not already enabled)
-   vault secrets enable -path=secret kv-v2
-   ```
-
-2. **Configure Potluck** with Vault credentials:
-   ```bash
-   # Option 1: Interactive setup
-   ./scripts/setup.sh
-   # When prompted, enter your Vault URL and token
-
-   # Option 2: Manual configuration in .env
-   VAULT_URL=https://vault.example.com:8200
-   VAULT_TOKEN=your-vault-token
-   VAULT_MOUNT=secret
-   ```
-
-3. **Start fresh** (required when switching key providers):
-   ```bash
-   docker compose down -v
-   ./scripts/setup.sh
-   ```
-
-### Other Key Management Systems
-
-pg_tde also supports KMIP-compatible KMS providers (AWS KMS, Azure Key Vault, etc.). See the [pg_tde documentation](https://docs.percona.com/pg-tde/global-key-provider-configuration/index.html) for configuration details.
+All database tables are encrypted at rest via [pg_tde](https://docs.percona.com/pg-tde/). Development uses file-based keys (automatic). For production with HashiCorp Vault, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Testing
-
-All tests run in Docker to ensure consistency between local development and CI.
 
 ```bash
 # Run all tests
 docker compose --profile test run --rm test
 
-# Run specific test file
-docker compose --profile test run --rm test uv run pytest tests/unit/models/ -v
-
 # Run with e2e tests (database integration)
 docker compose --profile test run --rm test uv run pytest tests/ -v --run-e2e
 ```
 
-GitHub Actions uses the same configuration with the `test` profile.
-
-The tests verify:
-- Docker containers start correctly (Percona PostgreSQL 17 with pgvector + pg_tde)
-- PostgreSQL extensions are installed (vector, pg_tde, uuid-ossp)
-- All tables are created with pg_tde encryption enabled
-- Alembic migrations run successfully
-- ML processing (OCR, face detection, captioning) works correctly
+See [tests/README.md](tests/README.md) for the full marker system, fixture hierarchy, and CI details.
 
 ## Usage
 
@@ -194,6 +136,14 @@ potluck/
 ├── scripts/           # Setup and utility scripts
 └── docker/            # Dockerfiles for app and database
 ```
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) -- System architecture, data flow, and design decisions
+- [Issues](docs/ISSUES.md) -- Known issues and limitations
+- [Deployment](docs/DEPLOYMENT.md) -- Encryption, production setup, key management
+- [Releasing](docs/RELEASING.md) -- Version bumps, tagging, CI publishing
+- [PRD](docs/PRD.md) -- Product requirements document
 
 ## License
 

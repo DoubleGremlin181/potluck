@@ -1,4 +1,17 @@
-"""SQLModel entities for Potluck."""
+"""SQLModel entities for Potluck.
+
+Entity hierarchy:
+    SQLModel
+      -> SimpleEntity (id, created_at, updated_at) -- for auxiliary tables
+        -> BaseEntity (+ source_type, source_id, content_hash) -- for source-tracked entities
+          -> TimestampedEntity (+ occurred_at, precision, timezone) -- for temporal entities
+            -> GeolocatedEntity (+ lat, lon, altitude) -- for spatial entities
+
+All entities are imported here for convenient access and to ensure SQLModel
+metadata registration. Use ``register_models()`` to trigger table creation
+(e.g., in Alembic migrations) and ``get_entity_type_model_map()`` to resolve
+an EntityType enum to its model class at runtime.
+"""
 
 from sqlmodel import SQLModel
 
