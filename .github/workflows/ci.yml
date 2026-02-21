@@ -205,11 +205,6 @@ jobs:
           docker compose --profile test run --rm test \
             uv run alembic upgrade head
 
-      - name: Install Playwright browsers
-        run: |
-          docker compose --profile test run --rm test \
-            uv run playwright install --with-deps chromium
-
       - name: Run unit and e2e tests
         run: |
           docker compose --profile test run --rm test \
@@ -218,7 +213,7 @@ jobs:
       - name: Run browser tests
         run: |
           docker compose --profile test run --rm test \
-            uv run pytest tests/e2e/ -v -m browser
+            bash -c "uv run playwright install --with-deps chromium && uv run pytest tests/e2e/ -v -m browser"
 
       - name: Copy coverage report
         if: always()
