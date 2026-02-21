@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,15 +38,12 @@ async def entity_detail(
 
     # Look up the entity type
     entity_map = get_entity_type_model_map()
-    matched_type: EntityType | None = None
-    for et in EntityType:
-        if et.value == entity_type:
-            matched_type = et
-            break
+    try:
+        matched_type = EntityType(entity_type)
+    except ValueError:
+        matched_type = None
 
     if matched_type is None or matched_type not in entity_map:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail=f"Unknown entity type: {entity_type}")
 
     model = entity_map[matched_type]
@@ -57,8 +54,6 @@ async def entity_detail(
     entity = result.scalar_one_or_none()
 
     if entity is None:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Entity not found")
 
     # Build field list for display

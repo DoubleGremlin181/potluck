@@ -1,5 +1,6 @@
 """Celery tasks for background ingestion jobs."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -109,8 +110,6 @@ def run_ingestion(
     # Parse date filters
     filters: PipelineFilter | None = None
     if since or until:
-        from datetime import datetime
-
         try:
             filters = PipelineFilter(
                 since=datetime.fromisoformat(since) if since else None,

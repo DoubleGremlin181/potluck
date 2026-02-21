@@ -3,7 +3,7 @@
 import contextlib
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,6 +83,9 @@ async def media_detail(
     stmt = select(Media).where(col(Media.id) == media_id)
     result = await db.execute(stmt)
     media = result.scalar_one_or_none()
+
+    if media is None:
+        raise HTTPException(status_code=404, detail="Media not found")
 
     templates = request.app.state.templates
     return templates.TemplateResponse(  # type: ignore[no-any-return]
