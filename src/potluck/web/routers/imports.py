@@ -216,7 +216,13 @@ async def cancel_import(run_id: str) -> RedirectResponse:
 async def browse_files(
     path: str = Query(default="", description="Directory path"),
 ) -> JSONResponse:
-    """Browse server filesystem for import paths."""
+    """Browse server filesystem for import paths.
+
+    Full filesystem access is intentional: Potluck runs exclusively on
+    the user's local machine (or a self-hosted Docker container on their
+    LAN) and needs to reach data exports stored anywhere on disk.
+    Authentication is handled by the require_auth dependency on the router.
+    """
     base_path = Path(path) if path else Path.home()
 
     if not base_path.exists() or not base_path.is_dir():
