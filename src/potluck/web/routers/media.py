@@ -1,6 +1,5 @@
 """Media gallery router — browsing, filtering, and lightbox view."""
 
-import contextlib
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -10,8 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 from starlette.responses import Response
 
+from potluck.core.logging import get_logger
 from potluck.models.media import Media, MediaType
 from potluck.web.dependencies import get_db, require_auth
+
+logger = get_logger("web.media")
 
 router = APIRouter(prefix="/media", tags=["media"], dependencies=[Depends(require_auth)])
 
@@ -34,8 +36,10 @@ async def media_gallery(
 
     # Filters
     if media_type:
-        with contextlib.suppress(ValueError):
+        try:
             stmt = stmt.where(col(Media.media_type) == MediaType(media_type))
+        except ValueError:
+            logger.warning("Ignoring invalid media type filter: %s", media_type)
 
     if has_ocr:
         stmt = stmt.where(col(Media.ocr_text).isnot(None))

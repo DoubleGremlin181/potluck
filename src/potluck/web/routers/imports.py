@@ -1,7 +1,6 @@
 """Imports router — upload, file browser, import history, and progress."""
 
-import contextlib
-import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -54,8 +53,10 @@ async def imports_page(
     )
 
     if status_filter:
-        with contextlib.suppress(ValueError):
+        try:
             history_stmt = history_stmt.where(col(ImportRun.status) == ImportStatus(status_filter))
+        except ValueError:
+            logger.warning("Ignoring invalid status filter: %s", status_filter)
 
     count_stmt = select(func.count()).select_from(history_stmt.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
@@ -135,6 +136,12 @@ async def upload_file(
     original_name = file.filename or "upload"
     tmp_path = Path(tmp_dir) / original_name
     content = await file.read()
+
+    # Reject files larger than 10 GB
+    max_size = 10 * 1024 * 1024 * 1024  # 10 GB
+    if len(content) > max_size:
+        return RedirectResponse(url="/imports?error=file_too_large", status_code=303)
+
     tmp_path.write_bytes(content)
 
     # Convert entity types
@@ -154,7 +161,9 @@ async def upload_file(
             until=until or None,
         )
     except Exception:
-        os.unlink(tmp_path)
+        # Clean up the entire temp directory on failure;
+        # on success, the Celery worker handles cleanup after ingestion.
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
     return RedirectResponse(url="/imports", status_code=303)
@@ -196,7 +205,10 @@ async def start_import_from_path(
 @router.post("/{run_id}/cancel")
 async def cancel_import(run_id: str) -> RedirectResponse:
     """Cancel a running import."""
-    cancel_ingestion(run_id)
+    result = cancel_ingestion(run_id)
+    if not result.get("success"):
+        logger.warning("Cancel failed for run %s: %s", run_id, result.get("error"))
+        return RedirectResponse(url="/imports?error=cancel_failed", status_code=303)
     return RedirectResponse(url="/imports", status_code=303)
 
 

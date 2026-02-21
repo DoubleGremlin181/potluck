@@ -1,6 +1,5 @@
 """Timeline router — scrolling feed of entities ordered by time."""
 
-import contextlib
 from collections import OrderedDict
 from datetime import datetime
 
@@ -10,9 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 from starlette.responses import Response
 
+from potluck.core.logging import get_logger
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.web.dependencies import get_db, require_auth
+
+logger = get_logger("web.timeline")
 
 router = APIRouter(prefix="/timeline", tags=["timeline"], dependencies=[Depends(require_auth)])
 
@@ -37,10 +39,12 @@ def _parse_types(types: list[str]) -> set[EntityType]:
     target_types: set[EntityType] = set()
     if types:
         for t in types:
-            with contextlib.suppress(ValueError):
+            try:
                 et = EntityType(t)
                 if et in _TIMELINE_TYPES:
                     target_types.add(et)
+            except ValueError:
+                logger.warning("Ignoring invalid entity type filter: %s", t)
     return target_types or _TIMELINE_TYPES
 
 
@@ -131,11 +135,15 @@ async def timeline_page(
     since_dt: datetime | None = None
     until_dt: datetime | None = None
     if since:
-        with contextlib.suppress(ValueError):
+        try:
             since_dt = datetime.fromisoformat(since)
+        except ValueError:
+            logger.warning("Ignoring invalid 'since' date: %s", since)
     if until:
-        with contextlib.suppress(ValueError):
+        try:
             until_dt = datetime.fromisoformat(until)
+        except ValueError:
+            logger.warning("Ignoring invalid 'until' date: %s", until)
 
     items = await _fetch_timeline_items(db, target_types, since_dt, until_dt, None, _PAGE_SIZE)
     date_groups = _group_by_date(items)
@@ -179,13 +187,19 @@ async def timeline_items(
     until_dt: datetime | None = None
     before_dt: datetime | None = None
     if since:
-        with contextlib.suppress(ValueError):
+        try:
             since_dt = datetime.fromisoformat(since)
+        except ValueError:
+            logger.warning("Ignoring invalid 'since' date: %s", since)
     if until:
-        with contextlib.suppress(ValueError):
+        try:
             until_dt = datetime.fromisoformat(until)
-    with contextlib.suppress(ValueError):
+        except ValueError:
+            logger.warning("Ignoring invalid 'until' date: %s", until)
+    try:
         before_dt = datetime.fromisoformat(before)
+    except ValueError:
+        logger.warning("Ignoring invalid 'before' cursor: %s", before)
 
     items = await _fetch_timeline_items(db, target_types, since_dt, until_dt, before_dt, _PAGE_SIZE)
     date_groups = _group_by_date(items)

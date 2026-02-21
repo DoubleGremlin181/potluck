@@ -33,7 +33,10 @@ async def login(request: Request, password: str = Form(...)) -> Response:
     """Verify password and set signed session cookie."""
     settings = get_settings()
 
-    if not hmac.compare_digest(password, settings.web_password or ""):
+    if not settings.web_password:
+        return RedirectResponse(url="/", status_code=303)
+
+    if not hmac.compare_digest(password, settings.web_password):
         templates = request.app.state.templates
         return templates.TemplateResponse(  # type: ignore[no-any-return]
             request,

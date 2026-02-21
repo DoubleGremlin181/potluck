@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 from starlette.responses import StreamingResponse
@@ -27,6 +28,8 @@ async def _progress_stream() -> AsyncGenerator[str, None]:
     a connection pool slot for the lifetime of the SSE stream.
     """
     engine = get_async_engine()
+    consecutive_failures = 0
+    max_failures = 5
     while True:
         try:
             async with AsyncSession(engine, expire_on_commit=False) as db:
@@ -53,10 +56,21 @@ async def _progress_stream() -> AsyncGenerator[str, None]:
 
                 data = json.dumps({"jobs": jobs, "active_count": len(jobs)})
                 yield f"event: progress\ndata: {data}\n\n"
-        except Exception:
-            logger.exception("SSE progress stream: database query failed")
+                consecutive_failures = 0
+        except SQLAlchemyError:
+            consecutive_failures += 1
+            logger.exception(
+                "SSE progress stream: database query failed (%d/%d)",
+                consecutive_failures,
+                max_failures,
+            )
             error_data = json.dumps({"error": "Failed to fetch progress updates"})
             yield f"event: error\ndata: {error_data}\n\n"
+
+            if consecutive_failures >= max_failures:
+                fatal_data = json.dumps({"error": "Too many consecutive failures, closing stream"})
+                yield f"event: fatal\ndata: {fatal_data}\n\n"
+                return
 
         await asyncio.sleep(2)
 

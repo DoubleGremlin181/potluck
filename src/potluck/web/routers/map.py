@@ -1,6 +1,5 @@
 """Map router — Leaflet map view for geolocated entities."""
 
-import contextlib
 from datetime import datetime
 from typing import Any
 
@@ -11,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 from starlette.responses import Response
 
+from potluck.core.logging import get_logger
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.web.dependencies import get_db, require_auth
+
+logger = get_logger("web.map")
 
 router = APIRouter(prefix="/map", tags=["map"], dependencies=[Depends(require_auth)])
 
@@ -117,11 +119,15 @@ async def map_markers(
     since_dt: datetime | None = None
     until_dt: datetime | None = None
     if since:
-        with contextlib.suppress(ValueError):
+        try:
             since_dt = datetime.fromisoformat(since)
+        except ValueError:
+            logger.warning("Ignoring invalid 'since' date: %s", since)
     if until:
-        with contextlib.suppress(ValueError):
+        try:
             until_dt = datetime.fromisoformat(until)
+        except ValueError:
+            logger.warning("Ignoring invalid 'until' date: %s", until)
 
     target_types = set()
     if types:
@@ -131,7 +137,7 @@ async def map_markers(
                 if et in _GEO_TYPES:
                     target_types.add(et)
             except ValueError:
-                pass
+                logger.warning("Ignoring invalid entity type filter: %s", t)
     else:
         target_types = _GEO_TYPES
 

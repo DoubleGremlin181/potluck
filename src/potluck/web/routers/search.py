@@ -1,6 +1,5 @@
 """Search router — hybrid search with filters and browse mode."""
 
-import contextlib
 from datetime import datetime
 from typing import Any
 
@@ -139,8 +138,10 @@ async def search_page(
         # Browse mode: show entities of the selected type(s)
         browse_entity_types = []
         for t in types:
-            with contextlib.suppress(ValueError):
+            try:
                 browse_entity_types.append(EntityType(t))
+            except ValueError:
+                logger.warning("Ignoring invalid entity type in browse mode: %s", t)
         if browse_entity_types:
             browse_results, browse_total = await _browse_entities(
                 db, browse_entity_types, page, _BROWSE_PAGE_SIZE
