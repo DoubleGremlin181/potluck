@@ -119,6 +119,18 @@ async def active_imports_partial(
     )
 
 
+def _parse_import_params(
+    entity_types: list[str],
+    source_type: str,
+) -> tuple[list[EntityType] | None, SourceType | None]:
+    """Parse shared entity_types and source_type form parameters."""
+    types: list[EntityType] | None = None
+    if entity_types:
+        types = [EntityType(t) for t in entity_types if t]
+    st = SourceType(source_type) if source_type else None
+    return types, st
+
+
 @router.post("/upload")
 async def upload_file(
     request: Request,
@@ -144,13 +156,7 @@ async def upload_file(
 
     tmp_path.write_bytes(content)
 
-    # Convert entity types
-    types: list[EntityType] | None = None
-    if entity_types:
-        types = [EntityType(t) for t in entity_types if t]
-
-    # Parse optional overrides
-    st = SourceType(source_type) if source_type else None
+    types, st = _parse_import_params(entity_types, source_type)
 
     try:
         task_id, import_run_id = start_ingestion(
@@ -182,11 +188,7 @@ async def start_import_from_path(
     if not file_path.exists():
         return RedirectResponse(url="/imports?error=path_not_found", status_code=303)
 
-    types: list[EntityType] | None = None
-    if entity_types:
-        types = [EntityType(t) for t in entity_types if t]
-
-    st = SourceType(source_type) if source_type else None
+    types, st = _parse_import_params(entity_types, source_type)
 
     try:
         start_ingestion(

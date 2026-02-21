@@ -10,12 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 from starlette.responses import Response
 
-from potluck.core.logging import get_logger
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.web.dependencies import get_db, require_auth
-
-logger = get_logger("web.map")
+from potluck.web.utils import parse_entity_types, parse_optional_datetime
 
 router = APIRouter(prefix="/map", tags=["map"], dependencies=[Depends(require_auth)])
 
@@ -116,30 +114,10 @@ async def map_markers(
     """Return markers for the viewport bounds."""
     entity_map = get_entity_type_model_map()
 
-    since_dt: datetime | None = None
-    until_dt: datetime | None = None
-    if since:
-        try:
-            since_dt = datetime.fromisoformat(since)
-        except ValueError:
-            logger.warning("Ignoring invalid 'since' date: %s", since)
-    if until:
-        try:
-            until_dt = datetime.fromisoformat(until)
-        except ValueError:
-            logger.warning("Ignoring invalid 'until' date: %s", until)
+    since_dt = parse_optional_datetime(since, field_name="since")
+    until_dt = parse_optional_datetime(until, field_name="until")
 
-    target_types = set()
-    if types:
-        for t in types:
-            try:
-                et = EntityType(t)
-                if et in _GEO_TYPES:
-                    target_types.add(et)
-            except ValueError:
-                logger.warning("Ignoring invalid entity type filter: %s", t)
-    else:
-        target_types = _GEO_TYPES
+    target_types = parse_entity_types(types, allowed=_GEO_TYPES) if types else _GEO_TYPES
 
     markers: list[dict[str, object]] = []
 

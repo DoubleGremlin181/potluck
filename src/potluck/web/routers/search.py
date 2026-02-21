@@ -17,6 +17,7 @@ from potluck.models.base import EntityType, SourceType
 from potluck.search import SearchQuery, SearchResults, search
 from potluck.search.dtos import SearchMode
 from potluck.web.dependencies import get_db, require_auth
+from potluck.web.utils import parse_entity_types
 
 logger = get_logger("web.search")
 
@@ -140,12 +141,7 @@ async def search_page(
 
     elif types:
         # Browse mode: show entities of the selected type(s)
-        browse_entity_types = []
-        for t in types:
-            try:
-                browse_entity_types.append(EntityType(t))
-            except ValueError:
-                logger.warning("Ignoring invalid entity type in browse mode: %s", t)
+        browse_entity_types = list(parse_entity_types(types))
         if browse_entity_types:
             browse_results, browse_total = await _browse_entities(
                 db, browse_entity_types, page, _BROWSE_PAGE_SIZE
