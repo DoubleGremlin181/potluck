@@ -20,7 +20,8 @@ from sqlmodel import col
 from starlette.responses import Response
 
 from potluck.core.logging import get_logger
-from potluck.models.media import Media, MediaType
+from potluck.models.faces import MediaPersonLink
+from potluck.models.media import Media, MediaEmbedding, MediaType
 from potluck.web.dependencies import get_db, require_auth
 
 logger = get_logger("web.media")
@@ -101,9 +102,39 @@ async def media_detail(
     if media is None:
         raise HTTPException(status_code=404, detail="Media not found")
 
+    # Fetch embeddings count by type
+    emb_stmt = (
+        select(col(MediaEmbedding.embedding_type), func.count())
+        .where(col(MediaEmbedding.media_id) == media_id)
+        .group_by(col(MediaEmbedding.embedding_type))
+    )
+    emb_result = await db.execute(emb_stmt)
+    embeddings = {row[0]: row[1] for row in emb_result.all()}
+
+    # Fetch face detections
+    face_stmt = select(MediaPersonLink).where(col(MediaPersonLink.media_id) == media_id)
+    face_result = await db.execute(face_stmt)
+    faces = list(face_result.scalars().all())
+
+    # Processing status flags
+    processing = {
+        "has_hash": media.file_hash is not None,
+        "has_metadata": media.width is not None,
+        "has_ocr": media.ocr_text is not None,
+        "has_caption": media.caption is not None,
+        "has_embeddings": len(embeddings) > 0,
+        "embedding_count": len(embeddings),
+        "face_count": len(faces),
+    }
+
     templates = request.app.state.templates
     return templates.TemplateResponse(  # type: ignore[no-any-return]
         request,
         "partials/media_detail.html",
-        {"media": media},
+        {
+            "media": media,
+            "embeddings": embeddings,
+            "faces": faces,
+            "processing": processing,
+        },
     )

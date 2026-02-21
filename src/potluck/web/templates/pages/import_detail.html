@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Import Run — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- Header -->
+  <div class="animate-in">
+    <div class="flex items-center gap-3 mb-4">
+      <a href="/imports" class="btn btn-ghost btn-sm btn-circle">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </a>
+      <div>
+        <h1 class="text-3xl font-display font-bold tracking-tight">Import Run</h1>
+        <p class="text-sm text-base-content/50 mt-0.5">
+          {{ run.source.name if run.source else 'Unknown Source' }}
+          &middot; {{ run.started_at.strftime('%B %d, %Y at %H:%M') }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status & Timing -->
+  <div class="animate-in animate-in-delay-1 flex flex-wrap items-center gap-4">
+    <span class="badge badge-lg badge-{{
+      'success' if run.status.value == 'completed' else
+      'error' if run.status.value == 'failed' else
+      'warning' if run.status.value == 'running' else
+      'info' if run.status.value == 'pending' else
+      'ghost'
+    }}">
+      {{ run.status.value | title }}
+    </span>
+    {% if duration %}
+    <span class="text-sm text-base-content/50">Duration: <span class="font-mono">{{ duration }}</span></span>
+    {% endif %}
+    {% if run.is_running and run.progress_percent is not none %}
+    <span class="text-sm text-base-content/50">Progress: <span class="font-mono">{{ "%.1f" | format(run.progress_percent) }}%</span></span>
+    {% endif %}
+  </div>
+
+  {% if run.is_running %}
+  <!-- Progress bar for running imports -->
+  <div class="animate-in animate-in-delay-1">
+    {% if run.progress_percent is not none %}
+    <progress class="progress progress-primary w-full h-3" value="{{ run.progress_percent }}" max="100"></progress>
+    <div class="flex justify-between text-xs text-base-content/40 mt-1">
+      <span>{{ run.progress_current }} / {{ run.progress_total }}</span>
+      {% if run.current_file %}
+      <span class="truncate max-w-md">{{ run.current_file }}</span>
+      {% endif %}
+    </div>
+    {% else %}
+    <progress class="progress progress-primary w-full h-3"></progress>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Entity Statistics -->
+  <div class="animate-in animate-in-delay-1">
+    <h2 class="text-lg font-display font-semibold mb-3">Import Statistics</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+      <div class="card bg-base-200/60 border border-base-300/40 rounded-xl p-4 text-center">
+        <span class="text-2xl font-bold font-display text-base-content/80 tabular-nums">{{ "{:,}".format(run.entities_found) }}</span>
+        <p class="text-xs text-base-content/40 mt-1">Found</p>
+      </div>
+      <div class="card bg-base-200/60 border border-base-300/40 rounded-xl p-4 text-center">
+        <span class="text-2xl font-bold font-display text-success tabular-nums">{{ "{:,}".format(run.entities_created) }}</span>
+        <p class="text-xs text-base-content/40 mt-1">Created</p>
+      </div>
+      <div class="card bg-base-200/60 border border-base-300/40 rounded-xl p-4 text-center">
+        <span class="text-2xl font-bold font-display text-info tabular-nums">{{ "{:,}".format(run.entities_updated) }}</span>
+        <p class="text-xs text-base-content/40 mt-1">Updated</p>
+      </div>
+      <div class="card bg-base-200/60 border border-base-300/40 rounded-xl p-4 text-center">
+        <span class="text-2xl font-bold font-display text-warning tabular-nums">{{ "{:,}".format(run.entities_skipped) }}</span>
+        <p class="text-xs text-base-content/40 mt-1">Skipped</p>
+      </div>
+      <div class="card bg-base-200/60 border border-base-300/40 rounded-xl p-4 text-center">
+        <span class="text-2xl font-bold font-display text-error tabular-nums">{{ "{:,}".format(run.entities_failed) }}</span>
+        <p class="text-xs text-base-content/40 mt-1">Failed</p>
+      </div>
+    </div>
+  </div>
+
+  {% if run.error_message %}
+  <!-- Error Details -->
+  <div class="animate-in animate-in-delay-2">
+    <details class="collapse collapse-arrow bg-error/10 border border-error/30 rounded-xl">
+      <summary class="collapse-title font-semibold text-sm text-error">Error Details</summary>
+      <div class="collapse-content">
+        <pre class="text-xs font-mono bg-base-300/30 rounded-lg p-4 overflow-auto max-h-64 whitespace-pre-wrap">{{ run.error_message }}</pre>
+      </div>
+    </details>
+  </div>
+  {% endif %}
+
+  <!-- Processing Pipeline Status -->
+  <div class="animate-in animate-in-delay-2">
+    <h2 class="text-lg font-display font-semibold mb-3">Processing Pipeline</h2>
+    <p class="text-sm text-base-content/50 mb-4">Processing runs asynchronously after import. These are global counts across all imports.</p>
+
+    <div class="card bg-base-200/60 border border-base-300/40 rounded-xl">
+      <div class="card-body p-5 space-y-4">
+        {% set stages = [
+          ("Hashing", processing_stats.hashing, processing_stats.media_total, "SHA256 + perceptual hash"),
+          ("Metadata", processing_stats.metadata, processing_stats.media_total, "EXIF extraction"),
+          ("OCR", processing_stats.ocr, processing_stats.media_total, "Text extraction from images"),
+          ("Captioning", processing_stats.captions, processing_stats.media_total, "AI image descriptions"),
+        ] %}
+
+        {% for name, done, total, desc in stages %}
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <div>
+              <span class="text-sm font-medium">{{ name }}</span>
+              <span class="text-xs text-base-content/40 ml-2">{{ desc }}</span>
+            </div>
+            <span class="text-xs font-mono text-base-content/50">{{ done }} / {{ total }}</span>
+          </div>
+          {% if total > 0 %}
+          <progress class="progress progress-{{ 'success' if done == total else 'primary' }} w-full h-2" value="{{ done }}" max="{{ total }}"></progress>
+          {% else %}
+          <progress class="progress w-full h-2" value="0" max="100"></progress>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="border-t border-base-300/30 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="flex justify-between items-center">
+            <div>
+              <span class="text-sm font-medium">Embeddings</span>
+              <span class="text-xs text-base-content/40 ml-2">Visual + text embeddings</span>
+            </div>
+            <span class="badge badge-outline badge-sm tabular-nums">{{ "{:,}".format(processing_stats.embeddings) }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <div>
+              <span class="text-sm font-medium">Faces Detected</span>
+              <span class="text-xs text-base-content/40 ml-2">MTCNN + ArcFace</span>
+            </div>
+            <span class="badge badge-outline badge-sm tabular-nums">{{ "{:,}".format(processing_stats.faces) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Run Metadata -->
+  <div class="animate-in animate-in-delay-3 text-xs text-base-content/30 flex flex-wrap items-center gap-4">
+    <span>Run ID: <code class="font-mono">{{ run.id }}</code></span>
+    {% if run.file_hash %}
+    <span>File Hash: <code class="font-mono">{{ run.file_hash[:16] }}...</code></span>
+    {% endif %}
+    <span>Started: {{ run.started_at.strftime('%b %d, %Y at %H:%M:%S') }}</span>
+    {% if run.completed_at %}
+    <span>Completed: {{ run.completed_at.strftime('%b %d, %Y at %H:%M:%S') }}</span>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

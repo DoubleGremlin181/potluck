@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% from "components/pagination.html" import pagination %}
+
+{% block title %}Face Clusters — Potluck{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="animate-in flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-3 mb-2">
+        <a href="/people" class="btn btn-ghost btn-sm gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          People
+        </a>
+      </div>
+      <h1 class="text-4xl font-display font-bold tracking-tight">Face Clusters</h1>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="divider-accent"></div>
+        <p class="text-base-content/50">
+          {{ "{:,}".format(total) }} clusters
+          {% if pending_count > 0 %}
+          &middot; <span class="text-warning">{{ pending_count }} pending review</span>
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <select
+      onchange="window.location.href='/people/clusters?status_filter='+this.value"
+      class="select select-bordered select-sm bg-base-200/50">
+      <option value="" {{ 'selected' if not status_filter }}>All statuses</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {{ 'selected' if s == status_filter }}>{{ s | title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {% if clusters %}
+  <div class="animate-in animate-in-delay-1 space-y-4">
+    {% for cluster in clusters %}
+    <div class="card bg-base-200/60 border border-base-300/40 rounded-xl">
+      <div class="card-body p-5">
+        <div class="flex flex-col lg:flex-row gap-4">
+
+          <!-- Cluster info -->
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="badge badge-lg badge-{{
+                'warning' if cluster.status.value == 'pending' else
+                'success' if cluster.status.value == 'confirmed' else
+                'ghost'
+              }}">{{ cluster.status.value | title }}</span>
+              <span class="text-sm text-base-content/50">
+                {{ cluster.face_count }} face{{ 's' if cluster.face_count != 1 else '' }}
+              </span>
+              {% if cluster.person_id %}
+              <span class="text-sm text-base-content/50">
+                &middot; Assigned to a person
+              </span>
+              {% endif %}
+            </div>
+
+            <!-- Face thumbnails -->
+            {% set media_ids = cluster_media.get(cluster.id | string, []) %}
+            {% if media_ids %}
+            <div class="flex flex-wrap gap-2">
+              {% for mid in media_ids %}
+              <div class="w-16 h-16 rounded-lg overflow-hidden bg-base-300/50">
+                <img src="/media/thumb/{{ mid }}" alt="Face"
+                  class="w-full h-full object-cover" loading="lazy">
+              </div>
+              {% endfor %}
+              {% if cluster.face_count > media_ids | length %}
+              <div class="w-16 h-16 rounded-lg bg-base-300/50 flex items-center justify-center">
+                <span class="text-xs text-base-content/40">+{{ cluster.face_count - media_ids | length }}</span>
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Actions -->
+          {% if cluster.status.value == 'pending' %}
+          <div class="flex flex-col gap-2 lg:w-64 shrink-0">
+            <!-- Assign to person -->
+            <form method="POST" action="/people/clusters/{{ cluster.id }}/assign" class="flex gap-2">
+              <select name="person_id" class="select select-bordered select-sm flex-1 bg-base-100/50" required>
+                <option value="">Assign to...</option>
+                {% for person in people %}
+                <option value="{{ person.id }}">{{ person.display_name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-success btn-sm">Assign</button>
+            </form>
+
+            <!-- Reject -->
+            <form method="POST" action="/people/clusters/{{ cluster.id }}/reject">
+              <button type="submit" class="btn btn-ghost btn-sm w-full text-error/70 hover:text-error">
+                Reject as false positive
+              </button>
+            </form>
+          </div>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {{ pagination(total, page, per_page, "/people/clusters?status_filter=" ~ status_filter, "main") }}
+
+  {% else %}
+  <div class="animate-in animate-in-delay-1 text-center py-16">
+    <div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center mx-auto mb-4">
+      <span class="text-3xl">&#128247;</span>
+    </div>
+    <p class="text-base-content/60 font-medium">
+      {% if status_filter %}
+      No clusters with status "{{ status_filter }}"
+      {% else %}
+      No face clusters found
+      {% endif %}
+    </p>
+    <p class="text-sm text-base-content/40 mt-2 max-w-md mx-auto">
+      Face clusters are created automatically when media with faces is processed. Import photos to get started.
+    </p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

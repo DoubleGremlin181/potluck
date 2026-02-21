@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
+from potluck.models.links import EntityLink
 from potluck.web.dependencies import get_db, require_auth
 
 router = APIRouter(tags=["entity"], dependencies=[Depends(require_auth)])
@@ -72,6 +73,24 @@ async def entity_detail(
             }
         )
 
+    # Fetch related entity links
+    links_stmt = (
+        select(EntityLink)
+        .where(
+            (
+                (col(EntityLink.source_type) == matched_type)
+                & (col(EntityLink.source_id) == entity_id)
+            )
+            | (
+                (col(EntityLink.target_type) == matched_type)
+                & (col(EntityLink.target_id) == entity_id)
+            )
+        )
+        .limit(20)
+    )
+    links_result = await db.execute(links_stmt)
+    entity_links = list(links_result.scalars().all())
+
     display_name = entity_type.replace("_", " ").title()
     text_repr = entity.to_text_repr() if hasattr(entity, "to_text_repr") else ""
 
@@ -86,5 +105,6 @@ async def entity_detail(
             "display_name": display_name,
             "text_repr": text_repr,
             "fields": fields,
+            "entity_links": entity_links,
         },
     )

@@ -146,11 +146,12 @@
             <th>Created</th>
             <th>Skipped</th>
             <th>Failed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for run in history %}
-          <tr class="hover:bg-base-200/40">
+          <tr class="hover:bg-base-200/40 cursor-pointer" onclick="window.location.href='/imports/{{ run.id }}'">
             <td class="font-medium text-sm">{{ run.source.name if run.source else '—' }}</td>
             <td>
               <span class="badge badge-sm badge-{{
@@ -164,6 +165,7 @@
             <td>{{ run.entities_created }}</td>
             <td>{{ run.entities_skipped }}</td>
             <td>{{ run.entities_failed }}</td>
+            <td><a href="/imports/{{ run.id }}" class="btn btn-ghost btn-xs">View</a></td>
           </tr>
           {% endfor %}
         </tbody>

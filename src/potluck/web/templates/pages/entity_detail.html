@@ -23,6 +23,25 @@
     </div>
   </div>
 
+  {% if entity_type == 'media' and entity.file_path is defined %}
+  <!-- Media Preview -->
+  <div class="animate-in animate-in-delay-1 card bg-black/90 border border-base-300/40 rounded-xl overflow-hidden">
+    <div class="flex justify-center p-4">
+      {% if entity.media_type is defined and entity.media_type.value == 'image' %}
+      <img src="/media/file/{{ entity.id }}" alt="{{ entity.caption or '' }}" class="max-h-96 object-contain rounded-lg">
+      {% elif entity.media_type is defined and entity.media_type.value == 'video' %}
+      <video controls class="max-h-96">
+        <source src="/media/file/{{ entity.id }}" type="{{ entity.mime_type or 'video/mp4' }}">
+      </video>
+      {% elif entity.media_type is defined and entity.media_type.value == 'audio' %}
+      <audio controls class="w-full max-w-md">
+        <source src="/media/file/{{ entity.id }}" type="{{ entity.mime_type or 'audio/mpeg' }}">
+      </audio>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Fields -->
   <div class="animate-in animate-in-delay-1 card bg-base-200/60 border border-base-300/40 rounded-xl">
     <div class="card-body p-0">
@@ -71,6 +90,41 @@
       </dl>
     </div>
   </div>
+
+  {% if entity_links %}
+  <!-- Related Entities -->
+  <div class="animate-in animate-in-delay-2 card bg-base-200/60 border border-base-300/40 rounded-xl">
+    <div class="card-body p-5">
+      <h2 class="font-display font-semibold text-lg mb-3">Related Entities</h2>
+      <div class="space-y-2">
+        {% for link in entity_links %}
+        <div class="flex items-center justify-between p-3 bg-base-100/40 rounded-lg">
+          <div class="flex items-center gap-3">
+            <span class="badge badge-outline badge-sm">{{ link.link_type.value | replace('_', ' ') | title }}</span>
+            {% if link.source_id | string == entity.id | string %}
+            <a href="/entity/{{ link.target_type.value }}/{{ link.target_id }}" class="text-sm link link-primary">
+              {{ link.target_type.value | replace('_', ' ') | title }}
+            </a>
+            {% else %}
+            <a href="/entity/{{ link.source_type.value }}/{{ link.source_id }}" class="text-sm link link-primary">
+              {{ link.source_type.value | replace('_', ' ') | title }}
+            </a>
+            {% endif %}
+          </div>
+          <div class="flex items-center gap-2">
+            {% if link.confidence < 1.0 %}
+            <span class="text-xs text-base-content/40">{{ "%.0f" | format(link.confidence * 100) }}%</span>
+            {% endif %}
+            {% if link.is_automatic %}
+            <span class="badge badge-ghost badge-xs">auto</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Footer metadata -->
   <div class="animate-in animate-in-delay-2 text-xs text-base-content/30 flex items-center gap-4">

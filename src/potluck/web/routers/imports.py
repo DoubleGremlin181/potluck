@@ -3,8 +3,9 @@
 import shutil
 import tempfile
 from pathlib import Path
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,8 @@ from starlette.responses import Response
 
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType, SourceType
+from potluck.models.faces import MediaPersonLink
+from potluck.models.media import Media, MediaEmbedding
 from potluck.models.sources import ImportRun, ImportStatus
 from potluck.pipeline import start_ingestion
 from potluck.pipeline.ingestion.registry import list_stages
@@ -256,4 +259,86 @@ async def browse_files(
             "parent": str(base_path.parent) if base_path != base_path.parent else None,
             "entries": entries,
         }
+    )
+
+
+@router.get("/{run_id}", response_class=HTMLResponse)
+async def import_detail(
+    request: Request,
+    run_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Render detail page for a specific import run."""
+    stmt = (
+        select(ImportRun).where(col(ImportRun.id) == run_id).options(selectinload(ImportRun.source))  # type: ignore[arg-type]
+    )
+    result = await db.execute(stmt)
+    run = result.scalar_one_or_none()
+
+    if run is None:
+        raise HTTPException(status_code=404, detail="Import run not found")
+
+    # Processing stats for media entities
+    # Count media with various processing stages complete
+    media_total = (await db.execute(select(func.count()).select_from(Media))).scalar() or 0
+    media_with_caption = (
+        await db.execute(
+            select(func.count()).select_from(Media).where(col(Media.caption).isnot(None))
+        )
+    ).scalar() or 0
+    media_with_ocr = (
+        await db.execute(
+            select(func.count()).select_from(Media).where(col(Media.ocr_text).isnot(None))
+        )
+    ).scalar() or 0
+    media_with_hash = (
+        await db.execute(
+            select(func.count()).select_from(Media).where(col(Media.file_hash).isnot(None))
+        )
+    ).scalar() or 0
+    media_with_metadata = (
+        await db.execute(
+            select(func.count()).select_from(Media).where(col(Media.width).isnot(None))
+        )
+    ).scalar() or 0
+
+    # Count embeddings and face detections
+    embedding_count = (
+        await db.execute(select(func.count()).select_from(MediaEmbedding))
+    ).scalar() or 0
+    face_count = (await db.execute(select(func.count()).select_from(MediaPersonLink))).scalar() or 0
+
+    processing_stats = {
+        "media_total": media_total,
+        "hashing": media_with_hash,
+        "metadata": media_with_metadata,
+        "ocr": media_with_ocr,
+        "captions": media_with_caption,
+        "embeddings": embedding_count,
+        "faces": face_count,
+    }
+
+    # Duration calculation
+    duration = None
+    if run.started_at and run.completed_at:
+        delta = run.completed_at - run.started_at
+        minutes, seconds = divmod(int(delta.total_seconds()), 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            duration = f"{hours}h {minutes}m {seconds}s"
+        elif minutes:
+            duration = f"{minutes}m {seconds}s"
+        else:
+            duration = f"{seconds}s"
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(  # type: ignore[no-any-return]
+        request,
+        "pages/import_detail.html",
+        {
+            "active_page": "imports",
+            "run": run,
+            "processing_stats": processing_stats,
+            "duration": duration,
+        },
     )

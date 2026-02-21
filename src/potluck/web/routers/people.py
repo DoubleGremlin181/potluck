@@ -6,6 +6,7 @@ from list queries (filtered by ``merged_into_id IS NULL``) but remain in the
 database so that foreign keys from other entities stay valid.
 """
 
+import contextlib
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
@@ -17,6 +18,7 @@ from sqlmodel import col
 from starlette.responses import Response
 
 from potluck.models.base import SourceType
+from potluck.models.faces import ClusterStatus, FaceCluster, MediaPersonLink
 from potluck.models.people import AliasType, Person, PersonAlias
 from potluck.web.dependencies import get_db, require_auth
 
@@ -71,6 +73,135 @@ async def people_list(
     )
 
 
+@router.get("/clusters", response_class=HTMLResponse)
+async def face_clusters(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    status_filter: str = Query(default="", description="Filter by cluster status"),
+    page: int = Query(default=1, ge=1),
+) -> Response:
+    """Render face clusters page for review and assignment."""
+    per_page = 20
+
+    stmt = (
+        select(FaceCluster)
+        .options(selectinload(FaceCluster.face_links))  # type: ignore[arg-type]
+        .order_by(col(FaceCluster.face_count).desc())
+    )
+
+    if status_filter:
+        with contextlib.suppress(ValueError):
+            stmt = stmt.where(col(FaceCluster.status) == ClusterStatus(status_filter))
+
+    count_stmt = select(func.count()).select_from(FaceCluster)
+    if status_filter:
+        with contextlib.suppress(ValueError):
+            count_stmt = count_stmt.where(col(FaceCluster.status) == ClusterStatus(status_filter))
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = stmt.offset((page - 1) * per_page).limit(per_page)
+    result = await db.execute(stmt)
+    clusters = list(result.scalars().unique().all())
+
+    # Get sample media IDs for each cluster (for thumbnail display)
+    cluster_media: dict[str, list[str]] = {}
+    for cluster in clusters:
+        media_ids = [str(link.media_id) for link in cluster.face_links[:6]]
+        cluster_media[str(cluster.id)] = media_ids
+
+    # Get people for assignment dropdown
+    people_stmt = (
+        select(Person)
+        .where(col(Person.merged_into_id).is_(None))
+        .order_by(Person.display_name)
+        .limit(200)
+    )
+    people_result = await db.execute(people_stmt)
+    people_for_assign = list(people_result.scalars().all())
+
+    # Cluster stats
+    pending_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(FaceCluster)
+            .where(col(FaceCluster.status) == ClusterStatus.PENDING)
+        )
+    ).scalar() or 0
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(  # type: ignore[no-any-return]
+        request,
+        "pages/face_clusters.html",
+        {
+            "active_page": "people",
+            "clusters": clusters,
+            "cluster_media": cluster_media,
+            "people": people_for_assign,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "status_filter": status_filter,
+            "statuses": [s.value for s in ClusterStatus],
+            "pending_count": pending_count,
+        },
+    )
+
+
+@router.post("/clusters/{cluster_id}/assign")
+async def assign_cluster(
+    cluster_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    person_id: UUID = Form(...),
+) -> RedirectResponse:
+    """Assign a face cluster to a person."""
+    stmt = select(FaceCluster).where(col(FaceCluster.id) == cluster_id)
+    result = await db.execute(stmt)
+    cluster = result.scalar_one_or_none()
+
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    # Verify person exists
+    person_stmt = select(Person).where(col(Person.id) == person_id)
+    person = (await db.execute(person_stmt)).scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    cluster.person_id = person_id
+    cluster.status = ClusterStatus.CONFIRMED
+    db.add(cluster)
+
+    # Also update all MediaPersonLinks in this cluster
+    links_stmt = select(MediaPersonLink).where(col(MediaPersonLink.cluster_id) == cluster_id)
+    links_result = await db.execute(links_stmt)
+    for link in links_result.scalars().all():
+        link.person_id = person_id
+        link.is_confirmed = True
+        db.add(link)
+
+    await db.commit()
+    return RedirectResponse(url="/people/clusters", status_code=303)
+
+
+@router.post("/clusters/{cluster_id}/reject")
+async def reject_cluster(
+    cluster_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Reject a face cluster as false positive."""
+    stmt = select(FaceCluster).where(col(FaceCluster.id) == cluster_id)
+    result = await db.execute(stmt)
+    cluster = result.scalar_one_or_none()
+
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    cluster.status = ClusterStatus.REJECTED
+    db.add(cluster)
+    await db.commit()
+    return RedirectResponse(url="/people/clusters", status_code=303)
+
+
 @router.get("/{person_id}", response_class=HTMLResponse)
 async def person_detail(
     request: Request,
@@ -79,13 +210,27 @@ async def person_detail(
 ) -> Response:
     """Render person detail page."""
     stmt = (
-        select(Person).where(col(Person.id) == person_id).options(selectinload(Person.aliases))  # type: ignore[arg-type]
+        select(Person)
+        .where(col(Person.id) == person_id)
+        .options(
+            selectinload(Person.aliases),  # type: ignore[arg-type]
+            selectinload(Person.face_encodings),  # type: ignore[arg-type]
+        )
     )
     result = await db.execute(stmt)
     person = result.scalar_one_or_none()
 
     if person is None:
         raise HTTPException(status_code=404, detail="Person not found")
+
+    # Get media where this person appears (via MediaPersonLink)
+    face_media_stmt = (
+        select(col(MediaPersonLink.media_id))
+        .where(col(MediaPersonLink.person_id) == person_id)
+        .limit(12)
+    )
+    face_media_result = await db.execute(face_media_stmt)
+    face_media_ids = [str(row[0]) for row in face_media_result.all()]
 
     templates = request.app.state.templates
     return templates.TemplateResponse(  # type: ignore[no-any-return]
@@ -95,6 +240,7 @@ async def person_detail(
             "active_page": "people",
             "person": person,
             "alias_types": [t.value for t in AliasType],
+            "face_media_ids": face_media_ids,
         },
     )
 

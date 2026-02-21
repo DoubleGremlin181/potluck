@@ -93,6 +93,41 @@
       </div>
       {% endif %}
 
+      {% if faces %}
+      <div>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Faces Detected</span>
+        <p class="mt-0.5">{{ faces | length }} face{{ 's' if faces | length != 1 else '' }} found</p>
+      </div>
+      {% endif %}
+
+      {% if embeddings %}
+      <div>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Embeddings</span>
+        <div class="flex flex-wrap gap-1 mt-1">
+          {% for etype, count in embeddings.items() %}
+          <span class="badge badge-ghost badge-xs">{{ etype.value if etype.value is defined else etype }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Processing Status -->
+      <div>
+        <span class="text-base-content/40 text-xs uppercase tracking-wider">Processing</span>
+        <div class="flex flex-wrap gap-1.5 mt-1.5">
+          <span class="badge badge-xs {{ 'badge-success' if processing.has_hash else 'badge-ghost' }}">Hash</span>
+          <span class="badge badge-xs {{ 'badge-success' if processing.has_metadata else 'badge-ghost' }}">Metadata</span>
+          <span class="badge badge-xs {{ 'badge-success' if processing.has_ocr else 'badge-ghost' }}">OCR</span>
+          <span class="badge badge-xs {{ 'badge-success' if processing.has_caption else 'badge-ghost' }}">Caption</span>
+          <span class="badge badge-xs {{ 'badge-success' if processing.has_embeddings else 'badge-ghost' }}">Embeddings</span>
+          <span class="badge badge-xs {{ 'badge-success' if processing.face_count > 0 else 'badge-ghost' }}">Faces</span>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <a href="/entity/media/{{ media.id }}" class="btn btn-ghost btn-xs w-full">View Full Details &rarr;</a>
+      </div>
+
       <div class="pt-2 border-t border-base-300/30 flex gap-2">
         <span class="badge badge-outline badge-sm">{{ media.source_type | enum_val | replace('_', ' ') | title }}</span>
         <span class="badge badge-ghost badge-sm">{{ media.media_type | enum_val | title }}</span>
