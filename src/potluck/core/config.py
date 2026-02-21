@@ -1,8 +1,10 @@
 """Application configuration using pydantic-settings."""
 
+import warnings
 from functools import lru_cache
+from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,6 +67,18 @@ class Settings(BaseSettings):
         default="INFO",
         description="Logging level",
     )
+
+    @model_validator(mode="after")
+    def _validate_auth_config(self) -> Self:
+        """Warn when password auth is enabled but the secret key is still the default."""
+        if self.web_password and self.web_secret_key == "potluck-dev-secret-change-me":
+            warnings.warn(
+                "WEB_PASSWORD is set but WEB_SECRET_KEY is still the default. "
+                "Set a strong random WEB_SECRET_KEY for secure session cookies.",
+                UserWarning,
+                stacklevel=1,
+            )
+        return self
 
 
 @lru_cache

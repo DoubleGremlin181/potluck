@@ -44,7 +44,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from potluck.core.exceptions import NoSearchableEntitiesError
+from potluck.core.exceptions import NoSearchableEntitiesError, SearchError
 from potluck.core.logging import get_logger
 from potluck.db.session import get_async_session, get_session
 from potluck.models import get_entity_type_model_map
@@ -286,6 +286,10 @@ async def _run_retrievers_parallel(
                     )
                 else:
                     raise vector_result
+
+        # In hybrid mode, fail if both retrievers returned errors
+        if is_hybrid and not retriever_results:
+            raise SearchError("Both FTS and vector retrievers failed in hybrid mode")
 
     return retriever_results
 

@@ -33,6 +33,10 @@ async def _browse_entities(
 ) -> tuple[list[dict[str, Any]], int]:
     """Browse entities by type without a search query.
 
+    Pagination (page/per_page) is applied independently per entity type,
+    so the total_count is the sum across all types but each type returns
+    up to per_page items.
+
     Returns (items, total_count).
     """
     entity_map = get_entity_type_model_map()
