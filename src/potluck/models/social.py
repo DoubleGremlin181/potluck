@@ -73,7 +73,8 @@ class SocialPost(TimestampedEntity, table=True):
         return f"SocialPost (id: {self.id}): {title} | {community}{date_str}"
 
     # Platform information
-    platform: Platform = Field(
+    platform: Platform = enum_field(
+        Platform,
         description="Social media platform",
     )
     post_type: PostType = enum_field(
@@ -298,7 +299,8 @@ class SocialComment(TimestampedEntity, table=True):
     )
 
     # Comment identifiers
-    platform: Platform = Field(
+    platform: Platform = enum_field(
+        Platform,
         description="Social media platform",
     )
     comment_id: str | None = Field(
@@ -429,7 +431,8 @@ class SocialFollow(BaseEntity, table=True):
     __tablename__ = "social_follows"
 
     # Platform information
-    platform: Platform = Field(
+    platform: Platform = enum_field(
+        Platform,
         description="Social media platform",
     )
     follow_type: SocialFollowType = enum_field(

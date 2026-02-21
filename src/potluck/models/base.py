@@ -37,6 +37,8 @@ class EnumStr(TypeDecorator[str]):
             return None
         if isinstance(value, self.enum_class):
             return value.value  # type: ignore[no-any-return]
+        # Validate that the string is a valid enum value before storing
+        self.enum_class(value)
         return str(value)
 
     def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ANN401

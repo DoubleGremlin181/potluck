@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import BaseEntity, SimpleEntity, TimestampedEntity
+from potluck.models.base import BaseEntity, SimpleEntity, TimestampedEntity, enum_field
 
 
 class EmailFolder(str, Enum):
@@ -188,7 +188,8 @@ class Email(TimestampedEntity, table=True):
     )
 
     # Email metadata
-    folder: EmailFolder = Field(
+    folder: EmailFolder = enum_field(
+        EmailFolder,
         default=EmailFolder.INBOX,
         description="Folder/label for the email (default: INBOX when unknown)",
     )

@@ -9,6 +9,7 @@ from sqlmodel import SQLModel
 
 from potluck.models.base import (
     BaseEntity,
+    EnumStr,
     GeolocatedEntity,
     SourceType,
     TimestampedEntity,
@@ -327,3 +328,88 @@ class TestBaseEntityInheritance:
         assert isinstance(bookmark.id, UUID)
         assert isinstance(bookmark.created_at, datetime)
         assert isinstance(bookmark.updated_at, datetime)
+
+
+class TestEnumStr:
+    """Tests for the EnumStr TypeDecorator."""
+
+    def test_bind_enum_value(self) -> None:
+        """Binding an enum member returns its string value."""
+        enum_str = EnumStr(SourceType)
+        result = enum_str.process_bind_param(SourceType.REDDIT, dialect=None)
+        assert result == "reddit"
+
+    def test_bind_valid_string(self) -> None:
+        """Binding a valid string value passes validation."""
+        enum_str = EnumStr(SourceType)
+        result = enum_str.process_bind_param("reddit", dialect=None)
+        assert result == "reddit"
+
+    def test_bind_none(self) -> None:
+        """Binding None returns None."""
+        enum_str = EnumStr(SourceType)
+        result = enum_str.process_bind_param(None, dialect=None)
+        assert result is None
+
+    def test_bind_invalid_string_raises(self) -> None:
+        """Binding an invalid string raises ValueError."""
+        enum_str = EnumStr(SourceType)
+        with pytest.raises(ValueError, match="not_a_source"):
+            enum_str.process_bind_param("not_a_source", dialect=None)
+
+    def test_result_string_to_enum(self) -> None:
+        """Loading a string from DB returns the enum member."""
+        enum_str = EnumStr(SourceType)
+        result = enum_str.process_result_value("reddit", dialect=None)
+        assert result is SourceType.REDDIT
+
+    def test_result_none(self) -> None:
+        """Loading None from DB returns None."""
+        enum_str = EnumStr(SourceType)
+        result = enum_str.process_result_value(None, dialect=None)
+        assert result is None
+
+    def test_result_invalid_raises(self) -> None:
+        """Loading an invalid string from DB raises ValueError."""
+        enum_str = EnumStr(SourceType)
+        with pytest.raises(ValueError):
+            enum_str.process_result_value("bogus", dialect=None)
+
+    def test_roundtrip(self) -> None:
+        """Enum value survives bind → result round trip."""
+        enum_str = EnumStr(TimestampPrecision)
+        stored = enum_str.process_bind_param(TimestampPrecision.DAY, dialect=None)
+        loaded = enum_str.process_result_value(stored, dialect=None)
+        assert loaded is TimestampPrecision.DAY
+
+    def test_different_enum_class(self) -> None:
+        """EnumStr works with any str-Enum class."""
+        enum_str = EnumStr(TimestampPrecision)
+        result = enum_str.process_bind_param(TimestampPrecision.HOUR, dialect=None)
+        assert result == "hour"
+        with pytest.raises(ValueError):
+            enum_str.process_bind_param("reddit", dialect=None)
+
+
+class TestEnumField:
+    """Tests for the enum_field helper using concrete models."""
+
+    def test_enum_field_on_social_post(self) -> None:
+        """SocialPost.platform uses enum_field for DB round-trip safety."""
+        from potluck.models.social import Platform, SocialPost
+
+        post = SocialPost(
+            source_type=SourceType.REDDIT,
+            platform=Platform.REDDIT,
+        )
+        assert post.platform is Platform.REDDIT
+
+    def test_enum_field_on_email(self) -> None:
+        """Email.folder uses enum_field with a default value."""
+        from potluck.models.email import Email, EmailFolder
+
+        email = Email(
+            source_type=SourceType.GOOGLE_TAKEOUT,
+            from_address="test@example.com",
+        )
+        assert email.folder is EmailFolder.INBOX

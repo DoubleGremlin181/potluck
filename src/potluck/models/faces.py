@@ -15,7 +15,7 @@ from sqlalchemy import Column
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import FACE_EMBEDDING_DIM
-from potluck.models.base import SimpleEntity
+from potluck.models.base import SimpleEntity, enum_field
 
 
 class ClusterStatus(str, Enum):
@@ -43,7 +43,8 @@ class FaceCluster(SimpleEntity, table=True):
         sa_column=Column(Vector(FACE_EMBEDDING_DIM)),
         description="Centroid/representative face embedding for the cluster",
     )
-    status: ClusterStatus = Field(
+    status: ClusterStatus = enum_field(
+        ClusterStatus,
         default=ClusterStatus.PENDING,
         description="Current status of the cluster",
     )
