@@ -1,9 +1,17 @@
 """Root pytest configuration."""
 
+import importlib.util
 from pathlib import Path
 
 import pytest
 from PIL import Image
+
+# Skip e2e directory entirely when playwright is not installed (e.g. Docker test
+# container).  Pytest imports conftest files during collection even when all
+# tests are marker-deselected, so addopts alone is not sufficient.
+collect_ignore: list[str] = []
+if importlib.util.find_spec("playwright") is None:
+    collect_ignore.append("e2e")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
