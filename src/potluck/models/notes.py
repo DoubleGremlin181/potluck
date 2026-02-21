@@ -50,7 +50,7 @@ class KnowledgeNote(SimpleEntity, table=True):
         creator = self.created_by or "unknown"
         return f"Note (id: {self.id}): {content_preview} | by: {creator}"
 
-    # Note type (required by DB schema, NOT NULL without default)
+    # Note type -- defaults to "knowledge" for user-created notes
     note_type: str = Field(
         default="knowledge",
         description="Type of note (e.g., 'knowledge', 'task', 'reminder')",

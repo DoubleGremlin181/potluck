@@ -67,7 +67,7 @@ def _fmt_value(val: object) -> str:
     return s
 
 
-def _extract_marker_extras(entity: Any, entity_type: EntityType) -> dict[str, str]:
+def _extract_marker_extras(entity: Any, entity_type: EntityType) -> dict[str, str]:  # noqa: ANN401
     """Pull type-specific display fields from an entity for map popups."""
     fields = _EXTRAS_FIELDS.get(entity_type, [])
     extras: dict[str, str] = {}

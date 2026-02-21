@@ -14,7 +14,6 @@ from potluck.core.celery import (
     RETRY_BACKOFF,
     RETRY_BACKOFF_MAX,
     celery_app,
-    is_fatal_error,
     is_transient_error,
 )
 from potluck.core.logging import get_logger
@@ -45,7 +44,9 @@ def _mark_import_failed(import_run_id: str, error_message: str) -> None:
                 session.commit()
     except Exception:
         logger.exception(
-            f"Failed to mark import {import_run_id} as failed with error: {error_message}"
+            "Failed to mark import %s as failed with error: %s",
+            import_run_id,
+            error_message,
         )
 
 
@@ -85,7 +86,7 @@ def run_ingestion(
         Reject: For fatal errors.
         Retry: For transient errors.
     """
-    logger.info(f"Starting ingestion task for run {import_run_id}")
+    logger.info("Starting ingestion task for run %s", import_run_id)
 
     # Parse entity types with validation
     types_to_ingest: set[EntityType] | None = None
@@ -175,16 +176,12 @@ def run_ingestion(
     except Reject:
         raise
     except Exception as exc:
-        logger.exception(f"Ingestion task failed: {exc}")
+        logger.exception("Ingestion task failed: %s", exc)
 
-        if is_fatal_error(exc):
-            _mark_import_failed(import_run_id, str(exc))
-            raise Reject(str(exc), requeue=False) from exc
-        elif is_transient_error(exc):
+        if is_transient_error(exc):
             raise self.retry(exc=exc) from exc
-        else:
-            _mark_import_failed(import_run_id, str(exc))
-            raise Reject(str(exc), requeue=False) from exc
+        _mark_import_failed(import_run_id, str(exc))
+        raise Reject(str(exc), requeue=False) from exc
 
 
 @celery_app.task  # type: ignore[untyped-decorator]
@@ -217,7 +214,7 @@ def cancel_ingestion(import_run_id: str) -> dict[str, Any]:
             return {"success": True, "import_run_id": import_run_id}
 
     except Exception as e:
-        logger.exception(f"Failed to cancel ingestion {import_run_id}")
+        logger.exception("Failed to cancel ingestion %s", import_run_id)
         return {"success": False, "error": str(e)}
 
 

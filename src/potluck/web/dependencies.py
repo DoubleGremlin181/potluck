@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncGenerator
 
-from fastapi import Cookie, HTTPException, Request
+from fastapi import Cookie, HTTPException
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def require_auth(
-    request: Request,
     session_token: str | None = Cookie(default=None),
 ) -> None:
     """Verify the user is authenticated via signed cookie.

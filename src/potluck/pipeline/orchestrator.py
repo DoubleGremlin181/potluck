@@ -113,7 +113,7 @@ class PipelineOrchestrator:
         Returns:
             PipelineResult with statistics.
         """
-        logger.info(f"Starting pipeline for: {path}")
+        logger.info("Starting pipeline for: %s", path)
 
         # Clear caches for each new run
         self._seen_hashes.clear()
@@ -124,13 +124,13 @@ class PipelineOrchestrator:
         file_hash = None
         if path.is_file():
             file_hash = compute_file_hash(path)
-            logger.debug(f"Source file hash: {file_hash}")
+            logger.debug("Source file hash: %s", file_hash)
 
         # Check for existing completed import of this exact file
         if file_hash and not resume_failed:
             existing_run = self._find_completed_run(file_hash)
             if existing_run:
-                logger.info(f"File already imported (run {existing_run.id}), skipping")
+                logger.info("File already imported (run %s), skipping", existing_run.id)
                 return PipelineResult(
                     import_run=existing_run,
                     stats=PipelineStats(
@@ -183,7 +183,7 @@ class PipelineOrchestrator:
             stage_cls = detect_stage(path)
 
         if stage_cls is None:
-            logger.warning(f"No ingestion stage found for: {path}")
+            logger.warning("No ingestion stage found for: %s", path)
             return self._create_empty_result(
                 path,
                 file_hash,
@@ -203,7 +203,7 @@ class PipelineOrchestrator:
         )
 
         if not discovery.has_content:
-            logger.warning(f"No ingestable content found in: {path}")
+            logger.warning("No ingestable content found in: %s", path)
             return self._create_empty_result(
                 path,
                 file_hash,
@@ -269,7 +269,7 @@ class PipelineOrchestrator:
             return PipelineResult(import_run=import_run, stats=stats)
 
         except Exception as e:
-            logger.exception(f"Pipeline failed: {e}")
+            logger.exception("Pipeline failed: %s", e)
             import_run.status = ImportStatus.FAILED
             import_run.error_message = str(e)
             import_run.completed_at = utc_now()
@@ -570,11 +570,13 @@ class PipelineOrchestrator:
 
         try:
             run_entity_pipeline(entity_type.value, str(entity_id))
-            logger.debug(f"Queued processing for {entity_type.value} {entity_id}")
+            logger.debug("Queued processing for %s %s", entity_type.value, entity_id)
         except (OSError, RuntimeError, ValueError, TypeError):
             logger.exception(
-                f"Failed to queue processing for {entity_type.value} {entity_id}. "
-                "This entity will need to be manually reprocessed."
+                "Failed to queue processing for %s %s. "
+                "This entity will need to be manually reprocessed.",
+                entity_type.value,
+                entity_id,
             )
 
     def _queue_linkers(self, import_run: ImportRun) -> None:
@@ -590,11 +592,11 @@ class PipelineOrchestrator:
 
         try:
             run_linkers_batch(str(import_run.id), entity_ids_by_type)
-            logger.debug(f"Queued batch linkers for import run {import_run.id}")
+            logger.debug("Queued batch linkers for import run %s", import_run.id)
         except (OSError, RuntimeError, ValueError, TypeError):
             logger.exception(
-                f"Failed to queue linkers for import run {import_run.id}. "
-                "Linking will need to be run manually."
+                "Failed to queue linkers for import run %s. Linking will need to be run manually.",
+                import_run.id,
             )
 
     def _update_progress(
@@ -614,8 +616,10 @@ class PipelineOrchestrator:
                 self.on_progress(current, total, message)
             except Exception:
                 logger.exception(
-                    f"Progress callback failed at {current}/{total}. "
-                    "Progress updates may be delayed or missing."
+                    "Progress callback failed at %d/%d. "
+                    "Progress updates may be delayed or missing.",
+                    current,
+                    total,
                 )
 
 
