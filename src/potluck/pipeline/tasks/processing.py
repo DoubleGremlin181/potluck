@@ -1,9 +1,15 @@
 """Celery task orchestration for processing pipeline.
 
 This module provides:
-- run_entity_pipeline(): Queue appropriate processors for any entity type
+- run_batch_entity_pipeline(): Queue batch-by-processor pipeline for a group of entities
+- run_entity_pipeline(): Queue pipeline for a single entity (wraps batch with [id])
 - run_linkers_batch(): Queue batch linkers after import completes
-- Legacy functions for backward compatibility
+
+Processing Architecture:
+    Entities are processed in batches grouped by entity type. Each batch stage loads
+    ONE model, processes ALL eligible entities, then unloads. This keeps peak memory
+    at the size of the largest single model (~460MB Florence-2) instead of all models
+    simultaneously (~6.3GB).
 
 Auto-discovery: Importing the processing module triggers automatic discovery
 and registration of all processor tasks via pkgutil.
@@ -33,66 +39,60 @@ from potluck.pipeline.processing.core.registry import ProcessorRegistry
 logger = get_logger(__name__)
 
 
-def run_entity_pipeline(entity_type_str: str, entity_id: str) -> None:
-    """Queue appropriate processors for any entity type.
+def run_batch_entity_pipeline(entity_type_str: str, entity_ids: list[str]) -> None:
+    """Queue batch-by-processor pipeline for a group of entities.
 
-    Builds a Celery chain from the ProcessorRegistry based on entity type.
-    Processors run in priority order (lower priority values first).
+    Builds a Celery chain from the ProcessorRegistry's batch pipeline based on
+    entity type. The first stage (hashing) takes explicit IDs; subsequent stages
+    receive the previous result containing ``needs_processing`` IDs.
+
+    Each stage loads one model, processes all entities, then the task_postrun
+    signal unloads it before the next stage starts.
+
+    Args:
+        entity_type_str: Entity type value (e.g., "media", "chat_message").
+        entity_ids: List of entity IDs to process.
+    """
+    if not entity_ids:
+        return
+
+    entity_type = EntityType(entity_type_str)
+    pipeline = ProcessorRegistry.get_batch_pipeline(entity_type)
+
+    if not pipeline:
+        logger.debug(f"No batch processors registered for entity type: {entity_type_str}")
+        return
+
+    # Build Celery chain: first task gets explicit IDs, rest chain via previous_result
+    first_config = pipeline[0]
+    tasks = [
+        first_config.batch_task_func.s(entity_type_str, entity_ids)  # type: ignore[union-attr]
+    ]
+
+    for config in pipeline[1:]:
+        # Subsequent tasks receive previous_result as first arg via .s()
+        tasks.append(
+            config.batch_task_func.s(entity_type_str)  # type: ignore[union-attr]
+        )
+
+    chain(*tasks).apply_async()
+    logger.debug(
+        f"Queued batch pipeline for {len(entity_ids)} {entity_type_str} entities: "
+        f"{[c.processor_class.NAME for c in pipeline]}"
+    )
+
+
+def run_entity_pipeline(entity_type_str: str, entity_id: str) -> None:
+    """Queue processing pipeline for a single entity.
+
+    Convenience wrapper around run_batch_entity_pipeline() for single-entity
+    reprocessing (e.g., manual trigger from web UI).
 
     Args:
         entity_type_str: Entity type value (e.g., "media", "chat_message").
         entity_id: ID of the entity to process.
     """
-    entity_type = EntityType(entity_type_str)
-
-    # Get pipeline for this entity type from registry
-    pipeline = ProcessorRegistry.get_pipeline(entity_type)
-
-    if not pipeline:
-        logger.debug(f"No processors registered for entity type: {entity_type_str}")
-        return
-
-    # Build Celery chain from pipeline
-    # Note: task_func is a Celery task with .si() method
-    tasks = [
-        config.task_func.si(entity_type_str, entity_id)  # type: ignore[attr-defined]
-        for config in pipeline
-    ]
-
-    if tasks:
-        chain(*tasks).apply_async()
-        logger.debug(
-            f"Queued processing pipeline for {entity_type_str} {entity_id}: "
-            f"{[c.processor_class.NAME for c in pipeline]}"
-        )
-
-
-# Legacy function for backward compatibility
-def run_processing_pipeline(media_id: str) -> None:
-    """Trigger full processing pipeline for a media item (legacy).
-
-    This function maintains backward compatibility. New code should use
-    run_entity_pipeline() instead.
-
-    Args:
-        media_id: ID of the media item to process.
-    """
-    run_entity_pipeline(EntityType.MEDIA.value, media_id)
-
-
-def run_basic_processing(media_id: str) -> None:
-    """Trigger basic processing (hashing + metadata only).
-
-    Args:
-        media_id: ID of the media item to process.
-    """
-    from potluck.pipeline.processing.processors.hashing import run_hashing_processor
-    from potluck.pipeline.processing.processors.metadata import run_metadata_processor
-
-    chain(
-        run_hashing_processor.si(EntityType.MEDIA.value, media_id),
-        run_metadata_processor.si(EntityType.MEDIA.value, media_id),
-    ).apply_async()
+    run_batch_entity_pipeline(entity_type_str, [entity_id])
 
 
 # -----------------------------------------------------------------------------
@@ -195,34 +195,34 @@ def run_linkers_batch(import_run_id: str, entity_ids_by_type: dict[str, list[str
     run_linkers_batch_task.delay(import_run_id, entity_ids_by_type)
 
 
-# Re-export individual tasks for direct access
-from potluck.pipeline.processing.processors.captioning import run_captioning_processor  # noqa: E402
+# Re-export batch tasks for direct access
+from potluck.pipeline.processing.processors.captioning import run_captioning_batch  # noqa: E402
 from potluck.pipeline.processing.processors.clustering import cluster_unassigned_faces  # noqa: E402
 from potluck.pipeline.processing.processors.embeddings import (  # noqa: E402
-    run_media_embedding_processor,
-    run_text_embedding_processor,
+    run_media_embedding_batch,
+    run_multimodal_text_embedding_batch,
+    run_text_embedding_batch,
 )
-from potluck.pipeline.processing.processors.faces import run_faces_processor  # noqa: E402
-from potluck.pipeline.processing.processors.hashing import run_hashing_processor  # noqa: E402
-from potluck.pipeline.processing.processors.metadata import run_metadata_processor  # noqa: E402
-from potluck.pipeline.processing.processors.ocr import run_ocr_processor  # noqa: E402
+from potluck.pipeline.processing.processors.faces import run_faces_batch  # noqa: E402
+from potluck.pipeline.processing.processors.hashing import run_hashing_batch  # noqa: E402
+from potluck.pipeline.processing.processors.metadata import run_metadata_batch  # noqa: E402
+from potluck.pipeline.processing.processors.ocr import run_ocr_batch  # noqa: E402
 
 __all__ = [
     # Pipeline orchestration
+    "run_batch_entity_pipeline",
     "run_entity_pipeline",
     "run_linkers_batch",
-    # Legacy functions
-    "run_processing_pipeline",
-    "run_basic_processing",
-    # Individual processor tasks
-    "run_hashing_processor",
-    "run_metadata_processor",
-    "run_ocr_processor",
-    "run_faces_processor",
-    "run_captioning_processor",
-    "run_text_embedding_processor",
-    "run_media_embedding_processor",
-    # Batch tasks
+    # Batch processor tasks (pipeline stages)
+    "run_hashing_batch",
+    "run_metadata_batch",
+    "run_ocr_batch",
+    "run_faces_batch",
+    "run_captioning_batch",
+    "run_text_embedding_batch",
+    "run_multimodal_text_embedding_batch",
+    "run_media_embedding_batch",
+    # Other batch tasks
     "cluster_unassigned_faces",
     "run_linkers_batch_task",
 ]

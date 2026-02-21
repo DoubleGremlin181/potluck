@@ -2,7 +2,8 @@
 
 This module provides the foundation for all processing stages including:
 - BaseProcessor abstract base class for all processors
-- run_processor_task() shared Celery task implementation
+- run_batch_processor_task() shared batch Celery task implementation
+- run_batch_stage_task() for chained batch pipeline stages
 - Helper utilities for entity persistence
 """
 
@@ -21,7 +22,6 @@ from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
-from potluck.models.media import Media
 from potluck.pipeline.base import Stage
 from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
 
@@ -53,15 +53,6 @@ def _get_entity(session: Session, entity_type: EntityType, entity_id: str) -> SQ
     stmt = select(model_class).where(model_class.id == UUID(entity_id))  # type: ignore[attr-defined]
     result = session.exec(stmt)
     return result.one_or_none()
-
-
-def _get_media(session: Session, media_id: str) -> Media | None:
-    """Fetch a Media record by ID.
-
-    Convenience function for Media-specific processors.
-    """
-    entity = _get_entity(session, EntityType.MEDIA, media_id)
-    return entity if isinstance(entity, Media) else None
 
 
 def _get_entities_bulk(
@@ -119,14 +110,6 @@ def _update_entity_fields(
                 setattr(entity, key, value)
         session.add(entity)
         session.commit()
-
-
-def _update_media_fields(session: Session, media_id: str, **fields: Any) -> None:
-    """Update specific fields on a Media record.
-
-    Convenience function for Media-specific processors.
-    """
-    _update_entity_fields(session, EntityType.MEDIA, media_id, **fields)
 
 
 # -----------------------------------------------------------------------------
@@ -268,78 +251,8 @@ class BaseProcessor(Stage[SQLModel, StageResult]):
 
 
 # -----------------------------------------------------------------------------
-# Celery Task Runner
+# Celery Task Runners
 # -----------------------------------------------------------------------------
-
-
-def run_processor_task(
-    task: Task[..., dict[str, Any]],
-    entity_type: EntityType,
-    entity_id: str,
-    processor_class: type[BaseProcessor],
-) -> dict[str, Any]:
-    """Run a processor with standard error handling.
-
-    This is the core implementation shared by all processor tasks. It handles:
-    - Entity lookup and validation
-    - Processor type validation
-    - Processor execution
-    - Result persistence via processor.persist_result()
-    - Error classification (transient vs fatal)
-    - Retry/reject logic
-
-    Args:
-        task: The Celery task instance (for retry support).
-        entity_type: The type of entity to process.
-        entity_id: ID of the entity to process.
-        processor_class: The processor class to instantiate and run.
-
-    Returns:
-        Dict with task results from processor.persist_result().
-
-    Raises:
-        Reject: For fatal errors, entity not found, or unsupported entity type.
-        Retry: For transient errors (via task.retry).
-    """
-    processor = processor_class()
-    logger.info(f"Starting {processor.NAME} for {entity_type.value} {entity_id}")
-
-    # Validate processor supports this entity type
-    if not processor.supports_entity_type(entity_type):
-        raise Reject(
-            f"Processor {processor.NAME} does not support entity type {entity_type.value}",
-            requeue=False,
-        )
-
-    try:
-        engine = get_engine()
-        with Session(engine) as session:
-            entity = _get_entity(session, entity_type, entity_id)
-            if entity is None:
-                raise Reject(f"{entity_type.value} not found: {entity_id}", requeue=False)
-
-            # Check if processor should run on this entity
-            if not processor.should_execute(entity):
-                return {
-                    "entity_type": entity_type.value,
-                    "entity_id": entity_id,
-                    "status": StageStatus.SKIPPED.value,
-                    "reason": "should_execute returned False",
-                }
-
-            result = processor.execute(entity)
-            return processor.persist_result(session, entity_type, entity_id, result)
-
-    except Reject:
-        raise
-    except Exception as err:
-        logger.exception(f"{processor.NAME} task failed for {entity_type.value} {entity_id}: {err}")
-        if is_fatal_error(err):
-            raise Reject(str(err), requeue=False) from err
-        elif is_transient_error(err):
-            raise task.retry(exc=err) from err
-        else:
-            raise Reject(str(err), requeue=False) from err
 
 
 def run_batch_processor_task(
@@ -442,3 +355,45 @@ def run_batch_processor_task(
             raise task.retry(exc=err) from err
         else:
             raise Reject(str(err), requeue=False) from err
+
+
+def run_batch_stage_task(
+    task: Task[..., dict[str, Any]],
+    previous_result: dict[str, Any],
+    entity_type: EntityType,
+    processor_class: type[BaseProcessor],
+) -> dict[str, Any]:
+    """Run a batch processor stage in a Celery chain, propagating entity IDs.
+
+    This is designed for the batch-by-processor pipeline where each stage receives
+    the previous stage's result (containing ``needs_processing`` IDs), processes
+    those entities, and returns the same structure for the next stage.
+
+    Args:
+        task: The Celery task instance (for retry support).
+        previous_result: Return value from the previous stage. Must contain
+            ``entity_type`` and ``needs_processing`` keys.
+        entity_type: The type of entities to process.
+        processor_class: The processor class to instantiate and run.
+
+    Returns:
+        Dict with ``entity_type``, ``needs_processing`` (propagated), and stats.
+    """
+    entity_ids: list[str] = previous_result.get("needs_processing", [])
+
+    if not entity_ids:
+        logger.info(f"Batch {processor_class.NAME}: no entities to process, skipping")
+        return {
+            "entity_type": entity_type.value,
+            "needs_processing": [],
+            "total": 0,
+            "completed": 0,
+            "failed": 0,
+            "skipped": 0,
+        }
+
+    result = run_batch_processor_task(task, entity_type, entity_ids, processor_class)
+
+    # Propagate needs_processing for the next stage in the chain
+    result["needs_processing"] = entity_ids
+    return result

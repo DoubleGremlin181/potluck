@@ -172,3 +172,48 @@ class TestMLModels:
         detector2 = models.get_face_detector()
 
         assert detector1 is detector2
+
+    def test_unload_removes_specific_model(self) -> None:
+        """unload() should remove a specific model from cache."""
+        models = MLModels(device="cpu")
+
+        # Load a model to populate cache
+        models.get_text_encoder()
+        cache_key = f"text_encoder:intfloat/e5-small-v2:{models.device}"
+        assert cache_key in MLModels._cache
+
+        # Unload it
+        models.unload(cache_key)
+        assert cache_key not in MLModels._cache
+
+    def test_unload_nonexistent_key_is_noop(self) -> None:
+        """unload() should not raise for a missing cache key."""
+        models = MLModels(device="cpu")
+        models.unload("nonexistent_key")  # Should not raise
+
+    def test_unload_all_clears_all_models(self) -> None:
+        """unload_all() should clear all cached models."""
+        # Pre-populate cache with dummy values
+        MLModels._cache["model_a"] = "value_a"
+        MLModels._cache["model_b"] = "value_b"
+
+        MLModels.unload_all()
+
+        assert len(MLModels._cache) == 0
+
+    def test_unload_all_on_empty_cache_is_noop(self) -> None:
+        """unload_all() should not raise when cache is empty."""
+        MLModels._cache.clear()
+        MLModels.unload_all()  # Should not raise
+        assert len(MLModels._cache) == 0
+
+    def test_model_reloads_after_unload(self) -> None:
+        """After unloading, the next get call should reload the model."""
+        models = MLModels(device="cpu")
+
+        model1 = models.get_text_encoder()
+        MLModels.unload_all()
+
+        # Should reload
+        model2 = models.get_text_encoder()
+        assert model2 is not model1

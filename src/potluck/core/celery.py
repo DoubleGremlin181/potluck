@@ -1,9 +1,13 @@
 """Celery application configuration and task utilities."""
 
 from celery import Celery
+from celery.signals import task_postrun
 from sqlalchemy.exc import InterfaceError, OperationalError
 
 from potluck.core.config import get_settings
+from potluck.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Retry configuration
 MAX_RETRIES = 3
@@ -73,9 +77,10 @@ def create_celery_app() -> Celery:
         task_reject_on_worker_lost=True,
         # Result settings
         result_expires=3600,  # 1 hour
-        # Worker settings
+        # Worker settings — concurrency=1 ensures only one model type is loaded
+        # at a time when using batch-by-processor processing
         worker_prefetch_multiplier=1,
-        worker_concurrency=4,
+        worker_concurrency=1,
         # Task discovery
         task_routes={
             "potluck.pipeline.tasks.ingestion.*": {"queue": "ingest"},
@@ -97,3 +102,16 @@ def create_celery_app() -> Celery:
 
 # Global celery app instance
 celery_app = create_celery_app()
+
+
+@task_postrun.connect  # type: ignore[untyped-decorator]
+def cleanup_models_after_task(**kwargs: object) -> None:
+    """Unload all ML models from memory after each task completes.
+
+    This ensures only one model type is in memory at a time when processing
+    batches sequentially. Each batch task loads its model, processes entities,
+    then this signal handler unloads it before the next task starts.
+    """
+    from potluck.pipeline.processing.core.ml import MLModels
+
+    MLModels.unload_all()

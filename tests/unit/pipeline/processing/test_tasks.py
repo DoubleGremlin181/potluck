@@ -10,224 +10,151 @@ from uuid import uuid4
 import pytest
 
 from potluck.models.base import EntityType
-from potluck.pipeline.dtos import StageResult, StageStatus
 
 
-class TestRunHashingProcessor:
-    """Tests for run_hashing_processor task."""
-
-    @pytest.mark.ml
-    def test_hashing_returns_correct_structure(self) -> None:
-        """Task returns dict with expected keys."""
-        from potluck.pipeline.tasks.processing import run_hashing_processor
-
-        # Mock the database and stage
-        mock_media = MagicMock()
-        mock_media.id = uuid4()
-        mock_media.file_path = "/test/image.jpg"
-
-        mock_result = StageResult(
-            item_id=mock_media.id,
-            stage_name="hashing",
-            status=StageStatus.COMPLETED,
-            processing_time_ms=100,
-            data={"file_hash": "abc123", "perceptual_hash": "def456"},
-        )
-
-        with (
-            patch("potluck.pipeline.processing.core.base.get_engine"),
-            patch("potluck.pipeline.processing.core.base.Session"),
-            patch("potluck.pipeline.processing.core.base._get_entity", return_value=mock_media),
-            patch("potluck.pipeline.processing.core.base._update_entity_fields"),
-            patch(
-                "potluck.pipeline.processing.processors.hashing.HashingProcessor.execute",
-                return_value=mock_result,
-            ),
-        ):
-            result = run_hashing_processor(EntityType.MEDIA.value, str(mock_media.id))
-
-            assert "entity_id" in result
-            assert "entity_type" in result
-            assert "status" in result
-            assert result["status"] == "completed"
-            assert "file_hash" in result
-            assert "perceptual_hash" in result
+class TestRunBatchEntityPipeline:
+    """Tests for run_batch_entity_pipeline orchestration."""
 
     @pytest.mark.ml
-    def test_hashing_rejects_missing_media(self) -> None:
-        """Task rejects when media not found."""
-        from celery.exceptions import Reject
+    def test_batch_pipeline_chains_batch_tasks(self) -> None:
+        """Batch pipeline chains batch tasks in correct order."""
+        from potluck.pipeline.tasks.processing import run_batch_entity_pipeline
 
-        from potluck.pipeline.tasks.processing import run_hashing_processor
-
-        with (
-            patch("potluck.pipeline.processing.core.base.get_engine"),
-            patch("potluck.pipeline.processing.core.base.Session"),
-            patch("potluck.pipeline.processing.core.base._get_entity", return_value=None),
-        ):
-            with pytest.raises(Reject) as exc_info:
-                run_hashing_processor(EntityType.MEDIA.value, str(uuid4()))
-
-            assert "not found" in str(exc_info.value)
-
-
-class TestRunMetadataProcessor:
-    """Tests for run_metadata_processor task."""
-
-    @pytest.mark.ml
-    def test_metadata_returns_correct_structure(self) -> None:
-        """Task returns dict with expected keys."""
-        from potluck.pipeline.tasks.processing import run_metadata_processor
-
-        mock_media = MagicMock()
-        mock_media.id = uuid4()
-        mock_media.file_path = "/test/image.jpg"
-
-        mock_result = StageResult(
-            item_id=mock_media.id,
-            stage_name="metadata",
-            status=StageStatus.COMPLETED,
-            processing_time_ms=50,
-            data={
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "camera_make": "Canon",
-                "camera_model": "EOS R5",
-            },
-        )
-
-        with (
-            patch("potluck.pipeline.processing.core.base.get_engine"),
-            patch("potluck.pipeline.processing.core.base.Session"),
-            patch("potluck.pipeline.processing.core.base._get_entity", return_value=mock_media),
-            patch("potluck.pipeline.processing.core.base._update_entity_fields"),
-            patch(
-                "potluck.pipeline.processing.processors.metadata.MetadataProcessor.should_execute",
-                return_value=True,
-            ),
-            patch(
-                "potluck.pipeline.processing.processors.metadata.MetadataProcessor.execute",
-                return_value=mock_result,
-            ),
-        ):
-            result = run_metadata_processor(EntityType.MEDIA.value, str(mock_media.id))
-
-            assert "entity_id" in result
-            assert "status" in result
-            assert "latitude" in result
-
-
-class TestRunFacesProcessor:
-    """Tests for run_faces_processor task."""
-
-    @pytest.mark.ml
-    def test_faces_persists_detected_faces(self) -> None:
-        """Task persists detected faces to MediaPersonLink."""
-        from potluck.pipeline.tasks.processing import run_faces_processor
-
-        mock_media = MagicMock()
-        mock_media.id = uuid4()
-        mock_media.file_path = "/test/image.jpg"
-
-        mock_result = StageResult(
-            item_id=mock_media.id,
-            stage_name="faces",
-            status=StageStatus.COMPLETED,
-            processing_time_ms=500,
-            data={
-                "faces": [
-                    {
-                        "embedding": [0.1] * 512,
-                        "bbox_x": 10,
-                        "bbox_y": 20,
-                        "bbox_width": 100,
-                        "bbox_height": 120,
-                        "confidence": 0.95,
-                    },
-                    {
-                        "embedding": [0.2] * 512,
-                        "bbox_x": 200,
-                        "bbox_y": 50,
-                        "bbox_width": 80,
-                        "bbox_height": 100,
-                        "confidence": 0.88,
-                    },
-                ],
-            },
-        )
-
-        mock_session = MagicMock()
-
-        with (
-            patch("potluck.pipeline.processing.core.base.get_engine"),
-            patch("potluck.pipeline.processing.core.base.Session", return_value=mock_session),
-            patch("potluck.pipeline.processing.core.base._get_entity", return_value=mock_media),
-            patch(
-                "potluck.pipeline.processing.processors.faces.FaceProcessor.should_execute",
-                return_value=True,
-            ),
-            patch(
-                "potluck.pipeline.processing.processors.faces.FaceProcessor.execute",
-                return_value=mock_result,
-            ),
-        ):
-            mock_session.__enter__ = MagicMock(return_value=mock_session)
-            mock_session.__exit__ = MagicMock(return_value=False)
-
-            result = run_faces_processor(EntityType.MEDIA.value, str(mock_media.id))
-
-            assert result["faces_detected"] == 2
-            # Verify session.add was called for each face
-            assert mock_session.add.call_count >= 2
-
-
-class TestRunProcessingPipeline:
-    """Tests for run_processing_pipeline orchestration."""
-
-    @pytest.mark.ml
-    def test_pipeline_chains_tasks_correctly(self) -> None:
-        """Pipeline chains all processing tasks in correct order."""
-        from potluck.pipeline.tasks.processing import run_processing_pipeline
-
-        media_id = str(uuid4())
+        entity_ids = [str(uuid4()) for _ in range(5)]
 
         with patch("potluck.pipeline.tasks.processing.chain") as mock_chain:
             mock_chain.return_value.apply_async = MagicMock()
 
-            run_processing_pipeline(media_id)
+            run_batch_entity_pipeline(EntityType.MEDIA.value, entity_ids)
 
-            # Verify chain was called
             mock_chain.assert_called_once()
-
-            # Get the signatures passed to chain
             call_args = mock_chain.call_args[0]
-            # 6 tasks: hashing, metadata, ocr, faces, captioning, media_embedding
+            # Media pipeline: hashing, metadata, ocr, faces, media_embedding, captioning
             assert len(call_args) == 6
 
     @pytest.mark.ml
-    def test_pipeline_uses_immutable_signatures(self) -> None:
-        """Pipeline uses .si() for immutable signatures."""
-        from potluck.pipeline.tasks.processing import (
-            run_captioning_processor,
-            run_faces_processor,
-            run_hashing_processor,
-            run_metadata_processor,
-            run_ocr_processor,
-        )
+    def test_batch_pipeline_skips_empty_ids(self) -> None:
+        """Batch pipeline does nothing for empty entity list."""
+        from potluck.pipeline.tasks.processing import run_batch_entity_pipeline
 
-        entity_type = EntityType.MEDIA.value
+        with patch("potluck.pipeline.tasks.processing.chain") as mock_chain:
+            run_batch_entity_pipeline(EntityType.MEDIA.value, [])
+
+            mock_chain.assert_not_called()
+
+    @pytest.mark.ml
+    def test_batch_pipeline_skips_unknown_entity_type(self) -> None:
+        """Batch pipeline handles entity types with no registered batch processors."""
+        from potluck.pipeline.tasks.processing import run_batch_entity_pipeline
+
+        # Entity type with no processors registered should not raise
+        with patch("potluck.pipeline.tasks.processing.chain") as mock_chain:
+            # Use a type that might not have batch tasks registered
+            run_batch_entity_pipeline("calendar_event", [str(uuid4())])
+            mock_chain.assert_not_called()
+
+    @pytest.mark.ml
+    def test_entity_pipeline_wraps_batch(self) -> None:
+        """run_entity_pipeline should call run_batch_entity_pipeline with [id]."""
+        from potluck.pipeline.tasks.processing import run_entity_pipeline
+
         entity_id = str(uuid4())
 
-        # Verify each task has .si() method (immutable signature)
-        for task in [
-            run_hashing_processor,
-            run_metadata_processor,
-            run_ocr_processor,
-            run_faces_processor,
-            run_captioning_processor,
-        ]:
-            sig = task.si(entity_type, entity_id)
-            assert sig.immutable is True
+        with patch("potluck.pipeline.tasks.processing.run_batch_entity_pipeline") as mock_batch:
+            run_entity_pipeline(EntityType.MEDIA.value, entity_id)
+
+            mock_batch.assert_called_once_with(EntityType.MEDIA.value, [entity_id])
+
+
+class TestRunBatchStageTask:
+    """Tests for run_batch_stage_task infrastructure."""
+
+    @pytest.mark.ml
+    def test_batch_stage_skips_empty_needs_processing(self) -> None:
+        """Batch stage should skip when needs_processing is empty."""
+        from potluck.pipeline.processing.core.base import run_batch_stage_task
+        from potluck.pipeline.processing.processors.hashing import HashingProcessor
+
+        mock_task = MagicMock()
+        previous_result = {"entity_type": "media", "needs_processing": []}
+
+        result = run_batch_stage_task(
+            mock_task, previous_result, EntityType.MEDIA, HashingProcessor
+        )
+
+        assert result["needs_processing"] == []
+        assert result["total"] == 0
+
+    @pytest.mark.ml
+    def test_batch_stage_propagates_needs_processing(self) -> None:
+        """Batch stage should propagate needs_processing to next stage."""
+        from potluck.pipeline.processing.core.base import run_batch_stage_task
+        from potluck.pipeline.processing.processors.hashing import HashingProcessor
+
+        mock_task = MagicMock()
+        entity_ids = [str(uuid4()), str(uuid4())]
+        previous_result = {"entity_type": "media", "needs_processing": entity_ids}
+
+        mock_media1 = MagicMock()
+        mock_media1.id = entity_ids[0]
+        mock_media2 = MagicMock()
+        mock_media2.id = entity_ids[1]
+
+        with (
+            patch("potluck.pipeline.processing.core.base.get_engine"),
+            patch("potluck.pipeline.processing.core.base.Session") as mock_session_cls,
+            patch(
+                "potluck.pipeline.processing.core.base._get_entities_bulk",
+                return_value=({entity_ids[0]: mock_media1, entity_ids[1]: mock_media2}, []),
+            ),
+            patch.object(HashingProcessor, "execute_batch") as mock_execute_batch,
+        ):
+            mock_session = MagicMock()
+            mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+            from potluck.pipeline.dtos import BatchStageResult
+
+            mock_execute_batch.return_value = BatchStageResult(
+                stage_name="hashing",
+                total=2,
+                completed=2,
+                failed=0,
+                skipped=0,
+                results=[],
+            )
+
+            result = run_batch_stage_task(
+                mock_task, previous_result, EntityType.MEDIA, HashingProcessor
+            )
+
+            assert result["needs_processing"] == entity_ids
+            assert result["completed"] == 2
+
+
+class TestProcessorRegistryBatch:
+    """Tests for batch task registration in ProcessorRegistry."""
+
+    @pytest.mark.ml
+    def test_batch_pipeline_returns_only_processors_with_batch_tasks(self) -> None:
+        """get_batch_pipeline should only return processors with batch_task_func."""
+        from potluck.pipeline.processing.core.registry import ProcessorRegistry
+
+        pipeline = ProcessorRegistry.get_batch_pipeline(EntityType.MEDIA)
+
+        # All configs in batch pipeline should have batch_task_func set
+        for config in pipeline:
+            assert config.batch_task_func is not None
+
+    @pytest.mark.ml
+    def test_batch_pipeline_sorted_by_priority(self) -> None:
+        """get_batch_pipeline should return processors sorted by priority."""
+        from potluck.pipeline.processing.core.registry import ProcessorRegistry
+
+        pipeline = ProcessorRegistry.get_batch_pipeline(EntityType.MEDIA)
+
+        priorities = [config.priority for config in pipeline]
+        assert priorities == sorted(priorities)
 
 
 class TestClusterUnassignedFaces:

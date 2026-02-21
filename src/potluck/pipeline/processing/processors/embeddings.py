@@ -46,8 +46,7 @@ from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
 from potluck.pipeline.processing.core.base import (
     BaseProcessor,
     _get_entity,
-    run_batch_processor_task,
-    run_processor_task,
+    run_batch_stage_task,
 )
 from potluck.pipeline.processing.core.ml import MLModels
 from potluck.pipeline.processing.core.registry import ProcessorRegistry
@@ -933,32 +932,14 @@ class MediaEmbeddingProcessor(BaseProcessor):
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_text_embedding_processor(
+def run_text_embedding_batch(
     self: "Task[..., dict[str, Any]]",
+    previous_result: dict[str, Any],
     entity_type: str,
-    entity_id: str,
 ) -> dict[str, Any]:
-    """Generate text embedding for an entity."""
-    return run_processor_task(self, EntityType(entity_type), entity_id, TextEmbeddingProcessor)
-
-
-@celery_app.task(  # type: ignore[untyped-decorator]
-    bind=True,
-    queue="process",
-    autoretry_for=(Retry,),
-    retry_backoff=RETRY_BACKOFF,
-    retry_backoff_max=RETRY_BACKOFF_MAX,
-    max_retries=MAX_RETRIES,
-    acks_late=True,
-)
-def run_text_embedding_processor_batch(
-    self: "Task[..., dict[str, Any]]",
-    entity_type: str,
-    entity_ids: list[str],
-) -> dict[str, Any]:
-    """Generate text embeddings for a batch of entities."""
-    return run_batch_processor_task(
-        self, EntityType(entity_type), entity_ids, TextEmbeddingProcessor
+    """Generate text embeddings for a batch of entities (pipeline stage)."""
+    return run_batch_stage_task(
+        self, previous_result, EntityType(entity_type), TextEmbeddingProcessor
     )
 
 
@@ -971,14 +952,14 @@ def run_text_embedding_processor_batch(
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_multimodal_text_embedding_processor(
+def run_multimodal_text_embedding_batch(
     self: "Task[..., dict[str, Any]]",
+    previous_result: dict[str, Any],
     entity_type: str,
-    entity_id: str,
 ) -> dict[str, Any]:
-    """Generate multimodal text embedding for an entity."""
-    return run_processor_task(
-        self, EntityType(entity_type), entity_id, MultimodalTextEmbeddingProcessor
+    """Generate multimodal text embeddings for a batch of entities (pipeline stage)."""
+    return run_batch_stage_task(
+        self, previous_result, EntityType(entity_type), MultimodalTextEmbeddingProcessor
     )
 
 
@@ -991,38 +972,19 @@ def run_multimodal_text_embedding_processor(
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_media_embedding_processor(
+def run_media_embedding_batch(
     self: "Task[..., dict[str, Any]]",
+    previous_result: dict[str, Any],
     entity_type: str,
-    entity_id: str,
 ) -> dict[str, Any]:
-    """Generate media embeddings (SigLIP, OCR, caption) for a media item."""
-    return run_processor_task(self, EntityType(entity_type), entity_id, MediaEmbeddingProcessor)
-
-
-@celery_app.task(  # type: ignore[untyped-decorator]
-    bind=True,
-    queue="process",
-    autoretry_for=(Retry,),
-    retry_backoff=RETRY_BACKOFF,
-    retry_backoff_max=RETRY_BACKOFF_MAX,
-    max_retries=MAX_RETRIES,
-    acks_late=True,
-)
-def run_media_embedding_processor_batch(
-    self: "Task[..., dict[str, Any]]",
-    entity_type: str,
-    entity_ids: list[str],
-) -> dict[str, Any]:
-    """Generate media embeddings for a batch of media items."""
-    return run_batch_processor_task(
-        self, EntityType(entity_type), entity_ids, MediaEmbeddingProcessor
+    """Generate media embeddings for a batch of entities (pipeline stage)."""
+    return run_batch_stage_task(
+        self, previous_result, EntityType(entity_type), MediaEmbeddingProcessor
     )
 
 
-# Register tasks with their processors
-ProcessorRegistry.set_task(TextEmbeddingProcessor.NAME, run_text_embedding_processor)
-ProcessorRegistry.set_task(
-    MultimodalTextEmbeddingProcessor.NAME, run_multimodal_text_embedding_processor
+ProcessorRegistry.set_batch_task(TextEmbeddingProcessor.NAME, run_text_embedding_batch)
+ProcessorRegistry.set_batch_task(
+    MultimodalTextEmbeddingProcessor.NAME, run_multimodal_text_embedding_batch
 )
-ProcessorRegistry.set_task(MediaEmbeddingProcessor.NAME, run_media_embedding_processor)
+ProcessorRegistry.set_batch_task(MediaEmbeddingProcessor.NAME, run_media_embedding_batch)

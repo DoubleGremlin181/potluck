@@ -7,6 +7,7 @@ This module provides standardized utilities for loading ML models across process
 All models are cached at the class level to avoid reloading across processor instances.
 """
 
+import gc
 import os
 from typing import Any, ClassVar
 
@@ -17,9 +18,8 @@ from PIL import Image
 from sentence_transformers import SentenceTransformer
 from transformers import (
     AutoModel,
+    AutoModelForCausalLM,
     AutoProcessor,
-    Blip2ForConditionalGeneration,
-    Blip2Processor,
     PreTrainedModel,
 )
 
@@ -90,40 +90,64 @@ class MLModels:
         cls._cache.clear()
         logger.info("MLModels cache cleared")
 
-    def download_all_models(self) -> None:
-        """Pre-download all ML models for offline use.
+    def unload(self, cache_key: str) -> None:
+        """Remove a specific model from cache and free memory.
 
-        This eagerly loads all models into memory, triggering downloads from
-        HuggingFace Hub if not already cached locally. Useful for container
-        startup to ensure all models are available before processing begins.
+        Args:
+            cache_key: The cache key of the model to unload.
         """
-        logger.info("Pre-downloading all ML models...")
+        if cache_key in self._cache:
+            del self._cache[cache_key]
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            logger.info(f"Unloaded model: {cache_key}")
 
-        # Text embedding (e5-small-v2, ~90MB)
-        logger.info("Loading text encoder...")
-        self.get_text_encoder()
+    @classmethod
+    def unload_all(cls) -> None:
+        """Remove all models from cache and free memory."""
+        if not cls._cache:
+            return
+        keys = list(cls._cache.keys())
+        cls._cache.clear()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info(f"Unloaded all models: {keys}")
 
-        # Multimodal (SigLIP, ~380MB)
-        logger.info("Loading multimodal encoder...")
-        self.get_multimodal_encoder()
+    def download_all_models(self) -> None:
+        """Download all ML models to disk cache WITHOUT loading into memory.
 
-        # Face detection (MTCNN)
-        logger.info("Loading face detector...")
-        self.get_face_detector()
+        Uses snapshot_download to download HuggingFace models to the local cache
+        without instantiating them. This avoids the memory spike that would occur
+        from loading all models simultaneously.
+        """
+        from huggingface_hub import snapshot_download
 
-        # Face recognition (ArcFace, ~250MB)
-        logger.info("Loading face encoder...")
-        self.get_face_encoder()
+        logger.info("Downloading all ML models to disk cache...")
 
-        # OCR (EasyOCR, ~100MB)
-        logger.info("Loading OCR reader...")
-        self.get_ocr_reader()
+        # HuggingFace models — snapshot_download only downloads files
+        for model_id in [DEFAULT_CAPTIONING_MODEL, DEFAULT_MULTIMODAL_MODEL]:
+            logger.info(f"Downloading {model_id}...")
+            snapshot_download(model_id)
 
-        # Captioning (BLIP-2, ~2.7GB)
-        logger.info("Loading captioning model...")
-        self.get_captioning_model()
+        # SentenceTransformers models use HuggingFace Hub
+        logger.info(f"Downloading {DEFAULT_TEXT_EMBEDDING_MODEL}...")
+        snapshot_download(DEFAULT_TEXT_EMBEDDING_MODEL)
 
-        logger.info("All models downloaded successfully")
+        # ArcFace weights (custom download)
+        weights_path = get_weights_path()
+        if not weights_path.exists():
+            logger.info("Downloading ArcFace weights...")
+            download_weights()
+
+        # EasyOCR — no download-only API, create reader on CPU then discard
+        logger.info("Downloading EasyOCR models...")
+        _reader = easyocr.Reader(["en"], gpu=False)
+        del _reader
+        gc.collect()
+
+        logger.info("All models downloaded to disk cache")
 
     # -------------------------------------------------------------------------
     # Text Embedding Models
@@ -248,8 +272,10 @@ class MLModels:
     def get_captioning_model(
         self,
         model_name: str = DEFAULT_CAPTIONING_MODEL,
-    ) -> tuple[Blip2ForConditionalGeneration, Blip2Processor]:
+    ) -> tuple[PreTrainedModel, Any]:
         """Get captioning model and processor for image captioning.
+
+        Uses Florence-2 which supports prompt-based tasks like <DETAILED_CAPTION>.
 
         Args:
             model_name: HuggingFace model identifier.
@@ -260,20 +286,30 @@ class MLModels:
         cache_key = f"captioning:{model_name}:{self.device}"
         if cache_key not in self._cache:
             logger.info(f"Loading captioning model: {model_name} on {self.device}")
-            processor = Blip2Processor.from_pretrained(model_name)
+            processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
+                model_name, trust_remote_code=True
+            )
 
             if self.device.type == "cuda":
-                model = Blip2ForConditionalGeneration.from_pretrained(
+                model = AutoModelForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.float16,
-                    device_map="auto",
+                    trust_remote_code=True,
+                    attn_implementation="eager",
                 )
             else:
-                model = Blip2ForConditionalGeneration.from_pretrained(model_name)
-                model.to(self.device)  # type: ignore[arg-type,unused-ignore]
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    trust_remote_code=True,
+                    attn_implementation="eager",
+                )
+
+            model.to(self.device)  # type: ignore[arg-type,unused-ignore]
+            model.train(False)
+            model.requires_grad_(False)
 
             self._cache[cache_key] = (model, processor)
-        result: tuple[Blip2ForConditionalGeneration, Blip2Processor] = self._cache[cache_key]
+        result: tuple[PreTrainedModel, Any] = self._cache[cache_key]
         return result
 
     # -------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Image captioning processor using BLIP-2."""
+"""Image captioning processor using Florence-2."""
 
 import time
 from pathlib import Path
@@ -20,7 +20,10 @@ from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.base import (
+    BaseProcessor,
+    run_batch_stage_task,
+)
 from potluck.pipeline.processing.core.ml import MLModels
 from potluck.pipeline.processing.core.registry import ProcessorRegistry
 
@@ -29,38 +32,38 @@ logger = get_logger(__name__)
 
 @ProcessorRegistry.register(priority=50)
 class CaptioningProcessor(BaseProcessor):
-    """Processor for generating AI image captions using BLIP-2.
+    """Processor for generating AI image captions using Florence-2.
 
-    Generates human-readable alt-text descriptions for images using the
-    BLIP-2 model from Salesforce. Uses MLModels for centralized model loading.
+    Generates human-readable descriptions for images using Florence-2's
+    <DETAILED_CAPTION> task prompt. Uses MLModels for centralized model loading.
     """
 
     NAME: ClassVar[str] = "captioning"
     SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {EntityType.MEDIA}
     PERSIST_FIELDS: ClassVar[list[str]] = ["caption"]
 
+    # Florence-2 task prompt for detailed captioning
+    TASK_PROMPT: ClassVar[str] = "<DETAILED_CAPTION>"
+
     def __init__(
         self,
         *,
         model_name: str = DEFAULT_CAPTIONING_MODEL,
-        max_length: int = 50,
         device: str | None = None,
     ) -> None:
         """Initialize the captioning processor.
 
         Args:
-            model_name: HuggingFace model identifier for BLIP-2.
-            max_length: Maximum length of generated captions.
+            model_name: HuggingFace model identifier for Florence-2.
             device: Device to run model on ('cuda', 'cpu', or None for auto based on GPU env var).
         """
         self._model_name = model_name
-        self._max_length = max_length
         self._models = MLModels(device=device)
         self._processor: Any = None
         self._model: Any = None
 
     def _load_model(self) -> None:
-        """Lazy load the BLIP-2 model and processor from MLModels."""
+        """Lazy load the Florence-2 model and processor from MLModels."""
         if self._processor is not None:
             return
 
@@ -72,7 +75,7 @@ class CaptioningProcessor(BaseProcessor):
         return media.media_type == MediaType.IMAGE
 
     def execute(self, entity: SQLModel) -> StageResult:
-        """Generate an AI caption for the media.
+        """Generate an AI caption for the media using Florence-2.
 
         Args:
             entity: The media entity to process.
@@ -104,19 +107,28 @@ class CaptioningProcessor(BaseProcessor):
 
             image = Image.open(file_path).convert("RGB")
 
-            inputs = self._processor(images=image, return_tensors="pt")
-
-            if hasattr(self._model, "device"):
-                inputs = inputs.to(self._model.device)
+            # Florence-2 uses a task prompt to specify the desired output
+            inputs = self._processor(text=self.TASK_PROMPT, images=image, return_tensors="pt")
+            inputs = {k: v.to(self._model.device) for k, v in inputs.items()}
 
             generated_ids = self._model.generate(
-                **inputs,
-                max_length=self._max_length,
+                input_ids=inputs["input_ids"],
+                pixel_values=inputs["pixel_values"],
+                max_new_tokens=1024,
+                num_beams=1,
+                do_sample=False,
+                use_cache=False,
             )
 
-            caption = self._processor.batch_decode(generated_ids, skip_special_tokens=True)[
+            generated_text = self._processor.batch_decode(generated_ids, skip_special_tokens=False)[
                 0
-            ].strip()
+            ]
+            parsed = self._processor.post_process_generation(
+                generated_text,
+                task=self.TASK_PROMPT,
+                image_size=(image.width, image.height),
+            )
+            caption: str = parsed[self.TASK_PROMPT]
 
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -128,7 +140,6 @@ class CaptioningProcessor(BaseProcessor):
                 data={
                     "caption": caption,
                     "model_name": self._model_name,
-                    "max_length": self._max_length,
                 },
             )
 
@@ -158,14 +169,13 @@ class CaptioningProcessor(BaseProcessor):
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_captioning_processor(
+def run_captioning_batch(
     self: "Task[..., dict[str, Any]]",
+    previous_result: dict[str, Any],
     entity_type: str,
-    entity_id: str,
 ) -> dict[str, Any]:
-    """Generate AI caption for an entity."""
-    return run_processor_task(self, EntityType(entity_type), entity_id, CaptioningProcessor)
+    """Generate AI captions for a batch of entities (pipeline stage)."""
+    return run_batch_stage_task(self, previous_result, EntityType(entity_type), CaptioningProcessor)
 
 
-# Register the task with the processor
-ProcessorRegistry.set_task(CaptioningProcessor.NAME, run_captioning_processor)
+ProcessorRegistry.set_batch_task(CaptioningProcessor.NAME, run_captioning_batch)

@@ -7,7 +7,7 @@ This module provides processors for extracting information from entities:
 - Face detection and clustering
 - Image captioning
 - Text embeddings (semantic embeddings for text entities)
-- Media embeddings (CLIP, OCR text, caption embeddings)
+- Media embeddings (SigLIP, OCR text, caption embeddings)
 
 Auto-Discovery:
     Importing this module automatically discovers and imports all processor
@@ -17,12 +17,12 @@ Auto-Discovery:
 
 Public API:
     - BaseProcessor: Abstract base class for processors
-    - run_processor_task: Shared task execution with error handling
+    - run_batch_processor_task: Shared batch task execution with error handling
     - HashingProcessor: File and perceptual hashing
     - MetadataProcessor: EXIF metadata extraction
     - OCRProcessor: Text extraction using EasyOCR
     - FaceProcessor: Face detection using MTCNN + ArcFace
-    - CaptioningProcessor: Image captioning using BLIP-2
+    - CaptioningProcessor: Image captioning using Florence-2
     - TextEmbeddingProcessor: Text embedding for text-to-text semantic search
     - MultimodalTextEmbeddingProcessor: Text embedding for cross-modal search
     - MediaEmbeddingProcessor: Visual/text embeddings for media
@@ -47,7 +47,6 @@ from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus  # 
 from potluck.pipeline.processing.core.base import (  # noqa: E402
     BaseProcessor,
     run_batch_processor_task,
-    run_processor_task,
 )
 from potluck.pipeline.processing.core.registry import (  # noqa: E402
     ProcessorConfig,
@@ -70,7 +69,6 @@ from potluck.pipeline.processing.processors.ocr import OCRProcessor  # noqa: E40
 __all__ = [
     # Base class and registry
     "BaseProcessor",
-    "run_processor_task",
     "run_batch_processor_task",
     "ProcessorRegistry",
     "ProcessorConfig",

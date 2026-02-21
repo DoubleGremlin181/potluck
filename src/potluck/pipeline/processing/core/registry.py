@@ -12,7 +12,7 @@ The registry builds processing pipelines dynamically at runtime.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from potluck.core.logging import get_logger
@@ -28,13 +28,15 @@ class ProcessorConfig:
 
     Attributes:
         processor_class: The processor class.
-        task_func: The Celery task function for this processor.
         priority: Execution order (lower = runs first). Default 100.
+        batch_task_func: Celery task for batch processing. Used by
+            the batch-by-processor pipeline to process all entities of a type
+            in a single task, loading one model at a time.
     """
 
     processor_class: type[BaseProcessor]
-    task_func: Callable[..., Any]
     priority: int = 100
+    batch_task_func: Callable[..., Any] | None = field(default=None)
 
 
 class ProcessorRegistry:
@@ -51,8 +53,8 @@ class ProcessorRegistry:
             SUPPORTED_ENTITY_TYPES = {EntityType.MEDIA}
             ...
 
-        # Get pipeline for an entity type
-        pipeline = ProcessorRegistry.get_pipeline(EntityType.MEDIA)
+        # Get batch pipeline for an entity type
+        pipeline = ProcessorRegistry.get_batch_pipeline(EntityType.MEDIA)
     """
 
     _processors: ClassVar[dict[str, ProcessorConfig]] = {}
@@ -62,13 +64,11 @@ class ProcessorRegistry:
         cls,
         *,
         priority: int = 100,
-        task_func: Callable[..., Any] | None = None,
     ) -> Callable[[type[BaseProcessor]], type[BaseProcessor]]:
         """Decorator to register a processor class.
 
         Args:
             priority: Execution order (lower = runs first). Default 100.
-            task_func: The Celery task function. Can be set later via set_task().
 
         Returns:
             Decorator function that registers the processor.
@@ -94,10 +94,8 @@ class ProcessorRegistry:
             if name in cls._processors:
                 logger.warning(f"Overwriting existing processor: {name}")
 
-            # Create placeholder config - task_func may be set later
             cls._processors[name] = ProcessorConfig(
                 processor_class=processor_class,
-                task_func=task_func or _placeholder_task,
                 priority=priority,
             )
 
@@ -111,15 +109,12 @@ class ProcessorRegistry:
         return decorator
 
     @classmethod
-    def set_task(cls, processor_name: str, task_func: Callable[..., Any]) -> None:
-        """Set the Celery task function for a registered processor.
-
-        This is typically called after the processor class is defined,
-        when the Celery task is created.
+    def set_batch_task(cls, processor_name: str, batch_task_func: Callable[..., Any]) -> None:
+        """Set the batch Celery task function for a registered processor.
 
         Args:
             processor_name: The processor NAME.
-            task_func: The Celery task function.
+            batch_task_func: The Celery task function for batch processing.
         """
         if processor_name not in cls._processors:
             raise ValueError(f"Processor not registered: {processor_name}")
@@ -127,27 +122,28 @@ class ProcessorRegistry:
         config = cls._processors[processor_name]
         cls._processors[processor_name] = ProcessorConfig(
             processor_class=config.processor_class,
-            task_func=task_func,
             priority=config.priority,
+            batch_task_func=batch_task_func,
         )
 
     @classmethod
-    def get_pipeline(cls, entity_type: EntityType) -> list[ProcessorConfig]:
-        """Get ordered list of processor configs for an entity type.
+    def get_batch_pipeline(cls, entity_type: EntityType) -> list[ProcessorConfig]:
+        """Get ordered list of processor configs with batch tasks for an entity type.
 
-        Returns processors that support the given entity type, sorted by priority
-        (lower priority values run first).
+        Only returns processors that have a batch_task_func registered.
+        Used by the batch-by-processor pipeline.
 
         Args:
             entity_type: The entity type to get pipeline for.
 
         Returns:
-            List of ProcessorConfig sorted by priority.
+            List of ProcessorConfig (with batch_task_func) sorted by priority.
         """
         configs = [
             config
             for config in cls._processors.values()
             if entity_type in config.processor_class.SUPPORTED_ENTITY_TYPES
+            and config.batch_task_func is not None
         ]
         return sorted(configs, key=lambda c: c.priority)
 
@@ -176,10 +172,3 @@ class ProcessorRegistry:
     def clear(cls) -> None:
         """Clear all registered processors. Useful for testing."""
         cls._processors.clear()
-
-
-def _placeholder_task(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Placeholder task for processors that haven't set their task yet."""
-    raise NotImplementedError(
-        "Processor task not set. Call ProcessorRegistry.set_task() after defining the Celery task."
-    )

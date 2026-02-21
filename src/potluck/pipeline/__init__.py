@@ -30,8 +30,8 @@ Tasks:
     run_ingestion: Celery task for async ingestion
     cancel_ingestion: Celery task to cancel running ingestion
     start_ingestion: Start ingestion job (sync wrapper)
-    run_processing_pipeline: Run full processing pipeline
-    run_basic_processing: Run hashing + metadata only
+    run_batch_entity_pipeline: Run batch-by-processor pipeline for entity groups
+    run_entity_pipeline: Run pipeline for a single entity
 
 Registry:
     register: Decorator to register ingestion stages
@@ -44,7 +44,7 @@ Processors:
     MetadataProcessor: Extract EXIF metadata
     OCRProcessor: Text extraction from images
     FaceProcessor: Face detection using MTCNN + ArcFace
-    CaptioningProcessor: Image captioning using BLIP-2
+    CaptioningProcessor: Image captioning using Florence-2
 
 Example Usage
 -------------
@@ -121,8 +121,8 @@ from potluck.pipeline.tasks.ingestion import (
     start_ingestion,
 )
 from potluck.pipeline.tasks.processing import (
-    run_basic_processing,
-    run_processing_pipeline,
+    run_batch_entity_pipeline,
+    run_entity_pipeline,
 )
 
 __all__ = [
@@ -159,6 +159,6 @@ __all__ = [
     "run_ingestion",
     "cancel_ingestion",
     "start_ingestion",
-    "run_processing_pipeline",
-    "run_basic_processing",
+    "run_batch_entity_pipeline",
+    "run_entity_pipeline",
 ]

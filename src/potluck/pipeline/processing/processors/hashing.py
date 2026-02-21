@@ -27,7 +27,10 @@ from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.base import (
+    BaseProcessor,
+    run_batch_processor_task,
+)
 from potluck.pipeline.processing.core.registry import ProcessorRegistry
 from potluck.pipeline.utils.hashing import compute_file_hash
 
@@ -175,14 +178,21 @@ def compute_phash_distance(hash1: str, hash2: str) -> int:
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_hashing_processor(
+def run_hashing_batch(
     self: "Task[..., dict[str, Any]]",
     entity_type: str,
-    entity_id: str,
+    entity_ids: list[str],
 ) -> dict[str, Any]:
-    """Compute SHA256 and perceptual hash for an entity."""
-    return run_processor_task(self, EntityType(entity_type), entity_id, HashingProcessor)
+    """Hash a batch of entities and return IDs that need further processing.
+
+    This is the first stage in the batch pipeline. It hashes all entities and
+    returns a ``needs_processing`` list for subsequent stages. Entities that
+    already have a ``file_hash`` are skipped (idempotency).
+    """
+    result = run_batch_processor_task(self, EntityType(entity_type), entity_ids, HashingProcessor)
+    # All entity IDs are forwarded — downstream stages use should_execute() to filter
+    result["needs_processing"] = entity_ids
+    return result
 
 
-# Register the task with the processor
-ProcessorRegistry.set_task(HashingProcessor.NAME, run_hashing_processor)
+ProcessorRegistry.set_batch_task(HashingProcessor.NAME, run_hashing_batch)

@@ -79,8 +79,10 @@ ml = [
     # Face recognition uses vendored ArcFace IResNet (no extra dependency)
     # Clustering
     "scikit-learn>=1.3.0",
-    # Image captioning & multimodal embeddings (SigLIP)
+    # Image captioning (Florence-2) & multimodal embeddings (SigLIP2)
     "transformers>=4.36.0",
+    "einops>=0.7.0",  # Required by Florence-2 architecture
+    "timm>=0.9.0",  # Required by Florence-2 vision encoder
     "sentencepiece>=0.2.0",  # Required for SigLIP tokenizer
     "protobuf>=4.0.0",  # Required for SigLIP tokenizer
 ]

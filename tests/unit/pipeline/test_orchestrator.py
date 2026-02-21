@@ -631,7 +631,7 @@ class TestIncrementalCounterSync:
             patch("potluck.pipeline.orchestrator.detect_stage", return_value=mock_stage_cls),
             patch("potluck.pipeline.orchestrator.compute_file_hash", return_value=None),
             patch.object(orchestrator, "_find_completed_run", return_value=None),
-            patch.object(orchestrator, "_queue_entity_processing"),
+            patch.object(orchestrator, "_queue_batch_processing"),
             patch.object(orchestrator, "_queue_linkers"),
         ):
             result = orchestrator.run(

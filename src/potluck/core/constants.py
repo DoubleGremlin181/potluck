@@ -13,5 +13,5 @@ FACE_EMBEDDING_DIM = 512  # ArcFace face embeddings
 
 # Default model identifiers
 DEFAULT_TEXT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
-DEFAULT_MULTIMODAL_MODEL = "google/siglip-base-patch16-224"
-DEFAULT_CAPTIONING_MODEL = "Salesforce/blip2-opt-2.7b"
+DEFAULT_MULTIMODAL_MODEL = "google/siglip2-base-patch16-224"
+DEFAULT_CAPTIONING_MODEL = "microsoft/Florence-2-base-ft"

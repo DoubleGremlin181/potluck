@@ -515,11 +515,14 @@ class PipelineOrchestrator:
         return sorted(batch, key=get_priority)
 
     def _flush_batch(self, batch: list[IngestableEntity], stats: PipelineStats) -> None:
-        """Flush a batch of entities to the database and queue processing.
+        """Flush a batch of entities to the database and queue batch processing.
 
         Entities are sorted by table dependency order before insertion to ensure
         parent entities (like CalendarEvent) are inserted before child entities
         (like EventParticipant) that have foreign key references to them.
+
+        After persistence, entities are grouped by type and dispatched as batch
+        processing pipelines — one chain per entity type present in this batch.
         """
         # Sort batch by table dependency order
         sorted_batch = self._sort_by_dependencies(batch)
@@ -530,22 +533,28 @@ class PipelineOrchestrator:
 
         self.session.commit()
 
-        # Queue processing for primary entity types only (those in the model map).
-        # Dependent entities (EventParticipant, LocationHistory, etc.) don't need
-        # individual processing pipelines.
+        # Group entity IDs by type for batch processing.
+        # Only primary entity types (those in the model map) get processing pipelines.
+        # Dependent entities (EventParticipant, LocationHistory, etc.) are skipped.
+        batch_ids_by_type: dict[EntityType, list[str]] = {}
         for entity in batch:
             entity_type = self._get_entity_type(entity)
             if entity_type is None:
                 continue
 
-            self._queue_entity_processing(entity, entity_type)
-
-            # Track entity IDs for batch linker processing
-            if entity_type not in self._entity_ids_by_type:
-                self._entity_ids_by_type[entity_type] = []
             entity_id = getattr(entity, "id", None)
-            if entity_id:
-                self._entity_ids_by_type[entity_type].append(str(entity_id))
+            if not entity_id:
+                continue
+
+            entity_id_str = str(entity_id)
+            batch_ids_by_type.setdefault(entity_type, []).append(entity_id_str)
+
+            # Also track for linker processing across all batches
+            self._entity_ids_by_type.setdefault(entity_type, []).append(entity_id_str)
+
+        # Queue one batch pipeline per entity type
+        for entity_type, entity_ids in batch_ids_by_type.items():
+            self._queue_batch_processing(entity_type, entity_ids)
 
     def _get_entity_type(self, entity: IngestableEntity) -> EntityType | None:
         """Determine EntityType from entity instance.
@@ -559,24 +568,24 @@ class PipelineOrchestrator:
                 return etype
         return None
 
-    def _queue_entity_processing(self, entity: IngestableEntity, entity_type: EntityType) -> None:
-        """Queue processing tasks for any entity type."""
+    def _queue_batch_processing(self, entity_type: EntityType, entity_ids: list[str]) -> None:
+        """Queue a batch processing pipeline for a group of entities of the same type."""
         # Deferred import: circular dependency via tasks/__init__.py → tasks/ingestion.py → orchestrator.py
-        from potluck.pipeline.tasks.processing import run_entity_pipeline
-
-        entity_id = getattr(entity, "id", None)
-        if not entity_id:
-            return
+        from potluck.pipeline.tasks.processing import run_batch_entity_pipeline
 
         try:
-            run_entity_pipeline(entity_type.value, str(entity_id))
-            logger.debug("Queued processing for %s %s", entity_type.value, entity_id)
+            run_batch_entity_pipeline(entity_type.value, entity_ids)
+            logger.debug(
+                "Queued batch processing for %d %s entities",
+                len(entity_ids),
+                entity_type.value,
+            )
         except (OSError, RuntimeError, ValueError, TypeError):
             logger.exception(
-                "Failed to queue processing for %s %s. "
-                "This entity will need to be manually reprocessed.",
+                "Failed to queue batch processing for %d %s entities. "
+                "These entities will need to be manually reprocessed.",
+                len(entity_ids),
                 entity_type.value,
-                entity_id,
             )
 
     def _queue_linkers(self, import_run: ImportRun) -> None:

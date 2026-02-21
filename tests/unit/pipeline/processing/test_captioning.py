@@ -78,21 +78,22 @@ class TestCaptioningProcessor:
         assert "not found" in result.error_message.lower()
 
     def test_default_model_settings(self) -> None:
-        """CaptioningProcessor should use BLIP-2 model by default."""
+        """CaptioningProcessor should use Florence-2 model by default."""
         stage = CaptioningProcessor()
-        assert stage._model_name == "Salesforce/blip2-opt-2.7b"
-        assert stage._max_length == 50
+        assert stage._model_name == "microsoft/Florence-2-base-ft"
 
     def test_custom_model_settings(self) -> None:
         """CaptioningProcessor should accept custom model settings."""
         stage = CaptioningProcessor(
             model_name="custom/model",
-            max_length=100,
             device="cpu",
         )
         assert stage._model_name == "custom/model"
-        assert stage._max_length == 100
         # Device is now accessed through MLModels
         import torch
 
         assert stage._models.device == torch.device("cpu")
+
+    def test_task_prompt_constant(self) -> None:
+        """CaptioningProcessor should use DETAILED_CAPTION task prompt."""
+        assert CaptioningProcessor.TASK_PROMPT == "<DETAILED_CAPTION>"

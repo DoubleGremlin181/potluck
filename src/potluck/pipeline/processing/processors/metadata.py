@@ -30,7 +30,10 @@ from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
 from potluck.pipeline.dtos import StageResult, StageStatus
-from potluck.pipeline.processing.core.base import BaseProcessor, run_processor_task
+from potluck.pipeline.processing.core.base import (
+    BaseProcessor,
+    run_batch_stage_task,
+)
 from potluck.pipeline.processing.core.registry import ProcessorRegistry
 
 logger = get_logger(__name__)
@@ -264,14 +267,13 @@ class MetadataProcessor(BaseProcessor):
     max_retries=MAX_RETRIES,
     acks_late=True,
 )
-def run_metadata_processor(
+def run_metadata_batch(
     self: "Task[..., dict[str, Any]]",
+    previous_result: dict[str, Any],
     entity_type: str,
-    entity_id: str,
 ) -> dict[str, Any]:
-    """Extract EXIF metadata from an entity."""
-    return run_processor_task(self, EntityType(entity_type), entity_id, MetadataProcessor)
+    """Extract EXIF metadata for a batch of entities (pipeline stage)."""
+    return run_batch_stage_task(self, previous_result, EntityType(entity_type), MetadataProcessor)
 
 
-# Register the task with the processor
-ProcessorRegistry.set_task(MetadataProcessor.NAME, run_metadata_processor)
+ProcessorRegistry.set_batch_task(MetadataProcessor.NAME, run_metadata_batch)
