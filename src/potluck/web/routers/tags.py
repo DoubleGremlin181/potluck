@@ -16,9 +16,9 @@ from sqlmodel import col
 from starlette.responses import Response
 
 from potluck.models.tags import Tag
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 
-router = APIRouter(prefix="/tags", tags=["tags"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/tags", tags=["tags"])
 
 
 @router.get("", response_class=HTMLResponse)

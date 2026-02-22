@@ -1,6 +1,5 @@
 """Search router — hybrid search with filters and browse mode."""
 
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -16,12 +15,12 @@ from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType, SourceType
 from potluck.search import SearchQuery, SearchResults, search
 from potluck.search.dtos import SearchMode
-from potluck.web.dependencies import get_db, require_auth
-from potluck.web.utils import parse_entity_types
+from potluck.web.dependencies import get_db
+from potluck.web.utils import parse_entity_types, parse_optional_datetime
 
 logger = get_logger("web.search")
 
-router = APIRouter(tags=["search"], dependencies=[Depends(require_auth)])
+router = APIRouter(tags=["search"])
 
 _BROWSE_PAGE_SIZE = 30
 
@@ -99,45 +98,31 @@ async def search_page(
         except ValueError:
             search_mode = SearchMode.HYBRID
 
-        entity_types: set[EntityType] | None = None
-        if types:
-            entity_types = {EntityType(t) for t in types if t in EntityType.__members__.values()}
-
+        entity_types = parse_entity_types(types) or None
         source_types: set[SourceType] | None = None
         if source:
             source_types = {SourceType(s) for s in source if s in SourceType.__members__.values()}
 
-        since_dt: datetime | None = None
-        until_dt: datetime | None = None
-        if since:
-            try:
-                since_dt = datetime.fromisoformat(since)
-            except ValueError:
-                error = f"Invalid start date format: '{since}'. Use YYYY-MM-DD."
-        if until:
-            try:
-                until_dt = datetime.fromisoformat(until)
-            except ValueError:
-                error = f"Invalid end date format: '{until}'. Use YYYY-MM-DD."
+        since_dt = parse_optional_datetime(since, field_name="since")
+        until_dt = parse_optional_datetime(until, field_name="until")
 
-        if error is None:
-            try:
-                query = SearchQuery(
-                    query=q.strip(),
-                    mode=search_mode,
-                    entity_types=entity_types,
-                    source_types=source_types,
-                    limit=per_page,
-                    offset=(page - 1) * per_page,
-                    since=since_dt,
-                    until=until_dt,
-                )
-                results = await search(query)
-            except SearchError as e:
-                error = f"Search failed: {e.message}"
-            except Exception:
-                logger.exception("Unexpected error during search for query=%s", q)
-                error = "An unexpected error occurred while searching. Please try again."
+        try:
+            query = SearchQuery(
+                query=q.strip(),
+                mode=search_mode,
+                entity_types=entity_types,
+                source_types=source_types,
+                limit=per_page,
+                offset=(page - 1) * per_page,
+                since=since_dt,
+                until=until_dt,
+            )
+            results = await search(query)
+        except SearchError as e:
+            error = f"Search failed: {e.message}"
+        except Exception:
+            logger.exception("Unexpected error during search for query=%s", q)
+            error = "An unexpected error occurred while searching. Please try again."
 
     elif types:
         # Browse mode: show entities of the selected type(s)

@@ -11,11 +11,11 @@ from starlette.responses import Response
 
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 from potluck.web.entity_config import ENTITY_CARD_CONFIG, get_entity_title
 from potluck.web.utils import parse_entity_types, parse_optional_datetime
 
-router = APIRouter(prefix="/timeline", tags=["timeline"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/timeline", tags=["timeline"])
 
 # Entity types that have a time component
 _TIMELINE_TYPES = {

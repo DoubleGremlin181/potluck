@@ -112,165 +112,79 @@ class SemanticLinker(BaseLinker):
         else:
             logger.debug(f"Entity type {entity_type} has no embedding support")
 
-    def _find_media_links(
+    def _find_pairwise_links(
         self,
-        session: Session,
-        entity_ids: list[UUID],
+        embedding_map: dict[UUID, list[float]],
+        entity_type: EntityType,
+        label: str,
     ) -> Iterator[EntityLink]:
-        """Find semantic links between media entities via MediaEmbedding.
+        """Yield SIMILAR links for all embedding pairs above the threshold.
 
         Args:
-            session: Database session.
-            entity_ids: List of media IDs.
+            embedding_map: Mapping of entity ID to embedding vector.
+            entity_type: The entity type for created links.
+            label: Label for debug logging.
 
         Yields:
             SIMILAR EntityLink records.
         """
-        # Fetch embeddings for these media items
+        ids = list(embedding_map.keys())
+        link_count = 0
+
+        for i, id_a in enumerate(ids):
+            vec_a = embedding_map[id_a]
+            for id_b in ids[i + 1 :]:
+                similarity = cosine_similarity(vec_a, embedding_map[id_b])
+                if similarity >= self._similarity_threshold:
+                    link_count += 1
+                    yield EntityLink(
+                        source_type=entity_type,
+                        source_id=id_a,
+                        target_type=entity_type,
+                        target_id=id_b,
+                        link_type=LinkType.SIMILAR,
+                        confidence=similarity,
+                    )
+
+        logger.debug("Found %d semantic links for %s", link_count, label)
+
+    def _find_media_links(self, session: Session, entity_ids: list[UUID]) -> Iterator[EntityLink]:
+        """Find semantic links between media entities via MediaEmbedding."""
         stmt = (
             select(MediaEmbedding)
             .where(col(MediaEmbedding.media_id).in_(entity_ids))
             .where(MediaEmbedding.embedding_type == self._embedding_type)
         )
-        result = session.exec(stmt)
-        embeddings = list(result.all())
-
+        embeddings = list(session.exec(stmt).all())
         if len(embeddings) < 2:
             return
+        embedding_map = {e.media_id: e.embedding for e in embeddings}
+        yield from self._find_pairwise_links(embedding_map, EntityType.MEDIA, "media")
 
-        # Build embedding lookup
-        embedding_map: dict[UUID, list[float]] = {e.media_id: e.embedding for e in embeddings}
-
-        # Compare all pairs
-        media_ids = list(embedding_map.keys())
-        link_count = 0
-
-        for i, id_a in enumerate(media_ids):
-            vec_a = embedding_map[id_a]
-            for id_b in media_ids[i + 1 :]:
-                vec_b = embedding_map[id_b]
-
-                similarity = cosine_similarity(vec_a, vec_b)
-
-                if similarity >= self._similarity_threshold:
-                    link_count += 1
-                    yield EntityLink(
-                        source_type=EntityType.MEDIA,
-                        source_id=id_a,
-                        target_type=EntityType.MEDIA,
-                        target_id=id_b,
-                        link_type=LinkType.SIMILAR,
-                        confidence=similarity,
-                    )
-
-        logger.debug(f"Found {link_count} semantic links for media")
-
-    def _find_note_links(
-        self,
-        session: Session,
-        entity_ids: list[UUID],
-    ) -> Iterator[EntityLink]:
-        """Find semantic links between knowledge notes via inline embeddings.
-
-        Args:
-            session: Database session.
-            entity_ids: List of note IDs.
-
-        Yields:
-            SIMILAR EntityLink records.
-        """
-        # Fetch notes with embeddings
+    def _find_note_links(self, session: Session, entity_ids: list[UUID]) -> Iterator[EntityLink]:
+        """Find semantic links between knowledge notes via inline embeddings."""
         stmt = (
             select(KnowledgeNote)
             .where(col(KnowledgeNote.id).in_(entity_ids))
             .where(col(KnowledgeNote.embedding).isnot(None))
         )
-        result = session.exec(stmt)
-        notes = list(result.all())
-
+        notes = list(session.exec(stmt).all())
         if len(notes) < 2:
             return
-
-        # Build embedding lookup
-        embedding_map: dict[UUID, list[float]] = {
-            n.id: n.embedding for n in notes if n.embedding is not None
-        }
-
-        # Compare all pairs
-        note_ids = list(embedding_map.keys())
-        link_count = 0
-
-        for i, id_a in enumerate(note_ids):
-            vec_a = embedding_map[id_a]
-            for id_b in note_ids[i + 1 :]:
-                vec_b = embedding_map[id_b]
-
-                similarity = cosine_similarity(vec_a, vec_b)
-
-                if similarity >= self._similarity_threshold:
-                    link_count += 1
-                    yield EntityLink(
-                        source_type=EntityType.KNOWLEDGE_NOTE,
-                        source_id=id_a,
-                        target_type=EntityType.KNOWLEDGE_NOTE,
-                        target_id=id_b,
-                        link_type=LinkType.SIMILAR,
-                        confidence=similarity,
-                    )
-
-        logger.debug(f"Found {link_count} semantic links for notes")
+        embedding_map = {n.id: n.embedding for n in notes if n.embedding is not None}
+        yield from self._find_pairwise_links(embedding_map, EntityType.KNOWLEDGE_NOTE, "notes")
 
     def _find_document_links(
-        self,
-        session: Session,
-        entity_ids: list[UUID],
+        self, session: Session, entity_ids: list[UUID]
     ) -> Iterator[EntityLink]:
-        """Find semantic links between documents via inline embeddings.
-
-        Args:
-            session: Database session.
-            entity_ids: List of document IDs.
-
-        Yields:
-            SIMILAR EntityLink records.
-        """
-        # Fetch documents with embeddings
+        """Find semantic links between documents via inline embeddings."""
         stmt = (
             select(Document)
             .where(col(Document.id).in_(entity_ids))
             .where(col(Document.embedding).isnot(None))
         )
-        result = session.exec(stmt)
-        documents = list(result.all())
-
+        documents = list(session.exec(stmt).all())
         if len(documents) < 2:
             return
-
-        # Build embedding lookup
-        embedding_map: dict[UUID, list[float]] = {
-            d.id: d.embedding for d in documents if d.embedding is not None
-        }
-
-        # Compare all pairs
-        doc_ids = list(embedding_map.keys())
-        link_count = 0
-
-        for i, id_a in enumerate(doc_ids):
-            vec_a = embedding_map[id_a]
-            for id_b in doc_ids[i + 1 :]:
-                vec_b = embedding_map[id_b]
-
-                similarity = cosine_similarity(vec_a, vec_b)
-
-                if similarity >= self._similarity_threshold:
-                    link_count += 1
-                    yield EntityLink(
-                        source_type=EntityType.DOCUMENT,
-                        source_id=id_a,
-                        target_type=EntityType.DOCUMENT,
-                        target_id=id_b,
-                        link_type=LinkType.SIMILAR,
-                        confidence=similarity,
-                    )
-
-        logger.debug(f"Found {link_count} semantic links for documents")
+        embedding_map = {d.id: d.embedding for d in documents if d.embedding is not None}
+        yield from self._find_pairwise_links(embedding_map, EntityType.DOCUMENT, "documents")

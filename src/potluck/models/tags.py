@@ -9,8 +9,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field, Relationship
 
 from potluck.core.constants import MULTIMODAL_EMBEDDING_DIM, TEXT_EMBEDDING_DIM
-from potluck.models.base import SimpleEntity, enum_field
-from potluck.models.links import EntityType
+from potluck.models.base import EntityType, SimpleEntity, enum_field
 
 
 class Tag(SimpleEntity, table=True):

@@ -19,7 +19,7 @@ from starlette.responses import Response
 
 from potluck.core.config import get_settings
 from potluck.models.media import Media
-from potluck.web.dependencies import SESSION_MAX_AGE, get_db, require_auth
+from potluck.web.dependencies import SESSION_MAX_AGE, get_db
 from potluck.web.entity_config import ENTITY_CARD_CONFIG, get_entity_title
 from potluck.web.routers import (
     auth,
@@ -131,7 +131,7 @@ def create_app() -> FastAPI:
         content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
         return file_path, content_type
 
-    @app.get("/media/file/{media_id}", dependencies=[Depends(require_auth)])
+    @app.get("/media/file/{media_id}")
     async def serve_media(media_id: UUID, db: AsyncSession = Depends(get_db)) -> FileResponse:
         """Serve a media file by its database ID.
 
@@ -140,7 +140,7 @@ def create_app() -> FastAPI:
         file_path, content_type = await _resolve_media_file(media_id, db)
         return FileResponse(path=file_path, media_type=content_type, filename=file_path.name)
 
-    @app.get("/media/thumb/{media_id}", dependencies=[Depends(require_auth)])
+    @app.get("/media/thumb/{media_id}")
     async def serve_thumbnail(media_id: UUID, db: AsyncSession = Depends(get_db)) -> FileResponse:
         """Serve a media file as a thumbnail (currently serves the original file)."""
         file_path, content_type = await _resolve_media_file(media_id, db)

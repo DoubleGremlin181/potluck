@@ -10,9 +10,9 @@ from starlette.responses import Response
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.models.sources import ImportRun, ImportStatus
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 
-router = APIRouter(tags=["dashboard"], dependencies=[Depends(require_auth)])
+router = APIRouter(tags=["dashboard"])
 
 
 @router.get("/", response_class=HTMLResponse)

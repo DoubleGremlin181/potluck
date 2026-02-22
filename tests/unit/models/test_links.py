@@ -2,7 +2,8 @@
 
 from uuid import uuid4
 
-from potluck.models.links import EntityLink, EntityType, LinkType
+from potluck.models.base import EntityType
+from potluck.models.links import EntityLink, LinkType
 
 
 class TestEntityLinkModels:

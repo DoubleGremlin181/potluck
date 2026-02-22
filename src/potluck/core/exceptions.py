@@ -58,16 +58,6 @@ class SearchError(PotluckError):
     """
 
 
-class InvalidSearchQueryError(SearchError):
-    """Raised when a search query is malformed or invalid.
-
-    Examples:
-    - Empty query string
-    - Invalid entity types specified
-    - Invalid search mode
-    """
-
-
 class NoSearchableEntitiesError(SearchError):
     """Raised when no searchable entities match the query criteria.
 

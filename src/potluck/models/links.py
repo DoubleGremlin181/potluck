@@ -40,8 +40,7 @@ class LinkType(str, Enum):
     CUSTOM = "custom"  # User-defined relationship
 
 
-# Re-export EntityType for backward compatibility
-__all__ = ["EntityType", "LinkType", "EntityLink"]
+__all__ = ["LinkType", "EntityLink"]
 
 
 class EntityLink(SQLModel, table=True):

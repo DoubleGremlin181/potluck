@@ -22,11 +22,11 @@ from starlette.responses import Response
 from potluck.core.logging import get_logger
 from potluck.models.faces import MediaPersonLink
 from potluck.models.media import Media, MediaEmbedding, MediaType
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 
 logger = get_logger("web.media")
 
-router = APIRouter(prefix="/media", tags=["media"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/media", tags=["media"])
 
 
 @router.get("", response_class=HTMLResponse)

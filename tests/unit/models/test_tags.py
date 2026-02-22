@@ -2,7 +2,7 @@
 
 from uuid import UUID, uuid4
 
-from potluck.models.links import EntityType
+from potluck.models.base import EntityType
 from potluck.models.tags import Tag, TagAssignment
 
 

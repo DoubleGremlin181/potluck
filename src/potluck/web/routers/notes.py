@@ -11,9 +11,9 @@ from sqlmodel import col
 from starlette.responses import Response
 
 from potluck.models.notes import KnowledgeNote
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 
-router = APIRouter(prefix="/notes", tags=["notes"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/notes", tags=["notes"])
 
 NOTE_TYPES = ["knowledge", "task", "reminder", "observation"]
 

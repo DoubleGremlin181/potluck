@@ -12,10 +12,10 @@ from starlette.responses import Response
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.models.links import EntityLink
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 from potluck.web.entity_config import ENTITY_CARD_CONFIG, get_entity_title
 
-router = APIRouter(tags=["entity"], dependencies=[Depends(require_auth)])
+router = APIRouter(tags=["entity"])
 
 # Fields to exclude from generic detail display
 _EXCLUDE_FIELDS = {

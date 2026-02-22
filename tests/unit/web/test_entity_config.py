@@ -22,7 +22,6 @@ class TestCardConfig:
         assert config.title_fallbacks == []
         assert config.card_fields == []
         assert config.has_thumbnail is False
-        assert config.custom_card_template is None
 
     def test_card_config_frozen(self) -> None:
         """CardConfig is frozen (immutable)."""

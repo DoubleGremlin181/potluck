@@ -4,7 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +14,10 @@ from starlette.responses import StreamingResponse
 from potluck.core.logging import get_logger
 from potluck.db.session import get_async_engine
 from potluck.models.sources import ImportRun, ImportStatus, ProcessingProgress
-from potluck.web.dependencies import require_auth
 
 logger = get_logger("web.events")
 
-router = APIRouter(tags=["events"], dependencies=[Depends(require_auth)])
+router = APIRouter(tags=["events"])
 
 
 async def _progress_stream() -> AsyncGenerator[str, None]:

@@ -20,9 +20,9 @@ from starlette.responses import Response
 from potluck.models.base import SourceType
 from potluck.models.faces import ClusterStatus, FaceCluster, MediaPersonLink
 from potluck.models.people import AliasType, Person, PersonAlias
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 
-router = APIRouter(prefix="/people", tags=["people"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/people", tags=["people"])
 
 
 @router.get("", response_class=HTMLResponse)

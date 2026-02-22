@@ -14,11 +14,11 @@ from potluck.models.faces import FaceCluster, MediaPersonLink
 from potluck.models.links import EntityLink
 from potluck.models.media import Media, MediaEmbedding
 from potluck.models.sources import ImportRun, ImportSource, ImportStatus
-from potluck.web.dependencies import get_db, require_auth
+from potluck.web.dependencies import get_db
 
 logger = get_logger("web.settings")
 
-router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("", response_class=HTMLResponse)

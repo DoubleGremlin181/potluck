@@ -20,14 +20,12 @@ class CardConfig:
         title_fallbacks: Fallback fields if primary is None/empty.
         card_fields: Fields to show on compact card view.
         has_thumbnail: Whether to show a media thumbnail.
-        custom_card_template: Override template path for custom card layout.
     """
 
     title_field: str
     title_fallbacks: list[str] = field(default_factory=list)
     card_fields: list[str] = field(default_factory=list)
     has_thumbnail: bool = False
-    custom_card_template: str | None = None
 
 
 ENTITY_CARD_CONFIG: dict[EntityType, CardConfig] = {
@@ -36,7 +34,6 @@ ENTITY_CARD_CONFIG: dict[EntityType, CardConfig] = {
         title_fallbacks=["original_filename"],
         card_fields=["media_type", "location_name"],
         has_thumbnail=True,
-        custom_card_template="components/cards/media_card.html",
     ),
     EntityType.CHAT_MESSAGE: CardConfig(
         title_field="sender_name",

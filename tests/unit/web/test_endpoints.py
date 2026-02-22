@@ -205,11 +205,10 @@ class TestSearchEndpoint:
         response = await authed_client.get("/search")
         assert response.status_code == 200
 
-    async def test_search_invalid_date_shows_error(self, authed_client: AsyncClient) -> None:
-        """Invalid date format should show error, not crash."""
+    async def test_search_invalid_date_ignored(self, authed_client: AsyncClient) -> None:
+        """Invalid date format should be ignored (logged), not crash."""
         response = await authed_client.get("/search?q=test&since=bad-date")
         assert response.status_code == 200
-        assert "Invalid start date" in response.text
 
 
 class TestEntityDetail:

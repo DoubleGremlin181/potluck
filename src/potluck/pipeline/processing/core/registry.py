@@ -148,27 +148,6 @@ class ProcessorRegistry:
         return sorted(configs, key=lambda c: c.priority)
 
     @classmethod
-    def get_processor(cls, name: str) -> ProcessorConfig | None:
-        """Get a processor config by name.
-
-        Args:
-            name: The processor NAME.
-
-        Returns:
-            ProcessorConfig or None if not found.
-        """
-        return cls._processors.get(name)
-
-    @classmethod
-    def list_processors(cls) -> list[ProcessorConfig]:
-        """Get all registered processor configs.
-
-        Returns:
-            List of all ProcessorConfig instances.
-        """
-        return list(cls._processors.values())
-
-    @classmethod
     def clear(cls) -> None:
         """Clear all registered processors. Useful for testing."""
         cls._processors.clear()

@@ -22,7 +22,7 @@ from potluck.core.exceptions import ProcessingError
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType
 from potluck.models.media import Media, MediaType
-from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
+from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing.core.base import (
     BaseProcessor,
     run_batch_stage_task,
@@ -149,36 +149,6 @@ class OCRProcessor(BaseProcessor):
                 error_message=f"OCR failed: {e}",
                 processing_time_ms=elapsed_ms,
             )
-
-    def execute_batch(self, entities: list[SQLModel]) -> BatchStageResult:
-        """Process a batch of images."""
-        media_items: list[Media] = entities  # type: ignore[assignment]
-        images = [m for m in media_items if self.should_execute(m)]
-        skipped = [m for m in media_items if not self.should_execute(m)]
-
-        results: list[StageResult] = []
-
-        for media in skipped:
-            results.append(
-                StageResult(
-                    item_id=media.id,
-                    stage_name=self.NAME,
-                    status=StageStatus.SKIPPED,
-                    error_message="Not an image file",
-                )
-            )
-
-        for media in images:
-            results.append(self.execute(media))
-
-        return BatchStageResult(
-            stage_name=self.NAME,
-            total=len(media_items),
-            completed=sum(1 for r in results if r.status == StageStatus.COMPLETED),
-            failed=sum(1 for r in results if r.status == StageStatus.FAILED),
-            skipped=sum(1 for r in results if r.status == StageStatus.SKIPPED),
-            results=results,
-        )
 
 
 # -----------------------------------------------------------------------------

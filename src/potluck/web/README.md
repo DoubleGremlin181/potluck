@@ -7,7 +7,7 @@ FastAPI web application serving an HTMX-powered UI with Jinja2 templates. Design
 ```
 web/
 ├── app.py              # FastAPI factory, middleware, media serving
-├── dependencies.py     # get_db, require_auth
+├── dependencies.py     # get_db, SESSION_MAX_AGE
 ├── utils.py            # Shared parsing (datetime, entity types)
 ├── routers/            # 13 route modules
 │   ├── auth.py         # Login/logout (signed cookies)
@@ -94,14 +94,13 @@ Implementation:
 - Password comparison uses `hmac.compare_digest()` (constant-time)
 - Session tokens are signed with `URLSafeTimedSerializer` using `WEB_SECRET_KEY`
 - Cookies are `httponly`, `samesite=lax`, with 30-day expiry (`SESSION_MAX_AGE`)
-- `require_auth` dependency is used on individual routes for defense-in-depth
+- `AuthMiddleware` handles all route protection centrally
 
 ## Dependencies
 
-Two FastAPI dependencies are shared across routers:
+One FastAPI dependency is shared across routers:
 
 - **`get_db`** -- yields an `AsyncSession` for database access
-- **`require_auth`** -- validates the session cookie, redirects to `/login` if invalid
 
 ## Media Serving
 
