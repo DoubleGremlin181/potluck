@@ -25,6 +25,11 @@ from potluck.pipeline.dtos import (
 )
 from potluck.pipeline.ingestion.base import BaseIngestionStage
 from potluck.pipeline.ingestion.registry import detect_stage, get_stage
+from potluck.pipeline.processing.core.registry import ProcessorRegistry
+from potluck.pipeline.processing.linkers.base import BaseLinker
+from potluck.pipeline.processing.linkers.semantic import SemanticLinker
+from potluck.pipeline.processing.linkers.spatial import SpatialLinker
+from potluck.pipeline.processing.linkers.temporal import TemporalLinker
 from potluck.pipeline.utils.archive import extracted
 from potluck.pipeline.utils.hashing import compute_file_hash
 
@@ -591,7 +596,7 @@ class PipelineOrchestrator:
                 len(entity_ids),
                 entity_type.value,
             )
-        except (OSError, RuntimeError, ValueError, TypeError):
+        except Exception:
             logger.exception(
                 "Failed to queue batch processing for %d %s entities. "
                 "These entities will need to be manually reprocessed.",
@@ -606,12 +611,6 @@ class PipelineOrchestrator:
         apply to each entity type that was ingested, then creates progress
         rows for processors and linkers.
         """
-        from potluck.pipeline.processing.core.registry import ProcessorRegistry
-        from potluck.pipeline.processing.linkers.base import BaseLinker
-        from potluck.pipeline.processing.linkers.semantic import SemanticLinker
-        from potluck.pipeline.processing.linkers.spatial import SpatialLinker
-        from potluck.pipeline.processing.linkers.temporal import TemporalLinker
-
         for entity_type, entity_ids in self._entity_ids_by_type.items():
             if not entity_ids:
                 continue
@@ -673,17 +672,22 @@ class PipelineOrchestrator:
 
             entity_type_str = entity_type.value
 
-            try:
-                dispatch_temporal_linker(import_run_id, entity_type_str, entity_ids)
-                dispatch_spatial_linker(import_run_id, entity_type_str, entity_ids)
-                dispatch_semantic_linker(import_run_id, entity_type_str, entity_ids)
-            except (OSError, RuntimeError, ValueError, TypeError):
-                logger.exception(
-                    "Failed to queue linkers for %s entities in import run %s. "
-                    "Linking will need to be run manually.",
-                    entity_type_str,
-                    import_run.id,
-                )
+            dispatchers = [
+                dispatch_temporal_linker,
+                dispatch_spatial_linker,
+                dispatch_semantic_linker,
+            ]
+            for dispatch_fn in dispatchers:
+                try:
+                    dispatch_fn(import_run_id, entity_type_str, entity_ids)
+                except Exception:
+                    logger.exception(
+                        "Failed to queue %s for %s entities in import run %s. "
+                        "This linker will need to be run manually.",
+                        dispatch_fn.__name__,
+                        entity_type_str,
+                        import_run.id,
+                    )
 
         logger.debug("Queued per-linker tasks for import run %s", import_run.id)
 

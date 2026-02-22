@@ -310,14 +310,14 @@ class TestPreemptionGuard:
 
         assert has_pending_processing(mock_app) is True
 
-    def test_connection_error_returns_false(self) -> None:
-        """If Redis check fails, assume no pending tasks (safe fallback)."""
+    def test_connection_error_returns_true(self) -> None:
+        """If Redis check fails, assume tasks still pending (safe fallback)."""
         from potluck.core.celery import has_pending_processing
 
         mock_app = MagicMock()
         mock_app.connection_for_read.side_effect = ConnectionError("Redis down")
 
-        assert has_pending_processing(mock_app) is False
+        assert has_pending_processing(mock_app) is True
 
 
 # ---------------------------------------------------------------------------

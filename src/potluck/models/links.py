@@ -2,9 +2,11 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import Self
 from uuid import UUID, uuid4
 
-from sqlmodel import Field, SQLModel
+from pydantic import model_validator
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
 from potluck.models.base import EntityType, enum_field
 from potluck.models.utils import utc_now
@@ -51,6 +53,16 @@ class EntityLink(SQLModel, table=True):
     """
 
     __tablename__ = "entity_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_type",
+            "source_id",
+            "target_type",
+            "target_id",
+            "link_type",
+            name="uq_entity_link",
+        ),
+    )
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -127,6 +139,13 @@ class EntityLink(SQLModel, table=True):
         default=None,
         description="Version of the linker",
     )
+
+    @model_validator(mode="after")
+    def prevent_self_link(self) -> Self:
+        """Prevent linking an entity to itself."""
+        if self.source_type == self.target_type and self.source_id == self.target_id:
+            raise ValueError("Cannot create a link from an entity to itself")
+        return self
 
     @property
     def is_bidirectional(self) -> bool:

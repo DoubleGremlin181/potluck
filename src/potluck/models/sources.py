@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship, SQLModel, UniqueConstraint
 
 from potluck.models.base import EntityType, SourceType, enum_field
 from potluck.models.utils import utc_now
@@ -208,6 +208,14 @@ class ProcessingProgress(SQLModel, table=True):
     """
 
     __tablename__ = "processing_progress"
+    __table_args__ = (
+        UniqueConstraint(
+            "import_run_id",
+            "stage_name",
+            "entity_type",
+            name="uq_processing_progress",
+        ),
+    )
 
     id: UUID = Field(
         default_factory=uuid4,

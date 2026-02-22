@@ -130,8 +130,22 @@ def _parse_import_params(
     """Parse shared entity_types and source_type form parameters."""
     types: list[EntityType] | None = None
     if entity_types:
-        types = [EntityType(t) for t in entity_types if t]
-    st = SourceType(source_type) if source_type else None
+        parsed: list[EntityType] = []
+        for t in entity_types:
+            if not t:
+                continue
+            try:
+                parsed.append(EntityType(t))
+            except ValueError:
+                logger.warning("Ignoring invalid entity type: %s", t)
+        types = parsed or None
+
+    st: SourceType | None = None
+    if source_type:
+        try:
+            st = SourceType(source_type)
+        except ValueError:
+            logger.warning("Ignoring invalid source type: %s", source_type)
     return types, st
 
 
@@ -151,14 +165,22 @@ async def upload_file(
     tmp_dir = tempfile.mkdtemp(prefix="potluck-upload-")
     original_name = file.filename or "upload"
     tmp_path = Path(tmp_dir) / original_name
-    content = await file.read()
-
-    # Reject files larger than 10 GB
+    # Stream to disk in chunks to avoid loading entire file into memory
     max_size = 10 * 1024 * 1024 * 1024  # 10 GB
-    if len(content) > max_size:
-        return RedirectResponse(url="/imports?error=file_too_large", status_code=303)
+    chunk_size = 1024 * 1024  # 1 MB
+    written = 0
+    too_large = False
+    with tmp_path.open("wb") as f:
+        while chunk := await file.read(chunk_size):
+            written += len(chunk)
+            if written > max_size:
+                too_large = True
+                break
+            f.write(chunk)
 
-    tmp_path.write_bytes(content)
+    if too_large:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return RedirectResponse(url="/imports?error=file_too_large", status_code=303)
 
     types, st = _parse_import_params(entity_types, source_type)
 

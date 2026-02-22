@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     )
     web_port: int = Field(
         default=8000,
+        ge=1,
+        le=65535,
         description="Web server port",
     )
 
@@ -65,6 +67,7 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(
         default="INFO",
+        pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$",
         description="Logging level",
     )
 

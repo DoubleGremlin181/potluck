@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 from starlette.responses import StreamingResponse
@@ -79,10 +78,10 @@ async def _progress_stream() -> AsyncGenerator[str, None]:
                 data = json.dumps({"jobs": jobs, "active_count": len(jobs)})
                 yield f"event: progress\ndata: {data}\n\n"
                 consecutive_failures = 0
-        except SQLAlchemyError:
+        except Exception:
             consecutive_failures += 1
             logger.exception(
-                "SSE progress stream: database query failed (%d/%d)",
+                "SSE progress stream: query failed (%d/%d)",
                 consecutive_failures,
                 max_failures,
             )

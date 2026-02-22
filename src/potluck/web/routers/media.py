@@ -23,6 +23,7 @@ from potluck.core.logging import get_logger
 from potluck.models.faces import MediaPersonLink
 from potluck.models.media import Media, MediaEmbedding, MediaType
 from potluck.web.dependencies import get_db
+from potluck.web.utils import escape_like
 
 logger = get_logger("web.media")
 
@@ -56,7 +57,7 @@ async def media_gallery(
         stmt = stmt.where(col(Media.ocr_text).isnot(None))
 
     if q.strip():
-        like_q = f"%{q.strip()}%"
+        like_q = f"%{escape_like(q.strip())}%"
         stmt = stmt.where((col(Media.caption).ilike(like_q)) | (col(Media.ocr_text).ilike(like_q)))
 
     # Count total

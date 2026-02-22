@@ -111,6 +111,16 @@ class BatchStageResult(BaseModel):
         default_factory=list, description="Individual results for each item"
     )
 
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        """Ensure completed + failed + skipped does not exceed total."""
+        if self.completed + self.failed + self.skipped > self.total:
+            raise ValueError(
+                f"completed ({self.completed}) + failed ({self.failed}) + "
+                f"skipped ({self.skipped}) exceeds total ({self.total})"
+            )
+        return self
+
 
 class DetectionResult(BaseModel):
     """Result of detecting available entity types in a source."""
@@ -134,13 +144,14 @@ class DiscoveryResult(BaseModel):
     source_path: Path
     """Original path that was discovered."""
 
-    stage: Any = None
-    """Matched ingestion stage class, or None if no stage matched.
+    stage: type | None = None
+    """Matched ingestion stage class (a type[BaseIngestionStage]), or None.
 
-    The value should be a type[BaseIngestionStage] or None. Any is used
-    to avoid forward reference issues with Pydantic.
+    Typed as ``type | None`` rather than ``type[BaseIngestionStage] | None``
+    because importing BaseIngestionStage here would create a circular import
+    (dtos → ingestion/base → dtos).
 
-    Note: When accessing stage attributes like SOURCE_TYPE, always check
+    When accessing stage attributes like SOURCE_TYPE, always check
     is_generic first or use the source_type property which handles None safely.
     """
 
@@ -166,7 +177,7 @@ class DiscoveryResult(BaseModel):
     def source_type(self) -> SourceType:
         """Get source type from stage or default to GENERIC."""
         if self.stage is not None:
-            source: SourceType = self.stage.SOURCE_TYPE
+            source: SourceType = self.stage.SOURCE_TYPE  # type: ignore[attr-defined]
             return source
         return SourceType.GENERIC
 

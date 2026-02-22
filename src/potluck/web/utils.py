@@ -8,6 +8,15 @@ from potluck.models.base import EntityType
 logger = get_logger("web.utils")
 
 
+def escape_like(value: str) -> str:
+    """Escape SQL LIKE/ILIKE wildcard characters in user input.
+
+    Prevents ``%`` and ``_`` in user-supplied strings from being interpreted
+    as SQL pattern characters when used with ILIKE.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def parse_optional_datetime(value: str | None, *, field_name: str = "date") -> datetime | None:
     """Parse an optional ISO datetime string, logging on invalid input.
 

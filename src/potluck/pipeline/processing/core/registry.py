@@ -22,7 +22,7 @@ from potluck.pipeline.processing.core.base import BaseProcessor
 logger = get_logger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProcessorConfig:
     """Configuration for a registered processor.
 

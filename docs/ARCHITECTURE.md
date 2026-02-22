@@ -77,7 +77,7 @@ The high-level flow is:
 | ML - Text Embed   | e5-small-v2 (384 dimensions)                                 |
 | ML - Multimodal   | SigLIP (768 dimensions, shared text-image space)             |
 | ML - Faces        | MTCNN (detection) + ArcFace/iResNet50 (512d embeddings)      |
-| ML - Captioning   | BLIP-2 (opt-2.7b)                                            |
+| ML - Captioning   | Florence-2 (microsoft/Florence-2-base-ft)                     |
 | ML - OCR          | EasyOCR                                                      |
 | CLI               | Typer + Rich                                                 |
 | Package Manager   | uv                                                           |
@@ -426,10 +426,12 @@ class HashingProcessor(BaseProcessor):
     def execute(self, media: Media) -> StageResult: ...
     def should_execute(self, media: Media) -> bool: ...
 
-# Co-located Celery task
-@celery_app.task(bind=True, queue="process")
-def run_hashing_processor(self, entity_type: str, entity_id: str) -> dict:
-    return run_processor_task(self, EntityType(entity_type), entity_id, HashingProcessor)
+# Co-located Celery batch task
+@celery_app.task(bind=True, queue="pipeline")
+def run_hashing_batch(self, entity_type: str, entity_ids: list[str], import_run_id: str | None = None) -> dict:
+    return run_batch_stage_task(self, EntityType(entity_type), entity_ids, import_run_id, HashingProcessor)
+
+ProcessorRegistry.set_batch_task(HashingProcessor.NAME, run_hashing_batch)
 ```
 
 **Auto-discovery** works the same way as ingestion: `processing/__init__.py`
@@ -444,8 +446,8 @@ is two-phase registration:
 
 1. **Phase 1**: `@ProcessorRegistry.register()` stores the processor class with
    a placeholder task function.
-2. **Phase 2**: `ProcessorRegistry.set_task()` links the real Celery task after
-   it is defined.
+2. **Phase 2**: `ProcessorRegistry.set_batch_task()` links the real Celery batch
+   task after it is defined.
 
 This decouples processor logic from the Celery framework.
 
@@ -469,20 +471,26 @@ Processors declare how their results are saved:
 | Metadata    | 20       | EXIF extraction, dimensions, file size, GPS coordinates        |
 | OCR         | 30       | Text extraction from images via EasyOCR                        |
 | Faces       | 40       | Face detection (MTCNN) + recognition (ArcFace, 512d)           |
-| Captioning  | 50       | Image captioning via BLIP-2                                    |
+| Captioning  | 50       | Image captioning via Florence-2                                |
 | Embeddings  | 60       | Text (e5, 384d) + multimodal (SigLIP, 768d) embeddings        |
 | Clustering  | --       | DBSCAN face clustering (batch task, runs after faces)          |
 
 ### Celery Queue Configuration
 
-Tasks are routed to separate queues so ingestion and processing can scale
-independently:
+All pipeline tasks use a single `pipeline` queue with 10 priority levels (0-9).
+With `concurrency=1` (default), the worker processes tasks in strict priority
+order:
+
+| Priority | Phase   | Tasks                                                           |
+|----------|---------|-----------------------------------------------------------------|
+| 0        | Ingest  | `run_ingestion`, `cancel_ingestion`                             |
+| 1-8      | Process | All `run_*_batch` processor tasks (mapped from registry priority via `processor_to_celery_priority()`) |
+| 9        | Link    | `run_temporal_linker_batch`, `run_spatial_linker_batch`, `run_semantic_linker_batch` |
 
 ```python
 task_routes = {
-    "potluck.pipeline.tasks.ingestion.*": {"queue": "ingest"},
-    "potluck.pipeline.tasks.processing.*": {"queue": "process"},
-    "potluck.embeddings.*":               {"queue": "embed"},
+    "potluck.pipeline.tasks.ingestion.*": {"queue": "pipeline"},
+    "potluck.pipeline.tasks.processing.*": {"queue": "pipeline"},
 }
 ```
 
@@ -793,7 +801,7 @@ All ML models are managed through the centralized `MLModels` class in
 | ArcFace iResNet50        | 512       | ~250MB  | Face recognition embeddings    |
 | MTCNN                    | --        | small   | Face detection                 |
 | EasyOCR                  | --        | ~100MB  | Optical character recognition  |
-| Salesforce/blip2-opt-2.7b| --        | ~2.7GB  | Image captioning               |
+| microsoft/Florence-2-base-ft | --   | ~460MB  | Image captioning               |
 
 Note: e5 models require input text to be prefixed with `"query: "` or
 `"passage: "` depending on use case. The caller (embedding processor / search

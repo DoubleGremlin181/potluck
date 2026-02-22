@@ -6,7 +6,6 @@ from list queries (filtered by ``merged_into_id IS NULL``) but remain in the
 database so that foreign keys from other entities stay valid.
 """
 
-import contextlib
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
@@ -17,10 +16,14 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import col
 from starlette.responses import Response
 
+from potluck.core.logging import get_logger
 from potluck.models.base import SourceType
 from potluck.models.faces import ClusterStatus, FaceCluster, MediaPersonLink
 from potluck.models.people import AliasType, Person, PersonAlias
 from potluck.web.dependencies import get_db
+from potluck.web.utils import escape_like
+
+logger = get_logger("web.people")
 
 router = APIRouter(prefix="/people", tags=["people"])
 
@@ -42,13 +45,13 @@ async def people_list(
     )
 
     if q.strip():
-        like_q = f"%{q.strip()}%"
+        like_q = f"%{escape_like(q.strip())}%"
         stmt = stmt.where(col(Person.display_name).ilike(like_q))
 
     count_stmt = select(func.count()).select_from(
         select(Person)
         .where(col(Person.merged_into_id).is_(None))
-        .where(col(Person.display_name).ilike(f"%{q.strip()}%") if q.strip() else True)  # type: ignore[arg-type]
+        .where(col(Person.display_name).ilike(f"%{escape_like(q.strip())}%") if q.strip() else True)  # type: ignore[arg-type]
         .subquery()
     )
     total = (await db.execute(count_stmt)).scalar() or 0
@@ -90,13 +93,19 @@ async def face_clusters(
     )
 
     if status_filter:
-        with contextlib.suppress(ValueError):
+        try:
             stmt = stmt.where(col(FaceCluster.status) == ClusterStatus(status_filter))
+        except ValueError:
+            logger.warning("Ignoring invalid cluster status filter: %s", status_filter)
 
     count_stmt = select(func.count()).select_from(FaceCluster)
     if status_filter:
-        with contextlib.suppress(ValueError):
-            count_stmt = count_stmt.where(col(FaceCluster.status) == ClusterStatus(status_filter))
+        try:
+            status_enum = ClusterStatus(status_filter)
+        except ValueError:
+            status_enum = None  # Already logged above
+        if status_enum is not None:
+            count_stmt = count_stmt.where(col(FaceCluster.status) == status_enum)
     total = (await db.execute(count_stmt)).scalar() or 0
 
     stmt = stmt.offset((page - 1) * per_page).limit(per_page)

@@ -12,6 +12,7 @@ from starlette.responses import Response
 
 from potluck.models.notes import KnowledgeNote
 from potluck.web.dependencies import get_db
+from potluck.web.utils import escape_like
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -31,7 +32,7 @@ async def notes_list(
     stmt = select(KnowledgeNote).order_by(col(KnowledgeNote.updated_at).desc())
 
     if q.strip():
-        like_q = f"%{q.strip()}%"
+        like_q = f"%{escape_like(q.strip())}%"
         stmt = stmt.where(col(KnowledgeNote.content).ilike(like_q))
 
     count_stmt = select(func.count()).select_from(stmt.subquery())

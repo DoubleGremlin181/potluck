@@ -211,7 +211,7 @@ async def _run_retrievers_parallel(
 
     # Create sync session for retrievers (they use SQLModel's sync Session)
     # We need to run these in the thread pool since they're sync operations
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     tasks = []
 

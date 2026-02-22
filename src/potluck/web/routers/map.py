@@ -1,7 +1,6 @@
 """Map router — Leaflet map view for geolocated entities."""
 
 from datetime import datetime
-from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -65,7 +64,7 @@ def _fmt_value(val: object) -> str:
     return s
 
 
-def _extract_marker_extras(entity: Any, entity_type: EntityType) -> dict[str, str]:  # noqa: ANN401
+def _extract_marker_extras(entity: object, entity_type: EntityType) -> dict[str, str]:
     """Pull type-specific display fields from an entity for map popups."""
     fields = _EXTRAS_FIELDS.get(entity_type, [])
     extras: dict[str, str] = {}
@@ -76,7 +75,7 @@ def _extract_marker_extras(entity: Any, entity_type: EntityType) -> dict[str, st
         extras[label] = _fmt_value(val)
     # For media, include the id for thumbnail rendering
     if entity_type == EntityType.MEDIA:
-        extras["_media_id"] = str(entity.id)
+        extras["_media_id"] = str(entity.id)  # type: ignore[attr-defined]
     return extras
 
 

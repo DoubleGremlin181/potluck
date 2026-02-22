@@ -118,6 +118,14 @@ ENTITY_CARD_CONFIG: dict[EntityType, CardConfig] = {
 }
 
 
+_MISSING = set(EntityType) - set(ENTITY_CARD_CONFIG)
+if _MISSING:
+    raise RuntimeError(
+        f"ENTITY_CARD_CONFIG is missing entries for: {_MISSING}. "
+        "Update entity_config.py when adding new EntityType values."
+    )
+
+
 def get_entity_title(entity: object, config: CardConfig) -> str:
     """Extract display title from an entity using config-driven field lookup.
 

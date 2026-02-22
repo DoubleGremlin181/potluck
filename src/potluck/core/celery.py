@@ -146,8 +146,8 @@ def has_pending_processing(app: Celery) -> bool:
                     return True
         return False
     except Exception:
-        logger.warning("Failed to check pending processing tasks, assuming none pending")
-        return False
+        logger.warning("Failed to check pending processing tasks, assuming still pending")
+        return True
 
 
 # Global celery app instance
@@ -167,6 +167,8 @@ def cleanup_models_after_task(**kwargs: object) -> None:
     no models are loaded.
     """
     try:
+        # Deferred import: celery.py → processing.core.ml → processing.__init__
+        # → processors → celery_app (circular). All ML deps are always available.
         from potluck.pipeline.processing.core.ml import MLModels
 
         MLModels.unload_all()

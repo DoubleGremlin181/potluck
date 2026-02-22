@@ -106,12 +106,14 @@ def _update_entity_fields(
         **fields: Fields to update with their new values.
     """
     entity = _get_entity(session, entity_type, entity_id)
-    if entity:
-        for key, value in fields.items():
-            if value is not None:
-                setattr(entity, key, value)
-        session.add(entity)
-        session.commit()
+    if entity is None:
+        logger.warning("Entity not found for update: %s/%s", entity_type.value, entity_id)
+        return
+    for key, value in fields.items():
+        if value is not None:
+            setattr(entity, key, value)
+    session.add(entity)
+    session.commit()
 
 
 def update_processing_progress(
@@ -144,6 +146,12 @@ def update_processing_progress(
             )
             progress = session.exec(stmt).first()
             if progress is None:
+                logger.debug(
+                    "No ProcessingProgress row found for %s/%s (import_run=%s)",
+                    stage_name,
+                    entity_type.value,
+                    import_run_id,
+                )
                 return
 
             progress.completed += result.get("completed", 0)

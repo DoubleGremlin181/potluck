@@ -182,7 +182,9 @@ Linkers extend `BaseLinker` which provides `find_links()` (within a type) and `f
 ### Processing Tasks (`tasks/processing.py`)
 - `run_entity_pipeline(entity_type, entity_id)` -- convenience wrapper around `run_batch_entity_pipeline` for single-entity reprocessing
 - `run_batch_entity_pipeline(entity_type, entity_ids)` -- builds a Celery chain from the ProcessorRegistry batch pipeline
-- `run_linkers_batch(import_run_id, entity_ids_by_type)` -- runs all linkers on entities from an import
+- `dispatch_temporal_linker(import_run_id, entity_type, entity_ids)` -- dispatches temporal linker task if entity type is supported
+- `dispatch_spatial_linker(import_run_id, entity_type, entity_ids)` -- dispatches spatial linker task if entity type is supported
+- `dispatch_semantic_linker(import_run_id, entity_type, entity_ids)` -- dispatches semantic linker task if entity type is supported
 - Individual processor tasks are re-exported for direct access
 
 ## Data Flow

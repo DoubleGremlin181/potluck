@@ -112,7 +112,7 @@ class MyProcessor(BaseProcessor):
         return entity.media_type == MediaType.IMAGE
 
 # Celery task co-located with processor
-@celery_app.task(bind=True, queue="process", ...)
+@celery_app.task(bind=True, queue="pipeline", ...)
 def run_my_processor_batch(self, previous_result, entity_type):
     return run_batch_stage_task(self, previous_result, EntityType(entity_type), MyProcessor)
 
@@ -132,10 +132,10 @@ class HashingProcessor(BaseProcessor):
 class FaceProcessor(BaseProcessor):
     # No PERSIST_FIELDS - override instead
 
-    def persist_result(self, session, media_id, result) -> dict[str, Any]:
+    def persist_result(self, session, entity_type, entity_id, result) -> dict[str, Any]:
         # Create MediaPersonLink records for detected faces
         for face_data in result.data.get("faces", []):
-            face_link = MediaPersonLink(media_id=UUID(media_id), ...)
+            face_link = MediaPersonLink(media_id=UUID(entity_id), ...)
             session.add(face_link)
         session.commit()
         return {"faces_detected": len(faces), ...}
@@ -201,7 +201,7 @@ class MyProcessor(BaseProcessor):
         # Implementation
         pass
 
-@celery_app.task(bind=True, queue="process", ...)
+@celery_app.task(bind=True, queue="pipeline", ...)
 def run_my_processor_batch(self, previous_result, entity_type):
     return run_batch_stage_task(self, previous_result, EntityType(entity_type), MyProcessor)
 

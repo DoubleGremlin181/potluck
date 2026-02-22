@@ -53,6 +53,7 @@ async def login(request: Request, password: str = Form(...)) -> Response:
         key="session_token",
         value=token,
         httponly=True,
+        secure=request.url.scheme == "https",
         samesite="lax",
         max_age=SESSION_MAX_AGE,
     )

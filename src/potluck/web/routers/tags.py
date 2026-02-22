@@ -17,6 +17,7 @@ from starlette.responses import Response
 
 from potluck.models.tags import Tag
 from potluck.web.dependencies import get_db
+from potluck.web.utils import escape_like
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -34,7 +35,7 @@ async def tags_list(
     stmt = select(Tag).order_by(col(Tag.updated_at).desc())
 
     if q.strip():
-        like_q = f"%{q.strip()}%"
+        like_q = f"%{escape_like(q.strip())}%"
         stmt = stmt.where(
             or_(
                 col(Tag.name).ilike(like_q),

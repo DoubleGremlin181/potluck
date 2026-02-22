@@ -12,6 +12,23 @@ from potluck.pipeline.dtos import PipelineFilter
 from potluck.pipeline.orchestrator import PipelineOrchestrator, discover
 
 
+def _make_fake_stage_cls(source_type: SourceType, mock_stage: MagicMock) -> type:
+    """Create a fake stage class that passes Pydantic ``type | None`` validation.
+
+    DiscoveryResult.stage expects a real type (class), not a MagicMock instance.
+    This helper creates a class whose ``__new__`` returns *mock_stage* so
+    ``stage_cls()`` still delegates to the mock while Pydantic sees a valid type.
+    """
+
+    class _FakeStage:
+        SOURCE_TYPE = source_type
+
+        def __new__(cls) -> MagicMock:
+            return mock_stage
+
+    return _FakeStage
+
+
 class MockSession:
     """Mock session for testing without database."""
 
@@ -369,10 +386,8 @@ class TestImportRunReuse:
             patch.object(orchestrator, "_find_completed_run", return_value=None),
         ):
             # Set up a mock stage that returns entities
-            mock_stage_cls = MagicMock()
             mock_stage = MagicMock()
-            mock_stage_cls.return_value = mock_stage
-            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage_cls = _make_fake_stage_cls(SourceType.YNAB, mock_stage)
             mock_stage.detect.return_value = MagicMock(
                 entity_counts={EntityType.TRANSACTION: 10},
                 metadata={},
@@ -414,10 +429,8 @@ class TestImportRunReuse:
             patch.object(orchestrator, "_find_completed_run", return_value=None),
             patch.object(orchestrator, "_queue_linkers"),
         ):
-            mock_stage_cls = MagicMock()
             mock_stage = MagicMock()
-            mock_stage_cls.return_value = mock_stage
-            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage_cls = _make_fake_stage_cls(SourceType.YNAB, mock_stage)
             mock_stage.detect.return_value = MagicMock(
                 entity_counts={EntityType.TRANSACTION: 1},
                 metadata={},
@@ -455,10 +468,8 @@ class TestImportRunReuse:
             patch.object(orchestrator, "_find_completed_run", return_value=None),
             patch.object(orchestrator, "_queue_linkers"),
         ):
-            mock_stage_cls = MagicMock()
             mock_stage = MagicMock()
-            mock_stage_cls.return_value = mock_stage
-            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage_cls = _make_fake_stage_cls(SourceType.YNAB, mock_stage)
             mock_stage.detect.return_value = MagicMock(
                 entity_counts={EntityType.TRANSACTION: 1},
                 metadata={},
@@ -487,10 +498,8 @@ class TestImportRunReuse:
             patch.object(orchestrator, "_find_completed_run", return_value=None),
             patch.object(orchestrator, "_queue_linkers"),
         ):
-            mock_stage_cls = MagicMock()
             mock_stage = MagicMock()
-            mock_stage_cls.return_value = mock_stage
-            mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+            mock_stage_cls = _make_fake_stage_cls(SourceType.YNAB, mock_stage)
             mock_stage.detect.return_value = MagicMock(
                 entity_counts={EntityType.TRANSACTION: 1},
                 metadata={},
@@ -524,10 +533,8 @@ class TestSourceTypeOverride:
         session = self._make_mock_session()
         orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
 
-        mock_stage_cls = MagicMock()
         mock_stage = MagicMock()
-        mock_stage_cls.return_value = mock_stage
-        mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+        mock_stage_cls = _make_fake_stage_cls(SourceType.YNAB, mock_stage)
         mock_stage.detect.return_value = MagicMock(
             entity_counts={EntityType.TRANSACTION: 5},
             metadata={},
@@ -617,10 +624,8 @@ class TestIncrementalCounterSync:
             status=ImportStatus.PENDING,
         )
 
-        mock_stage_cls = MagicMock()
         mock_stage = MagicMock()
-        mock_stage_cls.return_value = mock_stage
-        mock_stage_cls.SOURCE_TYPE = SourceType.GOOGLE_TAKEOUT
+        mock_stage_cls = _make_fake_stage_cls(SourceType.GOOGLE_TAKEOUT, mock_stage)
         mock_stage.detect.return_value = MagicMock(
             entity_counts={EntityType.BROWSING_HISTORY: 2},
             metadata={},
@@ -659,10 +664,8 @@ class TestFilterPassthrough:
         session = self._make_mock_session()
         orchestrator = PipelineOrchestrator(session)  # type: ignore[arg-type]
 
-        mock_stage_cls = MagicMock()
         mock_stage = MagicMock()
-        mock_stage_cls.return_value = mock_stage
-        mock_stage_cls.SOURCE_TYPE = SourceType.YNAB
+        mock_stage_cls = _make_fake_stage_cls(SourceType.YNAB, mock_stage)
         mock_stage.detect.return_value = MagicMock(
             entity_counts={EntityType.TRANSACTION: 3},
             metadata={},

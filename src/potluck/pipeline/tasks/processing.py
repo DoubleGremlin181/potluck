@@ -41,10 +41,13 @@ from potluck.core.celery import (
     processor_to_celery_priority,
 )
 from potluck.core.logging import get_logger
+from potluck.db.session import get_engine
 from potluck.models.base import EntityType
+from potluck.pipeline.processing.core.base import update_processing_progress
 
 # Import registry for dynamic pipeline construction
 from potluck.pipeline.processing.core.registry import ProcessorRegistry
+from potluck.pipeline.processing.linkers import SemanticLinker, SpatialLinker, TemporalLinker
 
 logger = get_logger(__name__)
 
@@ -159,7 +162,9 @@ def run_temporal_linker_batch(
         logger.info("Temporal linker: processing tasks still pending, re-queueing")
         raise self.retry(countdown=_LINKER_REQUEUE_COUNTDOWN)
 
-    return _run_linker_task(import_run_id, entity_type_str, entity_ids, linker_name="temporal")
+    return _run_linker_task(
+        self, import_run_id, entity_type_str, entity_ids, linker_name="temporal"
+    )
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
@@ -191,7 +196,7 @@ def run_spatial_linker_batch(
         logger.info("Spatial linker: processing tasks still pending, re-queueing")
         raise self.retry(countdown=_LINKER_REQUEUE_COUNTDOWN)
 
-    return _run_linker_task(import_run_id, entity_type_str, entity_ids, linker_name="spatial")
+    return _run_linker_task(self, import_run_id, entity_type_str, entity_ids, linker_name="spatial")
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
@@ -223,10 +228,13 @@ def run_semantic_linker_batch(
         logger.info("Semantic linker: processing tasks still pending, re-queueing")
         raise self.retry(countdown=_LINKER_REQUEUE_COUNTDOWN)
 
-    return _run_linker_task(import_run_id, entity_type_str, entity_ids, linker_name="semantic")
+    return _run_linker_task(
+        self, import_run_id, entity_type_str, entity_ids, linker_name="semantic"
+    )
 
 
 def _run_linker_task(
+    task: Task[..., dict[str, Any]],
     import_run_id: str,
     entity_type_str: str,
     entity_ids: list[str],
@@ -236,6 +244,7 @@ def _run_linker_task(
     """Shared implementation for running a single linker on one entity type.
 
     Args:
+        task: The bound Celery task instance (for retry support).
         import_run_id: ID of the import run.
         entity_type_str: Entity type string.
         entity_ids: List of entity ID strings.
@@ -244,13 +253,6 @@ def _run_linker_task(
     Returns:
         Dict with linker statistics.
     """
-    from potluck.db.session import get_engine
-    from potluck.pipeline.processing.linkers import (
-        SemanticLinker,
-        SpatialLinker,
-        TemporalLinker,
-    )
-
     linker_map = {
         "temporal": TemporalLinker,
         "spatial": SpatialLinker,
@@ -278,14 +280,12 @@ def _run_linker_task(
                 **result,
             }
             # Update processing progress for linker stage
-            from potluck.pipeline.processing.core.base import update_processing_progress
-
             update_processing_progress(import_run_id, linker_name, entity_type, task_result)
             return task_result
     except Exception as e:
         logger.exception(f"{linker_name} linker failed: {e}")
         if is_transient_error(e):
-            raise
+            raise task.retry(exc=e) from e
         raise Reject(str(e), requeue=False) from e
 
 
@@ -298,8 +298,6 @@ def dispatch_temporal_linker(
     import_run_id: str, entity_type_str: str, entity_ids: list[str]
 ) -> None:
     """Dispatch temporal linker task if entity type is supported."""
-    from potluck.pipeline.processing.linkers.temporal import TemporalLinker
-
     if EntityType(entity_type_str) in TemporalLinker.SUPPORTED_ENTITY_TYPES:
         run_temporal_linker_batch.apply_async(
             args=(import_run_id, entity_type_str, entity_ids),
@@ -311,8 +309,6 @@ def dispatch_spatial_linker(
     import_run_id: str, entity_type_str: str, entity_ids: list[str]
 ) -> None:
     """Dispatch spatial linker task if entity type is supported."""
-    from potluck.pipeline.processing.linkers.spatial import SpatialLinker
-
     if EntityType(entity_type_str) in SpatialLinker.SUPPORTED_ENTITY_TYPES:
         run_spatial_linker_batch.apply_async(
             args=(import_run_id, entity_type_str, entity_ids),
@@ -324,8 +320,6 @@ def dispatch_semantic_linker(
     import_run_id: str, entity_type_str: str, entity_ids: list[str]
 ) -> None:
     """Dispatch semantic linker task if entity type is supported."""
-    from potluck.pipeline.processing.linkers.semantic import SemanticLinker
-
     if EntityType(entity_type_str) in SemanticLinker.SUPPORTED_ENTITY_TYPES:
         run_semantic_linker_batch.apply_async(
             args=(import_run_id, entity_type_str, entity_ids),

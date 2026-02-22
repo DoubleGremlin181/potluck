@@ -1,7 +1,5 @@
 """Search router — hybrid search with filters and browse mode."""
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
@@ -30,7 +28,7 @@ async def _browse_entities(
     entity_types: list[EntityType],
     page: int,
     per_page: int,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, object]], int]:
     """Browse entities by type without a search query.
 
     Pagination (page/per_page) is applied independently per entity type,
@@ -40,7 +38,7 @@ async def _browse_entities(
     Returns (items, total_count).
     """
     entity_map = get_entity_type_model_map()
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, object]] = []
     total_count = 0
 
     for et in entity_types:
@@ -87,7 +85,7 @@ async def search_page(
     """Render search page with results or browse mode."""
     per_page = 20
     results: SearchResults | None = None
-    browse_results: list[dict[str, Any]] | None = None
+    browse_results: list[dict[str, object]] | None = None
     browse_total: int = 0
     error: str | None = None
 
@@ -101,7 +99,13 @@ async def search_page(
         entity_types = parse_entity_types(types) or None
         source_types: set[SourceType] | None = None
         if source:
-            source_types = {SourceType(s) for s in source if s in SourceType.__members__.values()}
+            source_types_set: set[SourceType] = set()
+            for s in source:
+                try:
+                    source_types_set.add(SourceType(s))
+                except ValueError:
+                    logger.warning("Ignoring invalid source type filter: %s", s)
+            source_types = source_types_set or None
 
         since_dt = parse_optional_datetime(since, field_name="since")
         until_dt = parse_optional_datetime(until, field_name="until")
@@ -135,7 +139,7 @@ async def search_page(
     templates = request.app.state.templates
     is_htmx = request.headers.get("HX-Request") == "true"
 
-    context: dict[str, Any] = {
+    context: dict[str, object] = {
         "active_page": "search",
         "q": q,
         "mode": mode,

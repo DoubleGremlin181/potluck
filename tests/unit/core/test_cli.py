@@ -1,7 +1,7 @@
 """Unit tests for CLI commands."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import typer
@@ -111,17 +111,19 @@ class TestIngestCommand:
             patch("potluck.core.cli.detect_stage") as mock_detect_stage,
             patch("potluck.core.cli.discover") as mock_discover,
         ):
-            # Mock stage detection
-            mock_stage = MagicMock()
-            mock_stage.SOURCE_TYPE = SourceType.ANDROID_TIMELINE
-            mock_detect_stage.return_value = mock_stage
+            # Use a real class (not MagicMock) for stage since DiscoveryResult
+            # expects a type for its stage field
+            class FakeStage:
+                SOURCE_TYPE = SourceType.ANDROID_TIMELINE
+
+            mock_detect_stage.return_value = FakeStage
 
             # Mock discovery result
             from potluck.pipeline import DiscoveryResult
 
             mock_discover.return_value = DiscoveryResult(
                 source_path=test_file,
-                stage=mock_stage,
+                stage=FakeStage,
                 available_entities={EntityType.LOCATION_VISIT: 100},
                 metadata={},
             )
