@@ -260,14 +260,22 @@ Use `@pytest.mark.ml` for tests requiring ML dependencies.
 
 ## Queue Configuration
 
-Celery routes tasks to different queues:
-- `ingest` queue: `run_ingestion`, `cancel_ingestion`
-- `process` queue: All `run_*_batch` tasks (defined in `processing/processors/`, not in `tasks/processing.py`)
+All pipeline tasks use a single `pipeline` queue with 10 priority levels (0-9).
+With `concurrency=1` (default), the worker processes tasks in strict priority order:
+
+| Priority | Phase | Tasks |
+|----------|-------|-------|
+| 0 | Ingest | `run_ingestion`, `cancel_ingestion` |
+| 1-8 | Process | All `run_*_batch` processor tasks (mapped from registry priority via `processor_to_celery_priority()`) |
+| 9 | Link | `run_temporal_linker_batch`, `run_spatial_linker_batch`, `run_semantic_linker_batch` |
 
 Configure in `core/celery.py`:
 ```python
 task_routes = {
-    "potluck.pipeline.tasks.ingestion.*": {"queue": "ingest"},
-    "potluck.pipeline.tasks.processing.*": {"queue": "process"},
+    "potluck.pipeline.tasks.ingestion.*": {"queue": "pipeline"},
+    "potluck.pipeline.tasks.processing.*": {"queue": "pipeline"},
 }
 ```
+
+Each linker runs as a separate Celery task scoped to a single entity type,
+with a preemption guard that re-queues if processing tasks are still pending.

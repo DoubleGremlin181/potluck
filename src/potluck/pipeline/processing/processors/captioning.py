@@ -162,7 +162,7 @@ class CaptioningProcessor(BaseProcessor):
 
 @celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
-    queue="process",
+    queue="pipeline",
     autoretry_for=(Retry,),
     retry_backoff=RETRY_BACKOFF,
     retry_backoff_max=RETRY_BACKOFF_MAX,

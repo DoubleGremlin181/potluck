@@ -7,6 +7,7 @@ entities in a batch.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from typing import Any, ClassVar
 from uuid import UUID
 
@@ -17,6 +18,9 @@ from potluck.models.base import EntityType
 from potluck.models.links import EntityLink, LinkType
 
 logger = get_logger(__name__)
+
+# Number of links to accumulate before committing to the database
+PERSIST_BATCH_SIZE = 1000
 
 
 class BaseLinker(ABC):
@@ -33,11 +37,13 @@ class BaseLinker(ABC):
         NAME: Unique identifier for this linker.
         VERSION: Version string for tracking linker changes.
         LINK_TYPES: Set of LinkType values this linker creates.
+        SUPPORTED_ENTITY_TYPES: Entity types this linker operates on.
     """
 
     NAME: ClassVar[str]  # Must be set by subclasses
     VERSION: ClassVar[str] = "1.0.0"
     LINK_TYPES: ClassVar[set[LinkType]]  # Must be set by subclasses
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]]  # Must be set by subclasses
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Validate required class attributes on subclass definition."""
@@ -53,17 +59,20 @@ class BaseLinker(ABC):
         if not hasattr(cls, "LINK_TYPES"):
             raise TypeError(f"{cls.__name__} must define LINK_TYPES class attribute")
 
+        if not hasattr(cls, "SUPPORTED_ENTITY_TYPES"):
+            raise TypeError(f"{cls.__name__} must define SUPPORTED_ENTITY_TYPES class attribute")
+
     @abstractmethod
     def find_links(
         self,
         session: Session,
         entity_type: EntityType,
         entity_ids: list[UUID],
-    ) -> list[EntityLink]:
+    ) -> Iterator[EntityLink]:
         """Find links between entities of a given type.
 
         This method is called with a batch of entity IDs from an import.
-        The linker should analyze these entities and return EntityLink
+        The linker should analyze these entities and yield EntityLink
         records for related pairs.
 
         Args:
@@ -71,62 +80,45 @@ class BaseLinker(ABC):
             entity_type: Type of entities in this batch.
             entity_ids: List of entity IDs to analyze.
 
-        Returns:
-            List of EntityLink records to persist.
+        Yields:
+            EntityLink records to persist.
         """
         ...
 
-    def find_cross_type_links(
-        self,
-        session: Session,
-        entity_ids_by_type: dict[EntityType, list[UUID]],
-    ) -> list[EntityLink]:
-        """Find links between entities of different types.
+    def persist_links(self, session: Session, links: Iterator[EntityLink]) -> int:
+        """Persist links from an iterator to the database in batches.
 
-        Override this method to create cross-type links. Default
-        implementation calls find_links for each type separately.
+        Consumes the iterator and commits every PERSIST_BATCH_SIZE links
+        to keep memory bounded.
 
         Args:
             session: Database session.
-            entity_ids_by_type: Dict mapping entity types to entity IDs.
+            links: Iterator of EntityLink records to persist.
 
         Returns:
-            List of EntityLink records to persist.
+            Number of links actually persisted.
         """
-        links: list[EntityLink] = []
-        for entity_type, entity_ids in entity_ids_by_type.items():
-            links.extend(self.find_links(session, entity_type, entity_ids))
-        return links
-
-    def persist_links(self, session: Session, links: list[EntityLink]) -> int:
-        """Persist a batch of links to the database.
-
-        Handles deduplication - skips links that already exist.
-
-        Args:
-            session: Database session.
-            links: List of EntityLink records to persist.
-
-        Returns:
-            Number of links actually persisted (after deduplication).
-        """
-        if not links:
-            return 0
-
         persisted = 0
+        batch_count = 0
+
         for link in links:
-            # Set linker provenance
             link.linker_name = self.NAME
             link.linker_version = self.VERSION
             link.is_automatic = True
-
-            # TODO: Check for existing link to avoid duplicates
-            # For now, just add all links
             session.add(link)
             persisted += 1
+            batch_count += 1
+
+            if batch_count >= PERSIST_BATCH_SIZE:
+                session.commit()
+                logger.debug(f"{self.NAME} committed {persisted} links so far")
+                batch_count = 0
+
+        # Commit any remaining links
+        if batch_count > 0:
+            session.commit()
 
         if persisted > 0:
-            session.commit()
             logger.info(f"{self.NAME} created {persisted} links")
 
         return persisted
@@ -134,27 +126,28 @@ class BaseLinker(ABC):
     def run(
         self,
         session: Session,
-        entity_ids_by_type: dict[EntityType, list[UUID]],
+        entity_type: EntityType,
+        entity_ids: list[UUID],
     ) -> dict[str, Any]:
-        """Run the linker on a batch of entities.
+        """Run the linker on a batch of entities of a single type.
 
         Args:
             session: Database session.
-            entity_ids_by_type: Dict mapping entity types to entity IDs.
+            entity_type: Type of entities to link.
+            entity_ids: List of entity IDs to analyze.
 
         Returns:
             Dict with linker statistics.
         """
-        total_entities = sum(len(ids) for ids in entity_ids_by_type.values())
-        logger.info(f"Running {self.NAME} on {total_entities} entities")
+        logger.info(f"Running {self.NAME} on {len(entity_ids)} {entity_type.value} entities")
 
-        links = self.find_cross_type_links(session, entity_ids_by_type)
+        links = self.find_links(session, entity_type, entity_ids)
         persisted = self.persist_links(session, links)
 
         return {
             "linker_name": self.NAME,
             "linker_version": self.VERSION,
-            "entities_analyzed": total_entities,
-            "links_found": len(links),
+            "entity_type": entity_type.value,
+            "entities_analyzed": len(entity_ids),
             "links_persisted": persisted,
         }

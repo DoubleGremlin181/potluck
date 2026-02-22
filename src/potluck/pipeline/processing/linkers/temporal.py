@@ -4,6 +4,7 @@ Creates SAME_TIME links between entities that occurred within a specified
 time window of each other.
 """
 
+from collections.abc import Iterator
 from typing import ClassVar
 from uuid import UUID
 
@@ -37,6 +38,14 @@ class TemporalLinker(BaseLinker):
 
     NAME: ClassVar[str] = "temporal"
     LINK_TYPES: ClassVar[set[LinkType]] = {LinkType.SAME_TIME}
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {
+        EntityType.MEDIA,
+        EntityType.CHAT_MESSAGE,
+        EntityType.EMAIL,
+        EntityType.CALENDAR_EVENT,
+        EntityType.LOCATION_VISIT,
+        EntityType.SOCIAL_POST,
+    }
 
     def __init__(
         self,
@@ -58,31 +67,35 @@ class TemporalLinker(BaseLinker):
         session: Session,
         entity_type: EntityType,
         entity_ids: list[UUID],
-    ) -> list[EntityLink]:
+    ) -> Iterator[EntityLink]:
         """Find temporal links between entities of the same type.
+
+        Entities are sorted by timestamp and compared pairwise with an
+        early-break optimisation: once the time difference exceeds the
+        window, no further comparisons are needed for that anchor entity.
 
         Args:
             session: Database session.
             entity_type: Type of entities to analyze.
             entity_ids: List of entity IDs.
 
-        Returns:
-            List of SAME_TIME EntityLink records.
+        Yields:
+            SAME_TIME EntityLink records.
         """
         if len(entity_ids) < 2:
-            return []
+            return
 
         # Get the model class for this entity type
         model_map = get_entity_type_model_map()
         model_class = model_map.get(entity_type)
         if model_class is None:
             logger.warning(f"No model class found for entity type: {entity_type}")
-            return []
+            return
 
         # Check if this model has an occurred_at field
         if not hasattr(model_class, "occurred_at"):
             logger.debug(f"Entity type {entity_type} has no occurred_at field, skipping")
-            return []
+            return
 
         # Fetch entities with timestamps
         stmt = (
@@ -94,14 +107,12 @@ class TemporalLinker(BaseLinker):
         entities = list(result.all())
 
         if len(entities) < 2:
-            return []
+            return
 
         # Sort by timestamp
         entities.sort(key=lambda e: e.occurred_at)  # type: ignore[attr-defined]
 
-        # Find pairs within the time window
-        links: list[EntityLink] = []
-
+        link_count = 0
         for i, entity_a in enumerate(entities):
             for entity_b in entities[i + 1 :]:
                 time_a = entity_a.occurred_at  # type: ignore[attr-defined]
@@ -116,16 +127,14 @@ class TemporalLinker(BaseLinker):
                 confidence = 1.0 - (time_diff / self._time_window_seconds)
 
                 if confidence >= self._min_confidence:
-                    links.append(
-                        EntityLink(
-                            source_type=entity_type,
-                            source_id=entity_a.id,  # type: ignore[attr-defined]
-                            target_type=entity_type,
-                            target_id=entity_b.id,  # type: ignore[attr-defined]
-                            link_type=LinkType.SAME_TIME,
-                            confidence=confidence,
-                        )
+                    link_count += 1
+                    yield EntityLink(
+                        source_type=entity_type,
+                        source_id=entity_a.id,  # type: ignore[attr-defined]
+                        target_type=entity_type,
+                        target_id=entity_b.id,  # type: ignore[attr-defined]
+                        link_type=LinkType.SAME_TIME,
+                        confidence=confidence,
                     )
 
-        logger.debug(f"Found {len(links)} temporal links for {entity_type}")
-        return links
+        logger.debug(f"Found {link_count} temporal links for {entity_type}")

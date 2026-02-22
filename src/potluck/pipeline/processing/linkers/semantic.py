@@ -4,6 +4,7 @@ Creates SIMILAR links between entities based on embedding vector similarity.
 Uses cosine similarity to compare entity embeddings.
 """
 
+from collections.abc import Iterator
 from typing import ClassVar
 from uuid import UUID
 
@@ -61,6 +62,11 @@ class SemanticLinker(BaseLinker):
 
     NAME: ClassVar[str] = "semantic"
     LINK_TYPES: ClassVar[set[LinkType]] = {LinkType.SIMILAR}
+    SUPPORTED_ENTITY_TYPES: ClassVar[set[EntityType]] = {
+        EntityType.MEDIA,
+        EntityType.KNOWLEDGE_NOTE,
+        EntityType.DOCUMENT,
+    }
 
     def __init__(
         self,
@@ -82,7 +88,7 @@ class SemanticLinker(BaseLinker):
         session: Session,
         entity_type: EntityType,
         entity_ids: list[UUID],
-    ) -> list[EntityLink]:
+    ) -> Iterator[EntityLink]:
         """Find semantic links between entities of the same type.
 
         Args:
@@ -90,37 +96,35 @@ class SemanticLinker(BaseLinker):
             entity_type: Type of entities to analyze.
             entity_ids: List of entity IDs.
 
-        Returns:
-            List of SIMILAR EntityLink records.
+        Yields:
+            SIMILAR EntityLink records.
         """
         if len(entity_ids) < 2:
-            return []
+            return
 
         # Route to appropriate handler based on entity type
         if entity_type == EntityType.MEDIA:
-            return self._find_media_links(session, entity_ids)
+            yield from self._find_media_links(session, entity_ids)
         elif entity_type == EntityType.KNOWLEDGE_NOTE:
-            return self._find_note_links(session, entity_ids)
+            yield from self._find_note_links(session, entity_ids)
         elif entity_type == EntityType.DOCUMENT:
-            return self._find_document_links(session, entity_ids)
+            yield from self._find_document_links(session, entity_ids)
         else:
-            # Other entity types don't have embeddings yet
             logger.debug(f"Entity type {entity_type} has no embedding support")
-            return []
 
     def _find_media_links(
         self,
         session: Session,
         entity_ids: list[UUID],
-    ) -> list[EntityLink]:
+    ) -> Iterator[EntityLink]:
         """Find semantic links between media entities via MediaEmbedding.
 
         Args:
             session: Database session.
             entity_ids: List of media IDs.
 
-        Returns:
-            List of SIMILAR EntityLink records.
+        Yields:
+            SIMILAR EntityLink records.
         """
         # Fetch embeddings for these media items
         stmt = (
@@ -132,14 +136,14 @@ class SemanticLinker(BaseLinker):
         embeddings = list(result.all())
 
         if len(embeddings) < 2:
-            return []
+            return
 
         # Build embedding lookup
         embedding_map: dict[UUID, list[float]] = {e.media_id: e.embedding for e in embeddings}
 
         # Compare all pairs
-        links: list[EntityLink] = []
         media_ids = list(embedding_map.keys())
+        link_count = 0
 
         for i, id_a in enumerate(media_ids):
             vec_a = embedding_map[id_a]
@@ -149,33 +153,31 @@ class SemanticLinker(BaseLinker):
                 similarity = cosine_similarity(vec_a, vec_b)
 
                 if similarity >= self._similarity_threshold:
-                    links.append(
-                        EntityLink(
-                            source_type=EntityType.MEDIA,
-                            source_id=id_a,
-                            target_type=EntityType.MEDIA,
-                            target_id=id_b,
-                            link_type=LinkType.SIMILAR,
-                            confidence=similarity,
-                        )
+                    link_count += 1
+                    yield EntityLink(
+                        source_type=EntityType.MEDIA,
+                        source_id=id_a,
+                        target_type=EntityType.MEDIA,
+                        target_id=id_b,
+                        link_type=LinkType.SIMILAR,
+                        confidence=similarity,
                     )
 
-        logger.debug(f"Found {len(links)} semantic links for media")
-        return links
+        logger.debug(f"Found {link_count} semantic links for media")
 
     def _find_note_links(
         self,
         session: Session,
         entity_ids: list[UUID],
-    ) -> list[EntityLink]:
+    ) -> Iterator[EntityLink]:
         """Find semantic links between knowledge notes via inline embeddings.
 
         Args:
             session: Database session.
             entity_ids: List of note IDs.
 
-        Returns:
-            List of SIMILAR EntityLink records.
+        Yields:
+            SIMILAR EntityLink records.
         """
         # Fetch notes with embeddings
         stmt = (
@@ -187,7 +189,7 @@ class SemanticLinker(BaseLinker):
         notes = list(result.all())
 
         if len(notes) < 2:
-            return []
+            return
 
         # Build embedding lookup
         embedding_map: dict[UUID, list[float]] = {
@@ -195,8 +197,8 @@ class SemanticLinker(BaseLinker):
         }
 
         # Compare all pairs
-        links: list[EntityLink] = []
         note_ids = list(embedding_map.keys())
+        link_count = 0
 
         for i, id_a in enumerate(note_ids):
             vec_a = embedding_map[id_a]
@@ -206,33 +208,31 @@ class SemanticLinker(BaseLinker):
                 similarity = cosine_similarity(vec_a, vec_b)
 
                 if similarity >= self._similarity_threshold:
-                    links.append(
-                        EntityLink(
-                            source_type=EntityType.KNOWLEDGE_NOTE,
-                            source_id=id_a,
-                            target_type=EntityType.KNOWLEDGE_NOTE,
-                            target_id=id_b,
-                            link_type=LinkType.SIMILAR,
-                            confidence=similarity,
-                        )
+                    link_count += 1
+                    yield EntityLink(
+                        source_type=EntityType.KNOWLEDGE_NOTE,
+                        source_id=id_a,
+                        target_type=EntityType.KNOWLEDGE_NOTE,
+                        target_id=id_b,
+                        link_type=LinkType.SIMILAR,
+                        confidence=similarity,
                     )
 
-        logger.debug(f"Found {len(links)} semantic links for notes")
-        return links
+        logger.debug(f"Found {link_count} semantic links for notes")
 
     def _find_document_links(
         self,
         session: Session,
         entity_ids: list[UUID],
-    ) -> list[EntityLink]:
+    ) -> Iterator[EntityLink]:
         """Find semantic links between documents via inline embeddings.
 
         Args:
             session: Database session.
             entity_ids: List of document IDs.
 
-        Returns:
-            List of SIMILAR EntityLink records.
+        Yields:
+            SIMILAR EntityLink records.
         """
         # Fetch documents with embeddings
         stmt = (
@@ -244,7 +244,7 @@ class SemanticLinker(BaseLinker):
         documents = list(result.all())
 
         if len(documents) < 2:
-            return []
+            return
 
         # Build embedding lookup
         embedding_map: dict[UUID, list[float]] = {
@@ -252,8 +252,8 @@ class SemanticLinker(BaseLinker):
         }
 
         # Compare all pairs
-        links: list[EntityLink] = []
         doc_ids = list(embedding_map.keys())
+        link_count = 0
 
         for i, id_a in enumerate(doc_ids):
             vec_a = embedding_map[id_a]
@@ -263,16 +263,14 @@ class SemanticLinker(BaseLinker):
                 similarity = cosine_similarity(vec_a, vec_b)
 
                 if similarity >= self._similarity_threshold:
-                    links.append(
-                        EntityLink(
-                            source_type=EntityType.DOCUMENT,
-                            source_id=id_a,
-                            target_type=EntityType.DOCUMENT,
-                            target_id=id_b,
-                            link_type=LinkType.SIMILAR,
-                            confidence=similarity,
-                        )
+                    link_count += 1
+                    yield EntityLink(
+                        source_type=EntityType.DOCUMENT,
+                        source_id=id_a,
+                        target_type=EntityType.DOCUMENT,
+                        target_id=id_b,
+                        link_type=LinkType.SIMILAR,
+                        confidence=similarity,
                     )
 
-        logger.debug(f"Found {len(links)} semantic links for documents")
-        return links
+        logger.debug(f"Found {link_count} semantic links for documents")

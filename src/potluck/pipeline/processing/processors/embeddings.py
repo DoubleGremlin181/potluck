@@ -925,7 +925,7 @@ class MediaEmbeddingProcessor(BaseProcessor):
 
 @celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
-    queue="process",
+    queue="pipeline",
     autoretry_for=(Retry,),
     retry_backoff=RETRY_BACKOFF,
     retry_backoff_max=RETRY_BACKOFF_MAX,
@@ -945,7 +945,7 @@ def run_text_embedding_batch(
 
 @celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
-    queue="process",
+    queue="pipeline",
     autoretry_for=(Retry,),
     retry_backoff=RETRY_BACKOFF,
     retry_backoff_max=RETRY_BACKOFF_MAX,
@@ -965,7 +965,7 @@ def run_multimodal_text_embedding_batch(
 
 @celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
-    queue="process",
+    queue="pipeline",
     autoretry_for=(Retry,),
     retry_backoff=RETRY_BACKOFF,
     retry_backoff_max=RETRY_BACKOFF_MAX,

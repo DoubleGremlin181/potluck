@@ -589,24 +589,39 @@ class PipelineOrchestrator:
             )
 
     def _queue_linkers(self, import_run: ImportRun) -> None:
-        """Queue batch linkers for all imported entities."""
+        """Queue per-linker per-entity-type tasks for all imported entities.
+
+        Each linker is dispatched as a separate Celery task scoped to a single
+        entity type, enabling independent retries and entity-type filtering.
+        """
         # Deferred import: circular dependency via tasks/__init__.py → tasks/ingestion.py → orchestrator.py
-        from potluck.pipeline.tasks.processing import run_linkers_batch
+        from potluck.pipeline.tasks.processing import (
+            dispatch_semantic_linker,
+            dispatch_spatial_linker,
+            dispatch_temporal_linker,
+        )
 
-        # Convert to serializable format
-        entity_ids_by_type = {etype.value: ids for etype, ids in self._entity_ids_by_type.items()}
+        import_run_id = str(import_run.id)
 
-        if not any(entity_ids_by_type.values()):
-            return
+        for entity_type, entity_ids in self._entity_ids_by_type.items():
+            if not entity_ids:
+                continue
 
-        try:
-            run_linkers_batch(str(import_run.id), entity_ids_by_type)
-            logger.debug("Queued batch linkers for import run %s", import_run.id)
-        except (OSError, RuntimeError, ValueError, TypeError):
-            logger.exception(
-                "Failed to queue linkers for import run %s. Linking will need to be run manually.",
-                import_run.id,
-            )
+            entity_type_str = entity_type.value
+
+            try:
+                dispatch_temporal_linker(import_run_id, entity_type_str, entity_ids)
+                dispatch_spatial_linker(import_run_id, entity_type_str, entity_ids)
+                dispatch_semantic_linker(import_run_id, entity_type_str, entity_ids)
+            except (OSError, RuntimeError, ValueError, TypeError):
+                logger.exception(
+                    "Failed to queue linkers for %s entities in import run %s. "
+                    "Linking will need to be run manually.",
+                    entity_type_str,
+                    import_run.id,
+                )
+
+        logger.debug("Queued per-linker tasks for import run %s", import_run.id)
 
     def _update_progress(
         self,

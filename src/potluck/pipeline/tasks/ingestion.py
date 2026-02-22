@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 
 from potluck.core.celery import (
     MAX_RETRIES,
+    PRIORITY_INGEST,
     RETRY_BACKOFF,
     RETRY_BACKOFF_MAX,
     celery_app,
@@ -258,16 +259,19 @@ def start_ingestion(
 
         import_run_id = str(run.id)
 
-    # Start Celery task
+    # Start Celery task with highest pipeline priority
     types_list = [et.value for et in entity_types] if entity_types else None
     source_type_str = source_type.value if source_type else None
-    task = run_ingestion.delay(
-        import_run_id,
-        str(path),
-        types_list,
-        source_type_str,
-        since,
-        until,
+    task = run_ingestion.apply_async(
+        args=(
+            import_run_id,
+            str(path),
+            types_list,
+            source_type_str,
+            since,
+            until,
+        ),
+        priority=PRIORITY_INGEST,
     )
 
     return task.id, import_run_id
