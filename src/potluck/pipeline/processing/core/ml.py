@@ -14,6 +14,7 @@ from typing import Any, ClassVar
 import easyocr
 import torch
 from facenet_pytorch import MTCNN
+from huggingface_hub import snapshot_download
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 from transformers import (
@@ -122,8 +123,6 @@ class MLModels:
         without instantiating them. This avoids the memory spike that would occur
         from loading all models simultaneously.
         """
-        from huggingface_hub import snapshot_download
-
         logger.info("Downloading all ML models to disk cache...")
 
         # HuggingFace models — snapshot_download only downloads files

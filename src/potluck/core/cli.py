@@ -87,11 +87,11 @@ def download_models(
 
     Downloads and caches all ML models used by Potluck processors:
     - Text encoder (e5-small-v2, ~90MB)
-    - Multimodal encoder (SigLIP, ~380MB)
+    - Multimodal encoder (SigLIP2, ~380MB)
     - Face detector (MTCNN)
     - Face encoder (ArcFace, ~250MB)
     - OCR reader (EasyOCR, ~100MB)
-    - Captioning model (BLIP-2, ~2.7GB)
+    - Captioning model (Florence-2, ~460MB)
 
     Models are cached locally and shared across all Potluck processes.
     """

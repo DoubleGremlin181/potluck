@@ -108,10 +108,17 @@ celery_app = create_celery_app()
 def cleanup_models_after_task(**kwargs: object) -> None:
     """Unload all ML models from memory after each task completes.
 
-    This ensures only one model type is in memory at a time when processing
-    batches sequentially. Each batch task loads its model, processes entities,
-    then this signal handler unloads it before the next task starts.
-    """
-    from potluck.pipeline.processing.core.ml import MLModels
+    Combined with worker_concurrency=1, this ensures only one model type is in
+    memory at a time when processing batches sequentially. Each batch task loads
+    its model, processes entities, then this signal handler unloads it before
+    the next task starts.
 
-    MLModels.unload_all()
+    This fires after every task, not just processing tasks. It is a no-op when
+    no models are loaded.
+    """
+    try:
+        from potluck.pipeline.processing.core.ml import MLModels
+
+        MLModels.unload_all()
+    except Exception:
+        logger.exception("Failed to unload ML models after task. Memory may not be freed.")

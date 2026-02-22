@@ -8,7 +8,7 @@ and re-running embeddings.
 
 # Embedding dimensions
 TEXT_EMBEDDING_DIM = 384  # e5-small-v2 text embeddings
-MULTIMODAL_EMBEDDING_DIM = 768  # SigLIP cross-modal embeddings
+MULTIMODAL_EMBEDDING_DIM = 768  # SigLIP2 cross-modal embeddings
 FACE_EMBEDDING_DIM = 512  # ArcFace face embeddings
 
 # Default model identifiers

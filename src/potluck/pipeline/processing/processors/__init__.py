@@ -5,7 +5,7 @@ This module contains all processor implementations:
 - MetadataProcessor: EXIF metadata extraction
 - OCRProcessor: Text extraction using EasyOCR
 - FaceProcessor: Face detection using MTCNN + ArcFace
-- CaptioningProcessor: Image captioning using BLIP-2
+- CaptioningProcessor: Image captioning using Florence-2
 - TextEmbeddingProcessor: Text embedding for text-to-text semantic search
 - MultimodalTextEmbeddingProcessor: Text embedding for cross-modal search
 - MediaEmbeddingProcessor: Visual/text embeddings for media

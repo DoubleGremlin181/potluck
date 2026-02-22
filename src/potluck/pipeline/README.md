@@ -22,7 +22,7 @@ pipeline/
 │   └── text_files/             # Plain text/markdown documents
 ├── processing/
 │   ├── core/
-│   │   ├── base.py             # BaseProcessor, run_processor_task()
+│   │   ├── base.py             # BaseProcessor, run_batch_processor_task(), run_batch_stage_task()
 │   │   ├── registry.py         # ProcessorRegistry with priority ordering
 │   │   └── ml.py               # MLModels centralized loading
 │   ├── processors/
@@ -117,7 +117,7 @@ The orchestrator handles the full ingestion lifecycle:
 3. **Entity discovery** -- calls `stage.detect()` for counts
 4. **Duplicate checking** -- source-level (file hash) and entity-level (content hash)
 5. **Batch persistence** -- entities are sorted by FK dependency order, flushed in batches (default 100)
-6. **Processing queue** -- each persisted entity is queued for Celery processing
+6. **Processing queue** -- persisted entities are queued as batches per entity type for Celery processing
 7. **Linker queue** -- batch linkers are queued after import completes
 
 ## Processing
@@ -154,10 +154,10 @@ class HashingProcessor(BaseProcessor):
 ### ProcessorRegistry
 
 Two-phase registration:
-1. `@ProcessorRegistry.register(priority=N)` -- registers the class with a placeholder task
-2. `ProcessorRegistry.set_task(name, task_func)` -- sets the actual Celery task after it is defined
+1. `@ProcessorRegistry.register(priority=N)` -- registers the class
+2. `ProcessorRegistry.set_batch_task(name, batch_task_func)` -- sets the batch Celery task after it is defined
 
-`get_pipeline(entity_type)` returns an ordered list of processors for a given entity type, sorted by priority.
+`get_batch_pipeline(entity_type)` returns an ordered list of processors for a given entity type (only those with a `batch_task_func` registered), sorted by priority.
 
 ### Auto-Discovery
 
@@ -180,7 +180,8 @@ Linkers extend `BaseLinker` which provides `find_links()` (within a type) and `f
 - `cancel_ingestion` -- Cancels a running import by revoking the Celery task
 
 ### Processing Tasks (`tasks/processing.py`)
-- `run_entity_pipeline(entity_type, entity_id)` -- builds a Celery chain from the `ProcessorRegistry` for any entity type
+- `run_entity_pipeline(entity_type, entity_id)` -- convenience wrapper around `run_batch_entity_pipeline` for single-entity reprocessing
+- `run_batch_entity_pipeline(entity_type, entity_ids)` -- builds a Celery chain from the ProcessorRegistry batch pipeline
 - `run_linkers_batch(import_run_id, entity_ids_by_type)` -- runs all linkers on entities from an import
 - Individual processor tasks are re-exported for direct access
 
@@ -205,10 +206,10 @@ ingest (stage.execute -> yield entities)
 batch + dedup + sort by FK deps + flush to DB
     |
     v
-queue Celery processing chain per entity
+queue batch processing pipeline per entity type
     |
     v
-Hashing -> Metadata -> OCR -> Faces -> Captioning -> Embeddings
+Hashing (batch) -> Metadata (batch) -> Media Embedding (batch) -> OCR (batch) -> Faces (batch) -> Captioning (batch)
     |
     v
 queue batch linkers (Temporal, Spatial, Semantic)

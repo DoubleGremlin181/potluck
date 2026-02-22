@@ -186,8 +186,7 @@ def run_hashing_batch(
     """Hash a batch of entities and return IDs that need further processing.
 
     This is the first stage in the batch pipeline. It hashes all entities and
-    returns a ``needs_processing`` list for subsequent stages. Entities that
-    already have a ``file_hash`` are skipped (idempotency).
+    returns a ``needs_processing`` list for subsequent stages.
     """
     result = run_batch_processor_task(self, EntityType(entity_type), entity_ids, HashingProcessor)
     # All entity IDs are forwarded — downstream stages use should_execute() to filter

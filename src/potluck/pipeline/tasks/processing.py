@@ -43,7 +43,7 @@ def run_batch_entity_pipeline(entity_type_str: str, entity_ids: list[str]) -> No
     """Queue batch-by-processor pipeline for a group of entities.
 
     Builds a Celery chain from the ProcessorRegistry's batch pipeline based on
-    entity type. The first stage (hashing) takes explicit IDs; subsequent stages
+    entity type. The first stage takes explicit entity IDs; subsequent stages
     receive the previous result containing ``needs_processing`` IDs.
 
     Each stage loads one model, processes all entities, then the task_postrun
@@ -60,7 +60,11 @@ def run_batch_entity_pipeline(entity_type_str: str, entity_ids: list[str]) -> No
     pipeline = ProcessorRegistry.get_batch_pipeline(entity_type)
 
     if not pipeline:
-        logger.debug(f"No batch processors registered for entity type: {entity_type_str}")
+        if entity_ids:
+            logger.warning(
+                f"No batch processors registered for entity type: {entity_type_str}. "
+                f"{len(entity_ids)} entities will not be processed."
+            )
         return
 
     # Build Celery chain: first task gets explicit IDs, rest chain via previous_result

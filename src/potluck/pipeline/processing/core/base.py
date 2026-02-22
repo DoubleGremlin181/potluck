@@ -263,7 +263,7 @@ def run_batch_processor_task(
 ) -> dict[str, Any]:
     """Run a processor on a batch of entities with standard error handling.
 
-    This is the batch variant of run_processor_task(). It provides:
+    This is the core batch task runner shared by all processor tasks. It provides:
     - Single database round-trip for fetching all entities
     - Batch execution via processor.execute_batch() (can be optimized per processor)
     - Bulk persistence of results
@@ -372,14 +372,36 @@ def run_batch_stage_task(
     Args:
         task: The Celery task instance (for retry support).
         previous_result: Return value from the previous stage. Must contain
-            ``entity_type`` and ``needs_processing`` keys.
+            a ``needs_processing`` key with a list of entity IDs.
         entity_type: The type of entities to process.
         processor_class: The processor class to instantiate and run.
 
     Returns:
         Dict with ``entity_type``, ``needs_processing`` (propagated), and stats.
     """
-    entity_ids: list[str] = previous_result.get("needs_processing", [])
+    if not isinstance(previous_result, dict):
+        raise Reject(
+            f"Batch {processor_class.NAME}: previous_result is not a dict "
+            f"(got {type(previous_result).__name__}). Pipeline chain may be misconfigured.",
+            requeue=False,
+        )
+
+    if "needs_processing" not in previous_result:
+        logger.warning(
+            f"Batch {processor_class.NAME}: previous_result missing 'needs_processing' key. "
+            f"Keys present: {list(previous_result.keys())}. "
+            "Previous stage may have failed. Skipping this stage."
+        )
+        return {
+            "entity_type": entity_type.value,
+            "needs_processing": [],
+            "total": 0,
+            "completed": 0,
+            "failed": 0,
+            "skipped": 0,
+        }
+
+    entity_ids: list[str] = previous_result["needs_processing"]
 
     if not entity_ids:
         logger.info(f"Batch {processor_class.NAME}: no entities to process, skipping")

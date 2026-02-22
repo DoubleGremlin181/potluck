@@ -29,7 +29,7 @@ class TestRunBatchEntityPipeline:
 
             mock_chain.assert_called_once()
             call_args = mock_chain.call_args[0]
-            # Media pipeline: hashing, metadata, ocr, faces, media_embedding, captioning
+            # Media pipeline: hashing, metadata, media_embedding, ocr, faces, captioning
             assert len(call_args) == 6
 
     @pytest.mark.ml
