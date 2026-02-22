@@ -8,7 +8,7 @@ from uuid import UUID
 
 import typer
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn
 from rich.table import Table
 from sqlmodel import Session, select
 
@@ -16,7 +16,7 @@ from potluck.core.config import get_settings
 from potluck.db.session import get_engine
 from potluck.mcp.server import run_mcp_server
 from potluck.models.base import EntityType, SourceType
-from potluck.models.sources import ImportRun
+from potluck.models.sources import ImportRun, ImportStatus, ProcessingProgress
 from potluck.pipeline import (
     DiscoveryResult,
     PipelineFilter,
@@ -99,6 +99,79 @@ def download_models(
     models = MLModels(device=device)
     models.download_all_models()
     typer.echo("All models downloaded successfully!")
+
+
+@app.command()
+def status(
+    import_run_id: str | None = typer.Argument(
+        default=None,
+        help="Import run ID (defaults to most recent active import)",
+    ),
+) -> None:
+    """Show processing status for an import run.
+
+    Without arguments, shows the most recent active or completed import.
+    With an ID, shows status of that specific import run.
+
+    Examples:
+        potluck status                    # Most recent import
+        potluck status <import-run-id>    # Specific import
+    """
+    from sqlmodel import col
+
+    engine = get_engine()
+    with Session(engine) as session:
+        if import_run_id:
+            run_stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
+        else:
+            run_stmt = select(ImportRun).order_by(col(ImportRun.started_at).desc()).limit(1)
+
+        run = session.exec(run_stmt).first()
+        if run is None:
+            _console.print("[yellow]No import runs found.[/yellow]")
+            raise typer.Exit()
+
+        _console.print(f"\nImport Run: [bold]{run.id}[/bold]")
+        _console.print(f"Status: {run.status.value}  |  Created: {run.entities_created}")
+
+        # Query processing progress
+        progress_stmt = (
+            select(ProcessingProgress)
+            .where(ProcessingProgress.import_run_id == run.id)
+            .order_by(ProcessingProgress.stage_type, ProcessingProgress.stage_name)
+        )
+        rows = session.exec(progress_stmt).all()
+
+        if not rows:
+            _console.print("[dim]No processing stages recorded yet.[/dim]")
+            raise typer.Exit()
+
+        table = Table(title="Processing Progress")
+        table.add_column("Stage", style="cyan")
+        table.add_column("Type", style="dim")
+        table.add_column("Entity Type")
+        table.add_column("Progress", justify="right")
+        table.add_column("Status")
+
+        for row in rows:
+            done = row.completed + row.failed
+            pct = f"{done}/{row.total}" if row.total > 0 else "-"
+            status_style = {
+                ImportStatus.COMPLETED: "[green]completed[/green]",
+                ImportStatus.RUNNING: "[yellow]running[/yellow]",
+                ImportStatus.FAILED: "[red]failed[/red]",
+                ImportStatus.PENDING: "[dim]pending[/dim]",
+            }.get(row.status, row.status.value)
+
+            table.add_row(
+                row.stage_name,
+                row.stage_type.value,
+                row.entity_type.value,
+                pct,
+                status_style,
+            )
+
+        _console.print(table)
 
 
 @app.command()
@@ -436,38 +509,50 @@ def _display_import_stats(stats: PipelineStats) -> None:
 
 
 def _wait_for_processing(import_run_id: str) -> None:
-    """Poll until processing tasks complete.
-
-    For MVP, this uses a simple spinner and checks ImportRun status.
-    A future enhancement could track individual Celery task completion.
-    """
+    """Poll ProcessingProgress rows until all stages complete."""
     _console.print("\nWaiting for processing to complete...")
+
+    engine = get_engine()
+    task_ids: dict[str, TaskID] = {}
 
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("{task.completed}/{task.total}"),
         console=_console,
     ) as progress:
-        task = progress.add_task("Processing...", total=None)
-
-        engine = get_engine()
         while True:
             time.sleep(2)
 
-            # Check import run status
             with Session(engine) as session:
-                stmt = select(ImportRun).where(ImportRun.id == UUID(import_run_id))
-                run = session.exec(stmt).first()
-                if run is None:
-                    progress.update(task, description="Import run not found")
-                    break
+                stmt = (
+                    select(ProcessingProgress)
+                    .where(ProcessingProgress.import_run_id == UUID(import_run_id))
+                    .order_by(ProcessingProgress.stage_type, ProcessingProgress.stage_name)
+                )
+                rows = session.exec(stmt).all()
 
-                # For now, just exit - processing runs async via Celery
-                # A more sophisticated implementation would track task completion
-                progress.update(task, description="Processing queued to Celery")
+            if not rows:
+                _console.print("No processing stages found for this import.")
                 break
 
-    _console.print(
-        "Processing tasks are running in background via Celery.\n"
-        "Check Celery worker logs for progress."
-    )
+            all_finished = True
+            for row in rows:
+                stage_key = f"{row.stage_name}:{row.entity_type.value}"
+                label = f"{row.stage_name} ({row.entity_type.value})"
+
+                if stage_key not in task_ids:
+                    task_ids[stage_key] = progress.add_task(label, total=row.total)
+
+                done = row.completed + row.failed
+                progress.update(task_ids[stage_key], completed=done, total=row.total)
+
+                if not row.is_finished:
+                    all_finished = False
+
+            if all_finished:
+                break
+
+    _console.print("Processing complete.")

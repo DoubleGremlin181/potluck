@@ -64,6 +64,22 @@ class TestAppFactory:
         app = create_app()
         assert "basename" in app.state.templates.env.filters
 
+    def test_entity_config_globals_registered(self) -> None:
+        """Entity config globals should be available in templates."""
+        app = create_app()
+        env = app.state.templates.env
+        assert "ENTITY_CONFIG" in env.globals
+        assert "get_entity_title" in env.globals
+        assert "getattr" in env.globals
+
+    def test_entity_config_has_string_keys(self) -> None:
+        """ENTITY_CONFIG global should use string keys for template access."""
+        app = create_app()
+        entity_config = app.state.templates.env.globals["ENTITY_CONFIG"]
+        assert "media" in entity_config
+        assert "email" in entity_config
+        assert "chat_message" in entity_config
+
 
 class TestAuthMiddleware:
     """Test authentication middleware behavior."""

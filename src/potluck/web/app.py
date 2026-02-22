@@ -20,6 +20,7 @@ from starlette.responses import Response
 from potluck.core.config import get_settings
 from potluck.models.media import Media
 from potluck.web.dependencies import SESSION_MAX_AGE, get_db, require_auth
+from potluck.web.entity_config import ENTITY_CARD_CONFIG, get_entity_title
 from potluck.web.routers import (
     auth,
     dashboard,
@@ -83,6 +84,11 @@ def create_app() -> FastAPI:
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.filters["basename"] = lambda path: Path(path).name if path else ""
     templates.env.filters["enum_val"] = lambda v: v.value if isinstance(v, Enum) else v
+    templates.env.globals["ENTITY_CONFIG"] = {
+        et.value: config for et, config in ENTITY_CARD_CONFIG.items()
+    }
+    templates.env.globals["get_entity_title"] = get_entity_title
+    templates.env.globals["getattr"] = getattr
     app.state.templates = templates
 
     # Static files

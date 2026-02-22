@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from potluck.models.base import SourceType, enum_field
+from potluck.models.base import EntityType, SourceType, enum_field
 from potluck.models.utils import utc_now
 
 
@@ -18,6 +18,13 @@ class ImportStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class StageType(str, Enum):
+    """Type of processing stage."""
+
+    PROCESSOR = "processor"
+    LINKER = "linker"
 
 
 class ImportSource(SQLModel, table=True):
@@ -167,6 +174,7 @@ class ImportRun(SQLModel, table=True):
 
     # Relationships
     source: ImportSource = Relationship(back_populates="import_runs")
+    processing_progress: list["ProcessingProgress"] = Relationship(back_populates="import_run")
 
     @property
     def is_running(self) -> bool:
@@ -188,3 +196,77 @@ class ImportRun(SQLModel, table=True):
         if self.progress_total is None or self.progress_total == 0:
             return None
         return (self.progress_current / self.progress_total) * 100
+
+
+class ProcessingProgress(SQLModel, table=True):
+    """Tracks per-stage processing progress for an import run.
+
+    Each row represents one processing stage (e.g., hashing, metadata, OCR)
+    or linking stage (temporal, spatial, semantic) for a specific entity type
+    within an import run. This enables per-stage progress bars in both the
+    CLI and WebUI.
+    """
+
+    __tablename__ = "processing_progress"
+
+    id: UUID = Field(
+        default_factory=uuid4,
+        primary_key=True,
+        description="Unique identifier for this progress record",
+    )
+    import_run_id: UUID = Field(
+        foreign_key="import_runs.id",
+        index=True,
+        description="The import run this progress belongs to",
+    )
+    stage_name: str = Field(
+        description="Processing stage name (e.g., 'hashing', 'metadata', 'temporal')",
+    )
+    stage_type: StageType = enum_field(
+        StageType,
+        description="Whether this is a processor or linker stage",
+    )
+    entity_type: EntityType = enum_field(
+        EntityType,
+        description="Which entity type this progress tracks",
+    )
+    total: int = Field(
+        default=0,
+        description="Total entities to process in this stage",
+    )
+    completed: int = Field(
+        default=0,
+        description="Entities successfully processed",
+    )
+    failed: int = Field(
+        default=0,
+        description="Entities that failed processing",
+    )
+    status: ImportStatus = enum_field(
+        ImportStatus,
+        default=ImportStatus.PENDING,
+        description="Current status of this processing stage",
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        description="When this stage started processing",
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        description="When this stage finished processing",
+    )
+
+    # Relationships
+    import_run: ImportRun = Relationship(back_populates="processing_progress")
+
+    @property
+    def progress_percent(self) -> float | None:
+        """Calculate progress percentage."""
+        if self.total == 0:
+            return None
+        return ((self.completed + self.failed) / self.total) * 100
+
+    @property
+    def is_finished(self) -> bool:
+        """Check if this stage has finished."""
+        return self.status in (ImportStatus.COMPLETED, ImportStatus.FAILED)

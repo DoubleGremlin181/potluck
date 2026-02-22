@@ -52,7 +52,9 @@ logger = get_logger(__name__)
 _LINKER_REQUEUE_COUNTDOWN = 30
 
 
-def run_batch_entity_pipeline(entity_type_str: str, entity_ids: list[str]) -> None:
+def run_batch_entity_pipeline(
+    entity_type_str: str, entity_ids: list[str], import_run_id: str | None = None
+) -> None:
     """Queue batch-by-processor pipeline for a group of entities.
 
     Builds a Celery chain from the ProcessorRegistry's batch pipeline based on
@@ -66,6 +68,7 @@ def run_batch_entity_pipeline(entity_type_str: str, entity_ids: list[str]) -> No
     Args:
         entity_type_str: Entity type value (e.g., "media", "chat_message").
         entity_ids: List of entity IDs to process.
+        import_run_id: Optional import run ID for progress tracking.
     """
     if not entity_ids:
         return
@@ -87,7 +90,7 @@ def run_batch_entity_pipeline(entity_type_str: str, entity_ids: list[str]) -> No
     first_priority = processor_to_celery_priority(first_config.priority)
     tasks = [
         first_config.batch_task_func.s(  # type: ignore[union-attr]
-            entity_type_str, entity_ids
+            entity_type_str, entity_ids, import_run_id
         ).set(priority=first_priority)
     ]
 
@@ -116,7 +119,7 @@ def run_entity_pipeline(entity_type_str: str, entity_id: str) -> None:
         entity_type_str: Entity type value (e.g., "media", "chat_message").
         entity_id: ID of the entity to process.
     """
-    run_batch_entity_pipeline(entity_type_str, [entity_id])
+    run_batch_entity_pipeline(entity_type_str, [entity_id], import_run_id=None)
 
 
 # -----------------------------------------------------------------------------
@@ -268,10 +271,17 @@ def _run_linker_task(
         with Session(engine) as session:
             linker = linker_cls()
             result = linker.run(session, entity_type, uuids)
-            return {
+            task_result = {
                 "import_run_id": import_run_id,
+                "completed": len(entity_ids),
+                "failed": 0,
                 **result,
             }
+            # Update processing progress for linker stage
+            from potluck.pipeline.processing.core.base import update_processing_progress
+
+            update_processing_progress(import_run_id, linker_name, entity_type, task_result)
+            return task_result
     except Exception as e:
         logger.exception(f"{linker_name} linker failed: {e}")
         if is_transient_error(e):

@@ -82,6 +82,34 @@ def upgrade() -> None:
     op.create_index("ix_import_runs_source_id", "import_runs", ["source_id"])
     op.create_index("ix_import_runs_file_hash", "import_runs", ["file_hash"])
 
+    # === Processing progress tracking ===
+
+    op.create_table(
+        "processing_progress",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("import_run_id", sa.Uuid(), nullable=False),
+        sa.Column("stage_name", sa.String(), nullable=False),
+        sa.Column("stage_type", sa.String(), nullable=False),
+        sa.Column("entity_type", sa.String(), nullable=False),
+        sa.Column("total", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("completed", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("failed", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("status", sa.String(), nullable=False, server_default="pending"),
+        sa.Column("started_at", sa.DateTime(), nullable=True),
+        sa.Column("completed_at", sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(["import_run_id"], ["import_runs.id"]),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        "ix_processing_progress_import_run_id", "processing_progress", ["import_run_id"]
+    )
+    op.create_index(
+        "ix_processing_progress_stage_lookup",
+        "processing_progress",
+        ["import_run_id", "stage_name", "entity_type"],
+        unique=True,
+    )
+
     # === People tables ===
 
     op.create_table(
@@ -1807,5 +1835,6 @@ def downgrade() -> None:
     op.drop_table("media")
     op.drop_table("person_aliases")
     op.drop_table("people")
+    op.drop_table("processing_progress")
     op.drop_table("import_runs")
     op.drop_table("import_sources")

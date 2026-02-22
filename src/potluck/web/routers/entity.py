@@ -13,6 +13,7 @@ from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.models.links import EntityLink
 from potluck.web.dependencies import get_db, require_auth
+from potluck.web.entity_config import ENTITY_CARD_CONFIG, get_entity_title
 
 router = APIRouter(tags=["entity"], dependencies=[Depends(require_auth)])
 
@@ -57,21 +58,31 @@ async def entity_detail(
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    # Build field list for display
-    fields: list[dict[str, object]] = []
+    # Look up card config for this entity type
+    config = ENTITY_CARD_CONFIG.get(matched_type)
+    display_name = entity_type.replace("_", " ").title()
+    title = get_entity_title(entity, config) if config else display_name
+    text_repr = entity.to_text_repr() if hasattr(entity, "to_text_repr") else ""
+
+    # Build field lists: key fields (from card config) and remaining fields
+    key_field_names = set(config.card_fields) if config else set()
+    key_fields: list[dict[str, object]] = []
+    other_fields: list[dict[str, object]] = []
     for field_name, field_info in model.model_fields.items():
         if field_name in _EXCLUDE_FIELDS:
             continue
         value = getattr(entity, field_name, None)
         if value is None:
             continue
-        fields.append(
-            {
-                "name": field_name,
-                "value": value,
-                "description": field_info.description or "",
-            }
-        )
+        field_dict: dict[str, object] = {
+            "name": field_name,
+            "value": value,
+            "description": field_info.description or "",
+        }
+        if field_name in key_field_names:
+            key_fields.append(field_dict)
+        else:
+            other_fields.append(field_dict)
 
     # Fetch related entity links
     links_stmt = (
@@ -91,9 +102,6 @@ async def entity_detail(
     links_result = await db.execute(links_stmt)
     entity_links = list(links_result.scalars().all())
 
-    display_name = entity_type.replace("_", " ").title()
-    text_repr = entity.to_text_repr() if hasattr(entity, "to_text_repr") else ""
-
     templates = request.app.state.templates
     return templates.TemplateResponse(  # type: ignore[no-any-return]
         request,
@@ -103,8 +111,10 @@ async def entity_detail(
             "entity": entity,
             "entity_type": entity_type,
             "display_name": display_name,
+            "title": title,
             "text_repr": text_repr,
-            "fields": fields,
+            "key_fields": key_fields,
+            "other_fields": other_fields,
             "entity_links": entity_links,
         },
     )

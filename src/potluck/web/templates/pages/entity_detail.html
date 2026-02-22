@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% from "components/entity_card.html" import entity_type_icon %}
+{% from "components/entity_card.html" import entity_type_icon, field_value %}
 
-{% block title %}{{ display_name }} — Potluck{% endblock %}
+{% block title %}{{ title }} — Potluck{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
@@ -16,9 +16,9 @@
         <span class="text-2xl">{{ entity_type_icon(entity_type) }}</span>
         <span class="badge badge-outline badge-sm">{{ display_name }}</span>
       </div>
-      <h1 class="text-3xl font-display font-bold tracking-tight">{{ display_name }} Detail</h1>
-      {% if text_repr %}
-      <p class="text-base-content/50 text-sm mt-1 truncate">{{ text_repr }}</p>
+      <h1 class="text-3xl font-display font-bold tracking-tight">{{ title }}</h1>
+      {% if text_repr and text_repr != title %}
+      <p class="text-base-content/50 text-sm mt-1 line-clamp-2">{{ text_repr }}</p>
       {% endif %}
     </div>
   </div>
@@ -42,54 +42,44 @@
   </div>
   {% endif %}
 
-  <!-- Fields -->
+  {% if key_fields %}
+  <!-- Key Information -->
+  <div class="animate-in animate-in-delay-1 card bg-primary/5 border border-primary/15 rounded-xl">
+    <div class="card-body p-5">
+      <h2 class="font-display font-semibold text-sm uppercase tracking-wider text-base-content/50 mb-3">Key Details</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {% for field in key_fields %}
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-0.5">
+            {{ field.name | replace('_', ' ') }}
+          </dt>
+          <dd class="text-sm font-medium">{{ field_value(field.value) }}</dd>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if other_fields %}
+  <!-- All Fields -->
   <div class="animate-in animate-in-delay-1 card bg-base-200/60 border border-base-300/40 rounded-xl">
     <div class="card-body p-0">
       <dl class="divide-y divide-base-300/30">
-        {% for field in fields %}
+        {% for field in other_fields %}
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 px-5 py-3.5">
           <dt class="text-xs font-semibold uppercase tracking-wider text-base-content/40">
             {{ field.name | replace('_', ' ') }}
           </dt>
           <dd class="sm:col-span-2 text-sm break-words">
-            {% set val = field.value %}
-
-            {# DateTime formatting #}
-            {% if val is not string and val.__class__.__name__ == 'datetime' %}
-              {{ val.strftime('%B %d, %Y at %H:%M') }}
-
-            {# UUID formatting #}
-            {% elif val is not string and val.__class__.__name__ == 'UUID' %}
-              <code class="text-xs font-mono bg-base-300/40 px-1.5 py-0.5 rounded">{{ val }}</code>
-
-            {# Boolean formatting #}
-            {% elif val is sameas true %}
-              <span class="badge badge-success badge-sm">Yes</span>
-            {% elif val is sameas false %}
-              <span class="badge badge-ghost badge-sm">No</span>
-
-            {# Enum formatting #}
-            {% elif val.__class__.__bases__ is defined and val.value is defined %}
-              <span class="badge badge-outline badge-sm">{{ val.value | replace('_', ' ') | title }}</span>
-
-            {# Long strings — scrollable pre #}
-            {% elif val is string and val | length > 200 %}
-              <pre class="text-xs bg-base-300/30 rounded-lg p-3 max-h-48 overflow-auto whitespace-pre-wrap">{{ val }}</pre>
-
-            {# URL detection #}
-            {% elif val is string and val.startswith('http') %}
-              <a href="{{ val }}" target="_blank" rel="noopener" class="link link-primary text-sm break-all">{{ val | truncate(80) }}</a>
-
-            {# Default string/number #}
-            {% else %}
-              {{ val }}
-            {% endif %}
+            {{ field_value(field.value) }}
           </dd>
         </div>
         {% endfor %}
       </dl>
     </div>
   </div>
+  {% endif %}
 
   {% if entity_links %}
   <!-- Related Entities -->
@@ -102,11 +92,13 @@
           <div class="flex items-center gap-3">
             <span class="badge badge-outline badge-sm">{{ link.link_type.value | replace('_', ' ') | title }}</span>
             {% if link.source_id | string == entity.id | string %}
-            <a href="/entity/{{ link.target_type.value }}/{{ link.target_id }}" class="text-sm link link-primary">
+            <a href="/entity/{{ link.target_type.value }}/{{ link.target_id }}" class="text-sm link link-primary flex items-center gap-1.5">
+              <span class="text-base">{{ entity_type_icon(link.target_type.value) }}</span>
               {{ link.target_type.value | replace('_', ' ') | title }}
             </a>
             {% else %}
-            <a href="/entity/{{ link.source_type.value }}/{{ link.source_id }}" class="text-sm link link-primary">
+            <a href="/entity/{{ link.source_type.value }}/{{ link.source_id }}" class="text-sm link link-primary flex items-center gap-1.5">
+              <span class="text-base">{{ entity_type_icon(link.source_type.value) }}</span>
               {{ link.source_type.value | replace('_', ' ') | title }}
             </a>
             {% endif %}

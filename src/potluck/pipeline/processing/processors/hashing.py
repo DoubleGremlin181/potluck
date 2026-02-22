@@ -30,6 +30,7 @@ from potluck.pipeline.dtos import StageResult, StageStatus
 from potluck.pipeline.processing.core.base import (
     BaseProcessor,
     run_batch_processor_task,
+    update_processing_progress,
 )
 from potluck.pipeline.processing.core.registry import ProcessorRegistry
 from potluck.pipeline.utils.hashing import compute_file_hash
@@ -182,6 +183,7 @@ def run_hashing_batch(
     self: "Task[..., dict[str, Any]]",
     entity_type: str,
     entity_ids: list[str],
+    import_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Hash a batch of entities and return IDs that need further processing.
 
@@ -191,6 +193,10 @@ def run_hashing_batch(
     result = run_batch_processor_task(self, EntityType(entity_type), entity_ids, HashingProcessor)
     # All entity IDs are forwarded — downstream stages use should_execute() to filter
     result["needs_processing"] = entity_ids
+    result["import_run_id"] = import_run_id
+    update_processing_progress(
+        import_run_id, HashingProcessor.NAME, EntityType(entity_type), result
+    )
     return result
 
 

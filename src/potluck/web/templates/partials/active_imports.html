@@ -45,6 +45,19 @@
             <div class="collapse-content text-xs"><pre class="whitespace-pre-wrap">{{ run.error_message }}</pre></div>
           </div>
           {% endif %}
+
+          {% if run.processing_progress %}
+          <div class="border-t border-base-300/30 pt-2 mt-1">
+            <p class="text-xs text-base-content/40 mb-1.5 font-semibold">Processing</p>
+            {% for p in run.processing_progress if p.stage_type.value == 'processor' %}
+            <div class="flex items-center gap-2 text-xs mb-1">
+              <span class="w-20 truncate">{{ p.stage_name }}</span>
+              <progress class="progress progress-{{ 'success' if p.status.value == 'completed' else 'primary' }} flex-1 h-1.5" value="{{ p.completed + p.failed }}" max="{{ p.total }}"></progress>
+              <span class="text-base-content/40 font-mono w-12 text-right">{{ p.completed }}/{{ p.total }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
       </div>
       {% endfor %}

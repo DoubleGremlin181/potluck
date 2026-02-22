@@ -13,7 +13,7 @@ from starlette.responses import StreamingResponse
 
 from potluck.core.logging import get_logger
 from potluck.db.session import get_async_engine
-from potluck.models.sources import ImportRun, ImportStatus
+from potluck.models.sources import ImportRun, ImportStatus, ProcessingProgress
 from potluck.web.dependencies import require_auth
 
 logger = get_logger("web.events")
@@ -39,6 +39,28 @@ async def _progress_stream() -> AsyncGenerator[str, None]:
                 result = await db.execute(stmt)
                 runs = result.scalars().all()
 
+                # Fetch processing progress for active runs
+                run_ids = [run.id for run in runs]
+                progress_by_run: dict[str, list[dict[str, object]]] = {}
+                if run_ids:
+                    progress_stmt = select(ProcessingProgress).where(
+                        col(ProcessingProgress.import_run_id).in_(run_ids)
+                    )
+                    progress_result = await db.execute(progress_stmt)
+                    for p in progress_result.scalars().all():
+                        rid = str(p.import_run_id)
+                        progress_by_run.setdefault(rid, []).append(
+                            {
+                                "stage_name": p.stage_name,
+                                "stage_type": p.stage_type.value,
+                                "entity_type": p.entity_type.value,
+                                "total": p.total,
+                                "completed": p.completed,
+                                "failed": p.failed,
+                                "status": p.status.value,
+                            }
+                        )
+
                 jobs = [
                     {
                         "id": str(run.id),
@@ -50,6 +72,7 @@ async def _progress_stream() -> AsyncGenerator[str, None]:
                         "entities_created": run.entities_created,
                         "entities_skipped": run.entities_skipped,
                         "entities_failed": run.entities_failed,
+                        "processing": progress_by_run.get(str(run.id), []),
                     }
                     for run in runs
                 ]

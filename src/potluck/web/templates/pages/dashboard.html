@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/entity_card.html" import stat_card, entity_card, entity_type_icon %}
+{% from "components/entity_card.html" import stat_card, entity_card, entity_row, entity_type_icon %}
 
 {% block title %}Dashboard — Potluck{% endblock %}
 
@@ -69,37 +69,7 @@
       <div class="space-y-2">
         {% for item in recent_entities %}
         <a href="/entity/{{ item.entity_type }}/{{ item.entity.id }}" class="block">
-        <div class="flex items-center gap-3 p-3.5 rounded-xl bg-base-200/60 border border-base-300/40 hover:border-base-300 hover:bg-base-200 transition-all group">
-          <div class="w-9 h-9 rounded-lg bg-base-300/60 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-            <span class="text-base">{{ entity_type_icon(item.entity_type) }}</span>
-          </div>
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium truncate">
-              {% if item.entity.caption is defined and item.entity.caption %}
-                {{ item.entity.caption }}
-              {% elif item.entity.subject is defined and item.entity.subject %}
-                {{ item.entity.subject }}
-              {% elif item.entity.name is defined and item.entity.name %}
-                {{ item.entity.name }}
-              {% elif item.entity.title is defined and item.entity.title %}
-                {{ item.entity.title }}
-              {% elif item.entity.content is defined and item.entity.content %}
-                {{ item.entity.content | truncate(80) }}
-              {% elif item.entity.body is defined and item.entity.body %}
-                {{ item.entity.body | truncate(80) }}
-              {% elif item.entity.file_path is defined and item.entity.file_path %}
-                {{ item.entity.file_path | basename if item.entity.file_path else '' }}
-              {% else %}
-                {{ item.entity_type | replace('_', ' ') | title }}
-              {% endif %}
-            </p>
-            <p class="text-xs text-base-content/40 mt-0.5">
-              {{ item.entity_type | replace('_', ' ') }}
-              &middot;
-              {{ item.created_at.strftime('%b %d, %Y at %H:%M') }}
-            </p>
-          </div>
-        </div>
+          {{ entity_row(item.entity, item.entity_type) }}
         </a>
         {% endfor %}
       </div>

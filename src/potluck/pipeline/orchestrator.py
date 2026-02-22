@@ -9,7 +9,13 @@ from potluck.core.exceptions import IngestionError
 from potluck.core.logging import get_logger
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType, IngestableEntity, SourceType
-from potluck.models.sources import ImportRun, ImportSource, ImportStatus
+from potluck.models.sources import (
+    ImportRun,
+    ImportSource,
+    ImportStatus,
+    ProcessingProgress,
+    StageType,
+)
 from potluck.models.utils import utc_now
 from potluck.pipeline.dtos import (
     DiscoveryResult,
@@ -262,8 +268,9 @@ class PipelineOrchestrator:
             import_run.entities_failed = stats.entities_failed
             self.session.commit()
 
-            # Queue batch linkers if entities were created
+            # Create processing progress rows and queue linkers
             if stats.entities_created > 0:
+                self._create_processing_progress(import_run)
                 self._queue_linkers(import_run)
 
             return PipelineResult(import_run=import_run, stats=stats)
@@ -398,7 +405,7 @@ class PipelineOrchestrator:
 
             # Flush batch if full
             if len(batch) >= self.batch_size:
-                self._flush_batch(batch, stats)
+                self._flush_batch(batch, stats, import_run)
                 import_run.entities_created = stats.entities_created
                 batch.clear()
 
@@ -406,7 +413,7 @@ class PipelineOrchestrator:
 
         # Flush remaining entities
         if batch:
-            self._flush_batch(batch, stats)
+            self._flush_batch(batch, stats, import_run)
             import_run.entities_created = stats.entities_created
 
         return stats
@@ -514,7 +521,9 @@ class PipelineOrchestrator:
 
         return sorted(batch, key=get_priority)
 
-    def _flush_batch(self, batch: list[IngestableEntity], stats: PipelineStats) -> None:
+    def _flush_batch(
+        self, batch: list[IngestableEntity], stats: PipelineStats, import_run: ImportRun
+    ) -> None:
         """Flush a batch of entities to the database and queue batch processing.
 
         Entities are sorted by table dependency order before insertion to ensure
@@ -554,7 +563,7 @@ class PipelineOrchestrator:
 
         # Queue one batch pipeline per entity type
         for entity_type, entity_ids in batch_ids_by_type.items():
-            self._queue_batch_processing(entity_type, entity_ids)
+            self._queue_batch_processing(entity_type, entity_ids, import_run)
 
     def _get_entity_type(self, entity: IngestableEntity) -> EntityType | None:
         """Determine EntityType from entity instance.
@@ -568,13 +577,15 @@ class PipelineOrchestrator:
                 return etype
         return None
 
-    def _queue_batch_processing(self, entity_type: EntityType, entity_ids: list[str]) -> None:
+    def _queue_batch_processing(
+        self, entity_type: EntityType, entity_ids: list[str], import_run: ImportRun
+    ) -> None:
         """Queue a batch processing pipeline for a group of entities of the same type."""
         # Deferred import: circular dependency via tasks/__init__.py → tasks/ingestion.py → orchestrator.py
         from potluck.pipeline.tasks.processing import run_batch_entity_pipeline
 
         try:
-            run_batch_entity_pipeline(entity_type.value, entity_ids)
+            run_batch_entity_pipeline(entity_type.value, entity_ids, str(import_run.id))
             logger.debug(
                 "Queued batch processing for %d %s entities",
                 len(entity_ids),
@@ -587,6 +598,59 @@ class PipelineOrchestrator:
                 len(entity_ids),
                 entity_type.value,
             )
+
+    def _create_processing_progress(self, import_run: ImportRun) -> None:
+        """Create ProcessingProgress rows for all applicable stages.
+
+        Queries the ProcessorRegistry to determine which processing stages
+        apply to each entity type that was ingested, then creates progress
+        rows for processors and linkers.
+        """
+        from potluck.pipeline.processing.core.registry import ProcessorRegistry
+        from potluck.pipeline.processing.linkers.base import BaseLinker
+        from potluck.pipeline.processing.linkers.semantic import SemanticLinker
+        from potluck.pipeline.processing.linkers.spatial import SpatialLinker
+        from potluck.pipeline.processing.linkers.temporal import TemporalLinker
+
+        for entity_type, entity_ids in self._entity_ids_by_type.items():
+            if not entity_ids:
+                continue
+
+            count = len(entity_ids)
+
+            # Processor stages
+            pipeline = ProcessorRegistry.get_batch_pipeline(entity_type)
+            for config in pipeline:
+                progress = ProcessingProgress(
+                    import_run_id=import_run.id,
+                    stage_name=config.processor_class.NAME,
+                    stage_type=StageType.PROCESSOR,
+                    entity_type=entity_type,
+                    total=count,
+                    status=ImportStatus.PENDING,
+                )
+                self.session.add(progress)
+
+            # Linker stages
+            linker_configs: list[tuple[str, type[BaseLinker]]] = [
+                ("temporal", TemporalLinker),
+                ("spatial", SpatialLinker),
+                ("semantic", SemanticLinker),
+            ]
+            for linker_name, linker_cls in linker_configs:
+                if entity_type in linker_cls.SUPPORTED_ENTITY_TYPES:
+                    progress = ProcessingProgress(
+                        import_run_id=import_run.id,
+                        stage_name=linker_name,
+                        stage_type=StageType.LINKER,
+                        entity_type=entity_type,
+                        total=count,
+                        status=ImportStatus.PENDING,
+                    )
+                    self.session.add(progress)
+
+        self.session.commit()
+        logger.debug("Created processing progress rows for import run %s", import_run.id)
 
     def _queue_linkers(self, import_run: ImportRun) -> None:
         """Queue per-linker per-entity-type tasks for all imported entities.

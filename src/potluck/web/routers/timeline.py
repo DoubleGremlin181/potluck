@@ -12,6 +12,7 @@ from starlette.responses import Response
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
 from potluck.web.dependencies import get_db, require_auth
+from potluck.web.entity_config import ENTITY_CARD_CONFIG, get_entity_title
 from potluck.web.utils import parse_entity_types, parse_optional_datetime
 
 router = APIRouter(prefix="/timeline", tags=["timeline"], dependencies=[Depends(require_auth)])
@@ -68,22 +69,10 @@ async def _fetch_timeline_items(
         result = await db.execute(stmt)
 
         for entity in result.scalars().all():
-            title = ""
-            for attr in (
-                "subject",
-                "caption",
-                "title",
-                "name",
-                "place_name",
-                "content",
-                "body",
-                "url",
-            ):
-                val = getattr(entity, attr, None)
-                if val:
-                    title = str(val)[:120]
-                    break
-            if not title:
+            config = ENTITY_CARD_CONFIG.get(entity_type)
+            if config:
+                title = get_entity_title(entity, config)
+            else:
                 title = entity_type.value.replace("_", " ").title()
 
             items.append(

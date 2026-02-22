@@ -98,6 +98,8 @@ from potluck.models.sources import (
     ImportRun,
     ImportSource,
     ImportStatus,
+    ProcessingProgress,
+    StageType,
 )
 from potluck.models.tags import (
     Tag,
@@ -235,6 +237,8 @@ __all__ = [
     "ImportRun",
     "ImportSource",
     "ImportStatus",
+    "ProcessingProgress",
+    "StageType",
     # Tags
     "Tag",
     "TagAssignment",

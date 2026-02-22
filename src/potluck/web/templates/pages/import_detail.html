@@ -97,53 +97,75 @@
   {% endif %}
 
   <!-- Processing Pipeline Status -->
-  <div class="animate-in animate-in-delay-2">
+  <div class="animate-in animate-in-delay-2"
+    {% if progress_rows and not run.is_finished %}
+    hx-get="/imports/{{ run.id }}" hx-trigger="every 5s" hx-select="#processing-pipeline" hx-target="#processing-pipeline" hx-swap="outerHTML"
+    {% endif %}
+  >
+    <div id="processing-pipeline">
     <h2 class="text-lg font-display font-semibold mb-3">Processing Pipeline</h2>
-    <p class="text-sm text-base-content/50 mb-4">Processing runs asynchronously after import. These are global counts across all imports.</p>
 
+    {% if progress_rows %}
     <div class="card bg-base-200/60 border border-base-300/40 rounded-xl">
       <div class="card-body p-5 space-y-4">
-        {% set stages = [
-          ("Hashing", processing_stats.hashing, processing_stats.media_total, "SHA256 + perceptual hash"),
-          ("Metadata", processing_stats.metadata, processing_stats.media_total, "EXIF extraction"),
-          ("OCR", processing_stats.ocr, processing_stats.media_total, "Text extraction from images"),
-          ("Captioning", processing_stats.captions, processing_stats.media_total, "AI image descriptions"),
-        ] %}
+        {% set processor_rows = progress_rows | selectattr('stage_type.value', 'equalto', 'processor') | list %}
+        {% set linker_rows = progress_rows | selectattr('stage_type.value', 'equalto', 'linker') | list %}
 
-        {% for name, done, total, desc in stages %}
+        {% if processor_rows %}
+        {% for row in processor_rows %}
         <div>
           <div class="flex justify-between items-center mb-1">
-            <div>
-              <span class="text-sm font-medium">{{ name }}</span>
-              <span class="text-xs text-base-content/40 ml-2">{{ desc }}</span>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium">{{ row.stage_name | title }}</span>
+              <span class="badge badge-outline badge-xs">{{ row.entity_type.value | replace('_', ' ') }}</span>
+              {% if row.status.value == 'completed' %}
+              <span class="badge badge-success badge-xs">done</span>
+              {% elif row.status.value == 'running' %}
+              <span class="badge badge-warning badge-xs">running</span>
+              {% elif row.status.value == 'failed' %}
+              <span class="badge badge-error badge-xs">failed</span>
+              {% endif %}
             </div>
-            <span class="text-xs font-mono text-base-content/50">{{ done }} / {{ total }}</span>
+            <span class="text-xs font-mono text-base-content/50">{{ row.completed }} / {{ row.total }}{% if row.failed > 0 %} ({{ row.failed }} failed){% endif %}</span>
           </div>
-          {% if total > 0 %}
-          <progress class="progress progress-{{ 'success' if done == total else 'primary' }} w-full h-2" value="{{ done }}" max="{{ total }}"></progress>
+          {% if row.total > 0 %}
+          <progress class="progress progress-{{ 'success' if row.status.value == 'completed' else 'error' if row.status.value == 'failed' else 'primary' }} w-full h-2" value="{{ row.completed + row.failed }}" max="{{ row.total }}"></progress>
           {% else %}
           <progress class="progress w-full h-2" value="0" max="100"></progress>
           {% endif %}
         </div>
         {% endfor %}
+        {% endif %}
 
-        <div class="border-t border-base-300/30 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="flex justify-between items-center">
-            <div>
-              <span class="text-sm font-medium">Embeddings</span>
-              <span class="text-xs text-base-content/40 ml-2">Visual + text embeddings</span>
+        {% if linker_rows %}
+        <div class="border-t border-base-300/30 pt-4">
+          <p class="text-xs text-base-content/40 mb-3 uppercase tracking-wider font-semibold">Linking</p>
+          {% for row in linker_rows %}
+          <div class="{% if not loop.first %}mt-3{% endif %}">
+            <div class="flex justify-between items-center mb-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium">{{ row.stage_name | title }}</span>
+                <span class="badge badge-outline badge-xs">{{ row.entity_type.value | replace('_', ' ') }}</span>
+                {% if row.status.value == 'completed' %}
+                <span class="badge badge-success badge-xs">done</span>
+                {% elif row.status.value == 'running' %}
+                <span class="badge badge-warning badge-xs">running</span>
+                {% endif %}
+              </div>
+              <span class="text-xs font-mono text-base-content/50">{{ row.completed }} / {{ row.total }}</span>
             </div>
-            <span class="badge badge-outline badge-sm tabular-nums">{{ "{:,}".format(processing_stats.embeddings) }}</span>
+            {% if row.total > 0 %}
+            <progress class="progress progress-{{ 'success' if row.status.value == 'completed' else 'primary' }} w-full h-2" value="{{ row.completed + row.failed }}" max="{{ row.total }}"></progress>
+            {% endif %}
           </div>
-          <div class="flex justify-between items-center">
-            <div>
-              <span class="text-sm font-medium">Faces Detected</span>
-              <span class="text-xs text-base-content/40 ml-2">MTCNN + ArcFace</span>
-            </div>
-            <span class="badge badge-outline badge-sm tabular-nums">{{ "{:,}".format(processing_stats.faces) }}</span>
-          </div>
+          {% endfor %}
         </div>
+        {% endif %}
       </div>
+    </div>
+    {% else %}
+    <p class="text-sm text-base-content/50">No processing stages recorded for this import.</p>
+    {% endif %}
     </div>
   </div>
 

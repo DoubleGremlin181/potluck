@@ -22,6 +22,8 @@ from potluck.core.logging import get_logger
 from potluck.db.session import get_engine
 from potluck.models import get_entity_type_model_map
 from potluck.models.base import EntityType
+from potluck.models.sources import ImportStatus, ProcessingProgress
+from potluck.models.utils import utc_now
 from potluck.pipeline.base import Stage
 from potluck.pipeline.dtos import BatchStageResult, StageResult, StageStatus
 
@@ -110,6 +112,54 @@ def _update_entity_fields(
                 setattr(entity, key, value)
         session.add(entity)
         session.commit()
+
+
+def update_processing_progress(
+    import_run_id: str | None,
+    stage_name: str,
+    entity_type: EntityType,
+    result: dict[str, Any],
+) -> None:
+    """Update a ProcessingProgress row after a batch stage completes.
+
+    Increments completed/failed counts and transitions status when all
+    entities are processed. Safe to call with import_run_id=None (no-op).
+
+    Args:
+        import_run_id: Import run ID, or None to skip tracking.
+        stage_name: Processor or linker NAME.
+        entity_type: Entity type being processed.
+        result: Batch result dict with 'completed' and 'failed' counts.
+    """
+    if import_run_id is None:
+        return
+
+    try:
+        engine = get_engine()
+        with Session(engine) as session:
+            stmt = select(ProcessingProgress).where(
+                ProcessingProgress.import_run_id == UUID(import_run_id),
+                ProcessingProgress.stage_name == stage_name,
+                ProcessingProgress.entity_type == entity_type,
+            )
+            progress = session.exec(stmt).first()
+            if progress is None:
+                return
+
+            progress.completed += result.get("completed", 0)
+            progress.failed += result.get("failed", 0)
+
+            if progress.started_at is None:
+                progress.started_at = utc_now()
+                progress.status = ImportStatus.RUNNING
+
+            if progress.completed + progress.failed >= progress.total:
+                progress.status = ImportStatus.COMPLETED
+                progress.completed_at = utc_now()
+
+            session.commit()
+    except Exception:
+        logger.exception("Failed to update processing progress for %s/%s", stage_name, entity_type)
 
 
 # -----------------------------------------------------------------------------
@@ -416,6 +466,12 @@ def run_batch_stage_task(
 
     result = run_batch_processor_task(task, entity_type, entity_ids, processor_class)
 
-    # Propagate needs_processing for the next stage in the chain
+    # Propagate needs_processing and import_run_id for the next stage in the chain
     result["needs_processing"] = entity_ids
+    import_run_id = previous_result.get("import_run_id")
+    result["import_run_id"] = import_run_id
+
+    # Update processing progress
+    update_processing_progress(import_run_id, processor_class.NAME, entity_type, result)
+
     return result

@@ -1,39 +1,83 @@
-{# Reusable entity card macro. Usage: {{ entity_card(entity, entity_type) }} #}
+{# Reusable entity card/row macros. Uses ENTITY_CONFIG globals from app.py. #}
 
 {% macro entity_card(entity, entity_type, show_type=true) %}
-<div class="card bg-base-200/60 border border-base-300/40 hover:border-primary/25 transition-all rounded-xl card-hover">
+{% set config = ENTITY_CONFIG.get(entity_type) %}
+{% set card_title = get_entity_title(entity, config) if config else (entity_type | replace('_', ' ') | title) %}
+
+<div class="card bg-base-200/60 border border-base-300/40 hover:border-primary/25 transition-all rounded-xl card-hover h-full">
   <div class="card-body p-4 gap-2">
-    {% if show_type %}
-    <div class="badge badge-outline badge-sm">{{ entity_type }}</div>
+    {% if config and config.has_thumbnail %}
+    {# Media card with thumbnail #}
+    <div class="flex gap-3">
+      <div class="w-16 h-16 rounded-lg overflow-hidden shrink-0 bg-base-300/50">
+        <img src="/media/thumb/{{ entity.id }}" alt="" class="w-full h-full object-cover" loading="lazy"
+             onerror="this.style.display='none'">
+      </div>
+      <div class="min-w-0 flex-1">
+        <h3 class="text-sm font-semibold line-clamp-2">{{ card_title }}</h3>
+        {% for field_name in config.card_fields %}
+          {% set val = getattr(entity, field_name, none) %}
+          {% if val is not none %}
+          <p class="text-xs text-base-content/50 truncate">{{ val | enum_val }}</p>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    {# Standard card layout #}
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-lg bg-base-300/50 flex items-center justify-center shrink-0">
+        <span class="text-sm">{{ entity_type_icon(entity_type) }}</span>
+      </div>
+      {% if show_type %}
+      <span class="badge badge-outline badge-xs">{{ entity_type | replace('_', ' ') }}</span>
+      {% endif %}
+    </div>
+
+    <h3 class="text-sm font-semibold line-clamp-2 mt-1">{{ card_title }}</h3>
+
+    {% if config %}
+    {% for field_name in config.card_fields %}
+      {% set val = getattr(entity, field_name, none) %}
+      {% if val is not none %}
+      <p class="text-xs text-base-content/50 truncate">{{ val | enum_val }}</p>
+      {% endif %}
+    {% endfor %}
+    {% endif %}
     {% endif %}
 
-    <h3 class="card-title text-sm font-semibold line-clamp-1">
-      {% if entity.title is defined and entity.title %}
-        {{ entity.title }}
-      {% elif entity.caption is defined and entity.caption %}
-        {{ entity.caption }}
-      {% elif entity.subject is defined and entity.subject %}
-        {{ entity.subject }}
-      {% elif entity.name is defined and entity.name %}
-        {{ entity.name }}
-      {% else %}
-        {{ entity_type }} {{ entity.id | string | truncate(8, true, '') }}
-      {% endif %}
-    </h3>
-
     {% if entity.occurred_at is defined and entity.occurred_at %}
-    <p class="text-xs text-base-content/40">
-      {{ entity.occurred_at.strftime('%b %d, %Y') }}
-    </p>
+    <p class="text-xs text-base-content/40">{{ entity.occurred_at.strftime('%b %d, %Y at %H:%M') }}</p>
     {% elif entity.created_at is defined and entity.created_at %}
-    <p class="text-xs text-base-content/40">
-      {{ entity.created_at.strftime('%b %d, %Y') }}
-    </p>
+    <p class="text-xs text-base-content/40">{{ entity.created_at.strftime('%b %d, %Y') }}</p>
     {% endif %}
 
     {% if entity.source_type is defined and entity.source_type %}
-    <div class="badge badge-ghost badge-xs">{{ entity.source_type | enum_val }}</div>
+    <div class="badge badge-ghost badge-xs">{{ entity.source_type | enum_val | replace('_', ' ') }}</div>
     {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+
+{% macro entity_row(entity, entity_type) %}
+{% set config = ENTITY_CONFIG.get(entity_type) %}
+{% set row_title = get_entity_title(entity, config) if config else (entity_type | replace('_', ' ') | title) %}
+
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-base-200/60 border border-base-300/40 hover:border-base-300 hover:bg-base-200 transition-all group">
+  <div class="w-9 h-9 rounded-lg bg-base-300/60 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+    <span class="text-base">{{ entity_type_icon(entity_type) }}</span>
+  </div>
+  <div class="min-w-0 flex-1">
+    <p class="text-sm font-medium truncate">{{ row_title }}</p>
+    <p class="text-xs text-base-content/40 mt-0.5">
+      {{ entity_type | replace('_', ' ') }}
+      {% if entity.occurred_at is defined and entity.occurred_at %}
+      &middot; {{ entity.occurred_at.strftime('%b %d, %Y at %H:%M') }}
+      {% elif entity.created_at is defined and entity.created_at %}
+      &middot; {{ entity.created_at.strftime('%b %d, %Y') }}
+      {% endif %}
+    </p>
   </div>
 </div>
 {% endmacro %}
@@ -56,6 +100,34 @@
 {% elif entity_type == 'person' %}&#128100;
 {% elif entity_type == 'tag' %}&#127991;
 {% else %}&#128196;
+{% endif %}
+{% endmacro %}
+
+
+{% macro field_value(val) %}
+{# DateTime formatting #}
+{% if val is not string and val.__class__.__name__ == 'datetime' %}
+  {{ val.strftime('%B %d, %Y at %H:%M') }}
+{# UUID formatting #}
+{% elif val is not string and val.__class__.__name__ == 'UUID' %}
+  <code class="text-xs font-mono bg-base-300/40 px-1.5 py-0.5 rounded">{{ val }}</code>
+{# Boolean formatting #}
+{% elif val is sameas true %}
+  <span class="badge badge-success badge-sm">Yes</span>
+{% elif val is sameas false %}
+  <span class="badge badge-ghost badge-sm">No</span>
+{# Enum formatting #}
+{% elif val.__class__.__bases__ is defined and val.value is defined %}
+  <span class="badge badge-outline badge-sm">{{ val.value | replace('_', ' ') | title }}</span>
+{# Long strings — scrollable pre #}
+{% elif val is string and val | length > 200 %}
+  <pre class="text-xs bg-base-300/30 rounded-lg p-3 max-h-48 overflow-auto whitespace-pre-wrap">{{ val }}</pre>
+{# URL detection #}
+{% elif val is string and val.startswith('http') %}
+  <a href="{{ val }}" target="_blank" rel="noopener" class="link link-primary text-sm break-all">{{ val | truncate(80) }}</a>
+{# Default string/number #}
+{% else %}
+  {{ val }}
 {% endif %}
 {% endmacro %}
 

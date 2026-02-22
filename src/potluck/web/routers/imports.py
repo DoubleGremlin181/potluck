@@ -15,9 +15,7 @@ from starlette.responses import Response
 
 from potluck.core.logging import get_logger
 from potluck.models.base import EntityType, SourceType
-from potluck.models.faces import MediaPersonLink
-from potluck.models.media import Media, MediaEmbedding
-from potluck.models.sources import ImportRun, ImportStatus
+from potluck.models.sources import ImportRun, ImportStatus, ProcessingProgress
 from potluck.pipeline import start_ingestion
 from potluck.pipeline.ingestion.registry import list_stages
 from potluck.pipeline.tasks.ingestion import cancel_ingestion
@@ -108,7 +106,10 @@ async def active_imports_partial(
     stmt = (
         select(ImportRun)
         .where(col(ImportRun.status).in_([ImportStatus.PENDING, ImportStatus.RUNNING]))
-        .options(selectinload(ImportRun.source))  # type: ignore[arg-type]
+        .options(
+            selectinload(ImportRun.source),  # type: ignore[arg-type]
+            selectinload(ImportRun.processing_progress),  # type: ignore[arg-type]
+        )
         .order_by(col(ImportRun.started_at).desc())
     )
     result = await db.execute(stmt)
@@ -278,45 +279,14 @@ async def import_detail(
     if run is None:
         raise HTTPException(status_code=404, detail="Import run not found")
 
-    # Processing stats for media entities
-    # Count media with various processing stages complete
-    media_total = (await db.execute(select(func.count()).select_from(Media))).scalar() or 0
-    media_with_caption = (
-        await db.execute(
-            select(func.count()).select_from(Media).where(col(Media.caption).isnot(None))
-        )
-    ).scalar() or 0
-    media_with_ocr = (
-        await db.execute(
-            select(func.count()).select_from(Media).where(col(Media.ocr_text).isnot(None))
-        )
-    ).scalar() or 0
-    media_with_hash = (
-        await db.execute(
-            select(func.count()).select_from(Media).where(col(Media.file_hash).isnot(None))
-        )
-    ).scalar() or 0
-    media_with_metadata = (
-        await db.execute(
-            select(func.count()).select_from(Media).where(col(Media.width).isnot(None))
-        )
-    ).scalar() or 0
-
-    # Count embeddings and face detections
-    embedding_count = (
-        await db.execute(select(func.count()).select_from(MediaEmbedding))
-    ).scalar() or 0
-    face_count = (await db.execute(select(func.count()).select_from(MediaPersonLink))).scalar() or 0
-
-    processing_stats = {
-        "media_total": media_total,
-        "hashing": media_with_hash,
-        "metadata": media_with_metadata,
-        "ocr": media_with_ocr,
-        "captions": media_with_caption,
-        "embeddings": embedding_count,
-        "faces": face_count,
-    }
+    # Processing progress scoped to this import run
+    progress_stmt = (
+        select(ProcessingProgress)
+        .where(col(ProcessingProgress.import_run_id) == run_id)
+        .order_by(col(ProcessingProgress.stage_type), col(ProcessingProgress.stage_name))
+    )
+    progress_result = await db.execute(progress_stmt)
+    progress_rows = list(progress_result.scalars().all())
 
     # Duration calculation
     duration = None
@@ -338,7 +308,7 @@ async def import_detail(
         {
             "active_page": "imports",
             "run": run,
-            "processing_stats": processing_stats,
+            "progress_rows": progress_rows,
             "duration": duration,
         },
     )
