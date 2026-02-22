@@ -129,6 +129,12 @@ filterwarnings = [
     #   These are build artifacts from the SWIG code generator.
     "ignore:torch.ao.quantization is deprecated:DeprecationWarning",
     "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+    # - transformers tokenizer: max_length warning when padding=True without truncation.
+    #   Triggered by HuggingFace transformers internals, not our code.
+    "ignore:`max_length` is ignored when `padding`=`True`:UserWarning",
+    # - Florence-2 processing: invalid escape sequence in vendored regex pattern.
+    #   Tracked in huggingface/transformers model hub code.
+    "ignore:invalid escape sequence:SyntaxWarning",
 ]
 
 [dependency-groups]

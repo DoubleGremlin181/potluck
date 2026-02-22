@@ -63,7 +63,9 @@ class TestRunBatchEntityPipeline:
         with patch("potluck.pipeline.tasks.processing.run_batch_entity_pipeline") as mock_batch:
             run_entity_pipeline(EntityType.MEDIA.value, entity_id)
 
-            mock_batch.assert_called_once_with(EntityType.MEDIA.value, [entity_id])
+            mock_batch.assert_called_once_with(
+                EntityType.MEDIA.value, [entity_id], import_run_id=None
+            )
 
 
 class TestRunBatchStageTask:
