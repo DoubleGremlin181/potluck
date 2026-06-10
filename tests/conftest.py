@@ -8,6 +8,7 @@ Patterns established here are reused by every later phase:
 """
 
 import os
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -17,6 +18,29 @@ from fastapi.testclient import TestClient
 from potluck.api.app import create_app
 from potluck.core.config import Settings
 from potluck.services.context import AppContext, create_context
+
+# ---------------------------------------------------------------------------
+# Plain FK-scaffolding helpers (importable by any test module, reused across
+# storage and ingest-layer tests).
+# ---------------------------------------------------------------------------
+
+
+def insert_source(conn: sqlite3.Connection, name: str = "test-src") -> int:
+    """Insert a row into ``sources`` and return its rowid."""
+    conn.execute("INSERT INTO sources (name) VALUES (?)", (name,))
+    row = conn.execute("SELECT last_insert_rowid()").fetchone()
+    return int(row[0])
+
+
+def insert_import(conn: sqlite3.Connection, source_id: int) -> int:
+    """Insert a row into ``imports`` and return its rowid."""
+    conn.execute(
+        """INSERT INTO imports (source_id, path, parser_version, started_at)
+           VALUES (?, '/tmp/x', 1, '2024-01-01T00:00:00.000Z')""",
+        (source_id,),
+    )
+    row = conn.execute("SELECT last_insert_rowid()").fetchone()
+    return int(row[0])
 
 
 @pytest.fixture(autouse=True)
