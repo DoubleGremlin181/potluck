@@ -38,6 +38,9 @@ dev = [
     "import-linter>=2",
     "httpx2>=2",  # starlette 1.x TestClient deprecates httpx 0.x at test time
     "pytest-asyncio>=0.25",
+    "pytest-xdist>=3.6",
+    "pytest-playwright>=0.6",
+    "playwright>=1.49",
 ]
 
 [tool.importlinter]

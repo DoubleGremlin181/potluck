@@ -53,7 +53,15 @@ def ctx(settings: Settings) -> Iterator[AppContext]:
 
 
 @pytest.fixture
-def api_client(ctx: AppContext) -> Iterator[TestClient]:
-    """FastAPI TestClient over the ctx fixture (lifespan runs; no SPA build)."""
-    with TestClient(create_app(ctx)) as client:
+def api_client(ctx: AppContext, tmp_path: Path) -> Iterator[TestClient]:
+    """FastAPI TestClient over the ctx fixture (lifespan runs; no SPA build).
+
+    ``web_dist`` is pinned to a nonexistent directory so the app is hermetic
+    even when the repo has a real ``web/dist`` build lying around.
+    """
+    no_spa = AppContext(
+        settings=ctx.settings.model_copy(update={"web_dist": tmp_path / "no-spa"}),
+        db=ctx.db,
+    )
+    with TestClient(create_app(no_spa)) as client:
         yield client
