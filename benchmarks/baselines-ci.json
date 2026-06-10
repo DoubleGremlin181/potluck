@@ -10,10 +10,10 @@
     {
       "name": "meta_roundtrip_5k",
       "reps": 5,
-      "median_s": 0.11112,
-      "p95_s": 0.121963,
-      "throughput_items_s": 44996.49,
-      "peak_rss_kb": 92788
+      "median_s": 0.1646,
+      "p95_s": 0.1727,
+      "throughput_items_s": 30379.0,
+      "peak_rss_kb": 92160
     }
   ]
 }
