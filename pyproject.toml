@@ -17,6 +17,7 @@ dependencies = [
     "fastmcp>=3",
     "platformdirs>=4.3",
     "httpx>=0.28",
+    "rich>=13",
 ]
 
 [project.scripts]

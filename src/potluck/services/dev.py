@@ -10,9 +10,9 @@ from potluck.ingest.devtools import check_source as _check_source
 from potluck.ingest.devtools import new_source as _new_source
 
 
-def new_source(name: str) -> Path:
+def new_source(name: str, package_root: Path | None = None) -> Path:
     """Scaffold a new source plugin module and return its path."""
-    return _new_source(name)
+    return _new_source(name, package_root=package_root)
 
 
 def check_source(name: str) -> list[str]:
