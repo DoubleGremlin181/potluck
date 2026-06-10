@@ -1,166 +1,67 @@
-"""Root pytest configuration."""
+"""Shared fixtures for the Potluck test suite.
 
+Patterns established here are reused by every later phase:
+
+- ``isolated_dirs`` (autouse): every test gets private platformdirs roots under
+  ``tmp_path`` and a clean ``POTLUCK_*`` environment, so tests never touch real
+  user data and are safe under pytest-xdist.
+"""
+
+import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from fastapi.testclient import TestClient
+
+from potluck.api.app import create_app
+from potluck.core.config import Settings
+from potluck.services.context import AppContext, create_context
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    """Add custom command line options."""
-    parser.addoption(
-        "--run-e2e",
-        action="store_true",
-        default=False,
-        help="Run end-to-end tests (requires Docker)",
-    )
-    parser.addoption(
-        "--run-ml",
-        action="store_true",
-        default=False,
-        help="Run ML-dependent tests (requires torch, facenet-pytorch, etc.)",
-    )
+@pytest.fixture(autouse=True)
+def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Isolate platformdirs + POTLUCK_* env for each test.
 
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Configure pytest with custom markers."""
-    config.addinivalue_line("markers", "e2e: end-to-end tests requiring Docker")
-    config.addinivalue_line(
-        "markers", "ml: tests requiring ML dependencies (torch, facenet-pytorch, etc.)"
-    )
-
-    if config.getoption("--run-e2e"):
-        # Remove the default marker filter when --run-e2e is specified
-        config.option.markexpr = ""
-
-
-def pytest_collection_modifyitems(
-    config: pytest.Config,
-    items: list[pytest.Item],
-) -> None:
-    """Modify test collection based on markers and options."""
-    if not config.getoption("--run-e2e"):
-        skip_e2e = pytest.mark.skip(reason="Need --run-e2e option to run")
-        for item in items:
-            if "e2e" in item.keywords:
-                item.add_marker(skip_e2e)
-
-    if not config.getoption("--run-ml"):
-        skip_ml = pytest.mark.skip(reason="Need --run-ml option to run (or use Docker test env)")
-        for item in items:
-            if "ml" in item.keywords:
-                item.add_marker(skip_ml)
-
-
-# =============================================================================
-# Image fixtures for processing tests
-# =============================================================================
-
-
-@pytest.fixture(scope="session")
-def sample_jpeg_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create a sample JPEG image for testing."""
-    tmp_dir = tmp_path_factory.mktemp("images")
-    path = tmp_dir / "sample.jpg"
-
-    img = Image.new("RGB", (100, 100), color=(255, 128, 64))
-    for x in range(0, 100, 10):
-        for y in range(0, 100, 10):
-            img.putpixel((x, y), (x * 2, y * 2, 128))
-
-    img.save(path, "JPEG", quality=95)
-    return path
-
-
-@pytest.fixture(scope="session")
-def sample_png_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create a sample PNG image for testing."""
-    tmp_dir = tmp_path_factory.mktemp("images")
-    path = tmp_dir / "sample.png"
-
-    img = Image.new("RGB", (100, 100), color=(255, 128, 64))
-    for x in range(0, 100, 10):
-        for y in range(0, 100, 10):
-            img.putpixel((x, y), (x * 2, y * 2, 128))
-
-    img.save(path, "PNG")
-    return path
-
-
-@pytest.fixture(scope="session")
-def identical_images_different_formats(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[Path, Path]:
-    """Create identical images in PNG and JPEG formats.
-
-    Uses the real sample_face.jpg fixture as source, which produces
-    more realistic perceptual hash behavior than synthetic patterns.
+    Potluck resolves all filesystem locations through the functions in
+    ``potluck.core.paths`` at call time (never import-time constants), so
+    patching the environment here is sufficient isolation.
     """
-    tmp_dir = tmp_path_factory.mktemp("identical")
-
-    # Use real fixture image as source for realistic pHash behavior
-    source_path = Path(__file__).parent / "fixtures" / "sample_face.jpg"
-    img = Image.open(source_path)
-
-    jpeg_path = tmp_dir / "image.jpg"
-    png_path = tmp_dir / "image.png"
-
-    img.save(jpeg_path, "JPEG", quality=95)
-    img.save(png_path, "PNG")
-
-    return jpeg_path, png_path
-
-
-@pytest.fixture(scope="session")
-def image_with_text() -> Path:
-    """Return path to sample text image for OCR testing.
-
-    Uses pre-generated fixture from tests/fixtures/.
-    """
-    fixture_path = Path(__file__).parent / "fixtures" / "sample_text.png"
-    if not fixture_path.exists():
-        raise FileNotFoundError(
-            f"Test fixture not found: {fixture_path}\n"
-            "Run: python tests/fixtures/generate_fixtures.py"
-        )
-    return fixture_path
-
-
-@pytest.fixture(scope="session")
-def image_with_face() -> Path:
-    """Return path to sample face image for face detection testing.
-
-    Uses pre-generated fixture from tests/fixtures/.
-    Note: This is a synthetic face - real face detectors may not detect it.
-    The test verifies the stage runs without error, not detection accuracy.
-    """
-    fixture_path = Path(__file__).parent / "fixtures" / "sample_face.jpg"
-    if not fixture_path.exists():
-        raise FileNotFoundError(
-            f"Test fixture not found: {fixture_path}\n"
-            "Run: python tests/fixtures/generate_fixtures.py"
-        )
-    return fixture_path
+    for key in [k for k in os.environ if k.startswith("POTLUCK_")]:
+        monkeypatch.delenv(key)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    return tmp_path
 
 
 @pytest.fixture
-def temp_media_path(tmp_path: Path) -> Path:
-    """Create a temporary directory for media files."""
-    media_dir = tmp_path / "media"
-    media_dir.mkdir()
-    return media_dir
+def settings(isolated_dirs: Path) -> Settings:
+    """Zero-config Settings resolving inside the isolated tmp dirs."""
+    return Settings()
 
 
-# =============================================================================
-# Ingestion fixtures
-# =============================================================================
+@pytest.fixture
+def ctx(settings: Settings) -> Iterator[AppContext]:
+    """AppContext on a fresh tmp-path SQLite database.
 
-
-@pytest.fixture(scope="session")
-def google_takeout_fixtures_path() -> Path:
-    """Return path to Google Takeout test fixtures.
-
-    Provides a single source of truth for the fixtures path, eliminating
-    the need for module-level FIXTURES_PATH constants in test files.
+    This is THE fixture for service-layer tests (and everything above them):
+    real Settings, real Database, fully isolated, closed on teardown.
     """
-    return Path(__file__).parent / "fixtures" / "google_takeout"
+    context = create_context(settings)
+    yield context
+    context.db.close()
+
+
+@pytest.fixture
+def api_client(ctx: AppContext, tmp_path: Path) -> Iterator[TestClient]:
+    """FastAPI TestClient over the ctx fixture (lifespan runs; no SPA build).
+
+    ``web_dist`` is pinned to a nonexistent directory so the app is hermetic
+    even when the repo has a real ``web/dist`` build lying around.
+    """
+    no_spa = AppContext(
+        settings=ctx.settings.model_copy(update={"web_dist": tmp_path / "no-spa"}),
+        db=ctx.db,
+    )
+    with TestClient(create_app(no_spa)) as client:
+        yield client

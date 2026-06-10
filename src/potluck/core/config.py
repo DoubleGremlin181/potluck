@@ -1,67 +1,39 @@
-"""Application configuration using pydantic-settings."""
+"""Application settings. Zero configuration is required for first run.
 
-import os
-from functools import lru_cache
+Precedence: explicit kwargs > ``POTLUCK_*`` env vars > ``config.toml`` > defaults.
+"""
+
+from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    TomlConfigSettingsSource,
+)
+
+from potluck.core.paths import config_dir, default_db_path
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Potluck runtime settings."""
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(env_prefix="POTLUCK_")
 
-    # Database (using str for flexibility with different drivers)
-    database_url: str = Field(
-        default="postgresql+asyncpg://potluck:potluck@localhost:5432/potluck",
-        description="Async database connection URL",
-    )
-    sync_database_url: str | None = Field(
-        default=None,
-        description="Sync database connection URL (for Alembic). Falls back to DATABASE_URL if not set.",
-    )
+    db_path: Path = Field(default_factory=default_db_path)
+    host: str = "127.0.0.1"
+    port: int = 8765
+    web_dist: Path | None = None
 
-    @property
-    def sync_db_url(self) -> str:
-        """Get sync database URL, falling back to DATABASE_URL if needed."""
-        # Priority: SYNC_DATABASE_URL > DATABASE_URL env var > convert from async URL
-        if self.sync_database_url:
-            return self.sync_database_url
-        if db_url := os.environ.get("DATABASE_URL"):
-            return db_url
-        # Convert async URL to sync by removing +asyncpg
-        return self.database_url.replace("+asyncpg", "")
-
-    # Redis
-    redis_url: str = Field(
-        default="redis://localhost:6379/0",
-        description="Redis connection URL for Celery broker",
-    )
-
-    # Web server
-    web_host: str = Field(
-        default="0.0.0.0",
-        description="Web server bind host",
-    )
-    web_port: int = Field(
-        default=8000,
-        description="Web server port",
-    )
-
-    # Logging
-    log_level: str = Field(
-        default="INFO",
-        description="Logging level",
-    )
-
-
-@lru_cache
-def get_settings() -> Settings:
-    """Get cached settings instance."""
-    return Settings()
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        toml_source = TomlConfigSettingsSource(settings_cls, toml_file=config_dir() / "config.toml")
+        return (init_settings, env_settings, toml_source)

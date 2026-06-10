@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ["v*"]
+  workflow_dispatch: # dry run: builds + smoke-installs the wheel, publishes nothing
 
 permissions:
   contents: write
@@ -13,143 +13,111 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  # Build and push Docker app images (CPU and GPU variants)
-  publish-app-images:
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        variant: [cpu, gpu]
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Get lowercase repo name
-        id: repo
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v8.2.0
+      - name: Verify tag matches pyproject version (PEP 440-aware)
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          uv run --no-project --with packaging python - <<'EOF'
+          import os, re, sys
+          from pathlib import Path
+          from packaging.version import Version
 
-      - name: Free disk space
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          match = re.search(r'^version = "([^"]+)"', Path("pyproject.toml").read_text(), re.M)
+          version = match.group(1)
+          if Version(tag) != Version(version):
+              sys.exit(f"tag v{tag} does not match pyproject version {version}")
+          print(f"ok: tag v{tag} == pyproject {version}")
+          EOF
+      - name: Build SPA
+        run: npm ci && npm run build
+        working-directory: web
+      - name: Build wheel + sdist (wheel embeds the SPA via hatch_build.py)
+        # --wheel builds straight from the source tree (web/dist present);
+        # the default sdist->wheel path would lose the SPA.
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-          sudo apt-get clean
-          docker system prune -af
+          uv build --wheel
+          uv build --sdist
+      - name: Smoke-install the wheel
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/potluck --version
+          test -f /tmp/smoke/lib/python*/site-packages/potluck/web_dist/index.html
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Generate changelog since previous tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            git log --pretty=format:"- %s" --no-merges > changelog.txt
+          else
+            git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges > changelog.txt
+          fi
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.ref_name }}
+          body_path: changelog.txt
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+  docker:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set image tags and GPU flag
-        id: config
+      - name: Compute image tags (latest only for stable releases)
+        id: tags
         run: |
-          if [ "${{ matrix.variant }}" = "cpu" ]; then
-            echo "tags=${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.version }},${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:latest" >> $GITHUB_OUTPUT
-            echo "gpu=false" >> $GITHUB_OUTPUT
-          else
-            echo "tags=${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:${{ steps.version.outputs.version }}-gpu,${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:gpu" >> $GITHUB_OUTPUT
-            echo "gpu=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build and push app image (${{ matrix.variant }})
-        uses: docker/build-push-action@v6
+          BASE="${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}"
+          TAGS="$BASE:${{ steps.version.outputs.version }}"
+          case "${{ steps.version.outputs.version }}" in
+            *-*) ;;
+            *) TAGS="$TAGS,$BASE:latest" ;;
+          esac
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
           push: true
-          tags: ${{ steps.config.outputs.tags }}
-          build-args: |
-            GPU=${{ steps.config.outputs.gpu }}
-          cache-from: type=gha,scope=${{ matrix.variant }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
-
-  # Build and push database image (separate job for clarity)
-  publish-db-image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Get lowercase repo name
-        id: repo
-        run: |
-          echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push db image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.db
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}-db:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}-db:latest
-
-  # Create GitHub release with changelog
-  release:
-    runs-on: ubuntu-latest
-    needs: [publish-app-images, publish-db-image]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Verify version matches pyproject.toml
-        run: |
-          PYPROJECT_VERSION=$(grep -Po '(?<=^version = ")[^"]*' pyproject.toml)
-          if [ "$PYPROJECT_VERSION" != "${{ steps.version.outputs.version }}" ]; then
-            echo "Error: Tag version (${{ steps.version.outputs.version }}) does not match pyproject.toml version ($PYPROJECT_VERSION)"
-            exit 1
-          fi
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          # Get previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          if [ -z "$PREV_TAG" ]; then
-            # First release - get all commits
-            CHANGES=$(git log --pretty=format:"- %s" --no-merges)
-          else
-            # Get commits since previous tag
-            CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
-          fi
-
-          # Write to file for multiline output
-          echo "$CHANGES" > changelog.txt
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: v${{ steps.version.outputs.version }}
-          body_path: changelog.txt
-          draft: false
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

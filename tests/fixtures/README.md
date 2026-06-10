@@ -1,21 +1,17 @@
-# Test Fixtures
+# Fixture policy
 
-This directory contains sample images for testing ML processing stages.
+Everything in this directory MUST be output of the `potluck.testing`
+generators (deterministic seeds, synthetic content). Never copy real exports
+here — not even "anonymized" ones. Real exports are consulted locally for
+*shape* only.
 
-## Files
+Rules, enforced by `scripts/check_fixtures.py` in pre-commit and CI:
 
-- `sample_face.jpg` - Official Obama portrait from Wikipedia (public domain, US government work)
-- `sample_text.png` - Generated image with clear text for OCR testing
+- Email addresses only under `@potluck.test` or `@example.com`
+- No phone-number-shaped strings
+- No files over 1 MiB
+- Raw export shapes (`Takeout/`, `*.mbox`, `*.zip` outside this tree) are
+  gitignored as a second line of defense
 
-## Regenerating Fixtures
-
-Run the following to regenerate fixtures:
-
-```bash
-python tests/fixtures/generate_fixtures.py
-```
-
-## License
-
-- Obama portrait: Public domain (official White House photo, US government work)
-- Text image: Generated, no restrictions
+From P1 onward every ingester ships its own fixture generator; regenerate via
+the generator referenced by the tests that consume the fixture.

@@ -5,222 +5,92 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
-# Required for GHCR push
 permissions:
   contents: read
-  packages: write
-
-env:
-  REGISTRY: ghcr.io
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          # Create venv and install dev dependencies first
-          uv sync --extra dev
-          # Install torch CPU-only (needed for mypy to type-check torch code)
-          # This replaces the lockfile's CUDA torch with CPU-only version
-          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          # Install transformers for type-checking transformers/huggingface code
-          uv pip install transformers
-
-      - name: Run ruff check
-        run: uv run ruff check src/ tests/ alembic/
-
-      - name: Run ruff format check
-        run: uv run ruff format --check src/ tests/ alembic/
-
-      - name: Run mypy
-        run: uv run mypy src/ tests/ alembic/
-
-  build-base:
-    runs-on: ubuntu-latest
-    outputs:
-      base-image: ${{ steps.base-tag.outputs.image }}
-      cache-hit: ${{ steps.check-cache.outputs.exists }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Calculate dependency hash
-        id: deps-hash
-        run: |
-          # Hash pyproject.toml and uv.lock to detect dependency changes
-          HASH=$(cat pyproject.toml uv.lock | sha256sum | cut -c1-12)
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-
-      - name: Determine base image tag
-        id: base-tag
-        run: |
-          # Lowercase the repository owner for Docker image name
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          TAG="cpu-${{ steps.deps-hash.outputs.hash }}"
-          IMAGE="${{ env.REGISTRY }}/${OWNER}/potluck-base:$TAG"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "image=$IMAGE" >> $GITHUB_OUTPUT
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check if base image exists in GHCR
-        id: check-cache
-        run: |
-          # Try to pull the image manifest (fast, doesn't download layers)
-          if docker manifest inspect ${{ steps.base-tag.outputs.image }} > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "::notice::Base image cache hit: ${{ steps.base-tag.outputs.image }}"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "::notice::Base image cache miss - will build and push"
-          fi
-
-      - name: Free disk space
-        if: steps.check-cache.outputs.exists == 'false'
-        run: |
-          echo "Before cleanup:"
-          df -h /
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /opt/hostedtoolcache/Ruby
-          sudo rm -rf /opt/hostedtoolcache/go
-          sudo rm -rf /opt/hostedtoolcache/node
-          sudo rm -rf /opt/hostedtoolcache/Python
-          sudo docker image prune --all --force
-          echo "After cleanup:"
-          df -h /
-
-      - name: Set up Docker Buildx
-        if: steps.check-cache.outputs.exists == 'false'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push base image
-        if: steps.check-cache.outputs.exists == 'false'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          target: deps
-          push: true
-          tags: ${{ steps.base-tag.outputs.image }}
-          build-args: |
-            GPU=false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run lint-imports
+      - run: uv run python scripts/check_fixtures.py
 
   test:
     runs-on: ubuntu-latest
-    needs: build-base
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          echo "Before cleanup:"
-          df -h /
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /opt/hostedtoolcache/Ruby
-          sudo rm -rf /opt/hostedtoolcache/go
-          sudo rm -rf /opt/hostedtoolcache/node
-          sudo rm -rf /opt/hostedtoolcache/Python
-          sudo docker image prune --all --force
-          echo "After cleanup:"
-          df -h /
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest -n auto
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build app image
-        uses: docker/build-push-action@v6
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          context: .
-          file: docker/Dockerfile
-          load: true
-          tags: potluck:latest
-          build-args: |
-            BASE_IMAGE=${{ needs.build-base.outputs.base-image }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 3
 
-      - name: Create .env file
-        run: |
-          cat > .env << EOF
-          COMPOSE_PROFILES=dev
-          POSTGRES_USER=potluck
-          POSTGRES_PASSWORD=testpassword
-          POSTGRES_DB=potluck_test
-          POSTGRES_HOST=db
-          POSTGRES_PORT=5432
-          REDIS_URL=redis://redis:6379/0
-          EOF
+  browser-smoke:
+    runs-on: ubuntu-latest
+    needs: web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist
+      - run: uv sync --locked
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest -m browser
 
-      - name: Start services
-        run: docker compose up -d db redis
-
-      - name: Wait for DB
-        run: |
-          for i in {1..30}; do
-            if docker compose exec -T db pg_isready -U potluck -d potluck; then
-              echo "Database is ready"
-              break
-            fi
-            echo "Waiting for database... ($i/30)"
-            sleep 2
-          done
-
-      - name: Run migrations
-        run: |
-          docker compose --profile test run --rm test \
-            uv run alembic upgrade head
-
-      - name: Run all tests
-        run: |
-          docker compose --profile test run --rm test \
-            uv run pytest tests/ -v --run-e2e --run-ml --cov=potluck --cov-report=xml
-
-      - name: Copy coverage report
+  bench-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run potluck bench run --tier smoke --json bench-out.json
+      # Tolerance 100% while the only scenario is the tiny I/O-bound P0
+      # placeholder: shared-runner variance alone exceeds 30% (observed
+      # 111->165 ms on identical code). Catches blowups, not noise. Tighten
+      # to ±30% + 1x-vs-4x scaling assertions with the real P1 scenarios.
+      - run: >
+          uv run potluck bench compare
+          benchmarks/baselines-ci.json bench-out.json --tolerance 100
+      - uses: actions/upload-artifact@v7
         if: always()
-        run: |
-          docker compose --profile test cp test:/app/coverage.xml ./coverage.xml 2>/dev/null || true
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
         with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-
-      - name: Cleanup
-        if: always()
-        run: docker compose --profile test down -v
+          name: bench-smoke-results
+          path: bench-out.json
+          retention-days: 30

@@ -1,0 +1,19 @@
+{
+  "tier": "full",
+  "fingerprint": {
+    "platform": "Linux-6.17.0-1015-azure-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python": "3.13.13",
+    "cpu_count": "4"
+  },
+  "results": [
+    {
+      "name": "meta_roundtrip_5k",
+      "reps": 5,
+      "median_s": 0.1646,
+      "p95_s": 0.1727,
+      "throughput_items_s": 30379.0,
+      "peak_rss_kb": 92160
+    }
+  ]
+}

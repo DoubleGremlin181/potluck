@@ -1,12 +1,6 @@
-"""CLI entry point for Potluck."""
+"""Allow ``python -m potluck`` (used by tests spawning the real server)."""
 
-from potluck.core.cli import app
-
-
-def main() -> None:
-    """Main entry point for the potluck CLI."""
-    app()
-
+from potluck.cli.app import app
 
 if __name__ == "__main__":
-    main()
+    app()
