@@ -35,7 +35,36 @@ dev = [
     "ruff>=0.9",
     "mypy>=1.14",
     "pre-commit>=4",
+    "import-linter>=2",
 ]
+
+[tool.importlinter]
+root_package = "potluck"
+
+# Interfaces are thin adapters: they reach data only THROUGH services.
+# (Indirect chains like cli -> services -> storage are the design, hence allowed.)
+[[tool.importlinter.contracts]]
+name = "api/mcp/cli import only services + models (+ core infrastructure)"
+type = "forbidden"
+source_modules = ["potluck.api", "potluck.mcp", "potluck.cli"]
+forbidden_modules = ["potluck.storage", "potluck.ingest", "potluck.enrich", "potluck.search"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "lower layers never import interfaces"
+type = "forbidden"
+source_modules = [
+    "potluck.core",
+    "potluck.models",
+    "potluck.storage",
+    "potluck.services",
+    "potluck.ingest",
+    "potluck.enrich",
+    "potluck.search",
+    "potluck.testing",
+    "potluck.bench",
+]
+forbidden_modules = ["potluck.api", "potluck.mcp", "potluck.cli"]
 
 [tool.ruff]
 line-length = 100

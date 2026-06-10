@@ -8,9 +8,13 @@ Patterns established here are reused by every later phase:
 """
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+from potluck.core.config import Settings
+from potluck.services.context import AppContext, create_context
 
 
 @pytest.fixture(autouse=True)
@@ -26,3 +30,21 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     return tmp_path
+
+
+@pytest.fixture
+def settings(isolated_dirs: Path) -> Settings:
+    """Zero-config Settings resolving inside the isolated tmp dirs."""
+    return Settings()
+
+
+@pytest.fixture
+def ctx(settings: Settings) -> Iterator[AppContext]:
+    """AppContext on a fresh tmp-path SQLite database.
+
+    This is THE fixture for service-layer tests (and everything above them):
+    real Settings, real Database, fully isolated, closed on teardown.
+    """
+    context = create_context(settings)
+    yield context
+    context.db.close()
