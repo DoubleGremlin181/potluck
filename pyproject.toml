@@ -37,6 +37,7 @@ dev = [
     "pre-commit>=4",
     "import-linter>=2",
     "httpx2>=2",  # starlette 1.x TestClient deprecates httpx 0.x at test time
+    "pytest-asyncio>=0.25",
 ]
 
 [tool.importlinter]
@@ -82,6 +83,8 @@ files = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "bench: benchmark scenarios (excluded by default)",
     "e2e: full end-to-end tests (excluded by default)",
