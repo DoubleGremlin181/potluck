@@ -1,0 +1,27 @@
+{
+  "color": "DEFAULT",
+  "isTrashed": false,
+  "isPinned": false,
+  "isArchived": false,
+  "createdTimestampUsec": 1577844600000000,
+  "userEditedTimestampUsec": 1577845800000000,
+  "title": "",
+  "listContent": [
+    {
+      "text": "dahlia prairie cedar prairie",
+      "textHtml": "<p>dahlia prairie cedar prairie</p>",
+      "isChecked": false
+    },
+    {
+      "text": "willow quartz summit zinnia",
+      "textHtml": "<p>willow quartz summit zinnia</p>",
+      "isChecked": true
+    }
+  ],
+  "attachments": [
+    {
+      "filePath": "530b91ed1ce5af69.ed69.jpg",
+      "mimetype": "image/jpeg"
+    }
+  ]
+}

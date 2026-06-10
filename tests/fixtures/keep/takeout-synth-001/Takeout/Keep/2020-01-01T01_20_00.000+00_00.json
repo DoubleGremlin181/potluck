@@ -1,0 +1,21 @@
+{
+  "color": "DEFAULT",
+  "isTrashed": false,
+  "isPinned": false,
+  "isArchived": false,
+  "createdTimestampUsec": 1577841600000000,
+  "userEditedTimestampUsec": 1577842260000000,
+  "title": "Tundra Fjord Garnet",
+  "textContent": "Basil yarrow saffron cliff zinnia yarrow saffron tundra.",
+  "textContentHtml": "<p>Basil yarrow saffron cliff zinnia yarrow saffron tundra.</p>",
+  "labels": [
+    {
+      "name": "Inspiration"
+    }
+  ],
+  "sharees": [
+    {
+      "email": "bob@potluck.test"
+    }
+  ]
+}

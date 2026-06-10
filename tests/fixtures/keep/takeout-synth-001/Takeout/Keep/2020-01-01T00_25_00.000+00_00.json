@@ -1,0 +1,16 @@
+{
+  "color": "DEFAULT",
+  "isTrashed": false,
+  "isPinned": false,
+  "isArchived": false,
+  "createdTimestampUsec": 1577838300000000,
+  "userEditedTimestampUsec": 0,
+  "title": "",
+  "textContent": "Garnet nutmeg tundra quartz valley dahlia walnut island meadow nutmeg ochre thyme.",
+  "textContentHtml": "<p>Garnet nutmeg tundra quartz valley dahlia walnut island meadow nutmeg ochre thyme.</p>",
+  "sharees": [
+    {
+      "email": "carol@example.com"
+    }
+  ]
+}
