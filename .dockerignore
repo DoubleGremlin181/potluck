@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.claude
+tests
+benchmarks
+screenshots
+web/node_modules
+web/dist
+*.db
+*.db-wal
+*.db-shm
+.env

@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # dry run: builds + smoke-installs the wheel, publishes nothing
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v8.2.0
+      - name: Verify tag matches pyproject version (PEP 440-aware)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          uv run --no-project --with packaging python - <<'EOF'
+          import os, re, sys
+          from pathlib import Path
+          from packaging.version import Version
+
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          match = re.search(r'^version = "([^"]+)"', Path("pyproject.toml").read_text(), re.M)
+          version = match.group(1)
+          if Version(tag) != Version(version):
+              sys.exit(f"tag v{tag} does not match pyproject version {version}")
+          print(f"ok: tag v{tag} == pyproject {version}")
+          EOF
+      - name: Build SPA
+        run: npm ci && npm run build
+        working-directory: web
+      - name: Build wheel + sdist (wheel embeds the SPA via hatch_build.py)
+        # --wheel builds straight from the source tree (web/dist present);
+        # the default sdist->wheel path would lose the SPA.
+        run: |
+          uv build --wheel
+          uv build --sdist
+      - name: Smoke-install the wheel
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/potluck --version
+          test -f /tmp/smoke/lib/python*/site-packages/potluck/web_dist/index.html
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Generate changelog since previous tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            git log --pretty=format:"- %s" --no-merges > changelog.txt
+          else
+            git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges > changelog.txt
+          fi
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.ref_name }}
+          body_path: changelog.txt
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  docker:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image tags (latest only for stable releases)
+        id: tags
+        run: |
+          BASE="${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}"
+          TAGS="$BASE:${{ steps.version.outputs.version }}"
+          case "${{ steps.version.outputs.version }}" in
+            *-*) ;;
+            *) TAGS="$TAGS,$BASE:latest" ;;
+          esac
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

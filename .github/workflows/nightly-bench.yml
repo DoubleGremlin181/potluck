@@ -1,0 +1,31 @@
+name: Nightly Bench
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench-full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run potluck bench run --tier full --json bench-full.json
+      # Hard per-scenario budgets arrive with the real P1+ scenarios; until
+      # then the nightly gate is the same tolerance compare as PR smoke.
+      - run: >
+          uv run potluck bench compare
+          benchmarks/baselines-ci.json bench-full.json --tolerance 30
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bench-full-${{ github.run_id }}
+          path: bench-full.json
+          retention-days: 90
