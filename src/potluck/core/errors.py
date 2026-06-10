@@ -11,3 +11,7 @@ class MigrationError(PotluckError):
 
 class FtsIntegrityError(PotluckError):
     """The FTS5 index is out of sync with the items content table."""
+
+
+class UnsupportedArchiveError(PotluckError):
+    """The path is not a recognised archive format (zip / tgz / tar.gz / directory)."""
