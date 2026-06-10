@@ -10,3 +10,11 @@ repos:
     hooks:
       - id: check-added-large-files
         args: [--maxkb=1024]
+  - repo: local
+    hooks:
+      - id: check-fixtures
+        name: fixture PII guard
+        entry: uv run python scripts/check_fixtures.py
+        language: system
+        files: ^tests/fixtures/
+        pass_filenames: false

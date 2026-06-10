@@ -39,3 +39,11 @@ web/dist/
 # v0 local leftovers
 screenshots/
 .playwright-mcp/
+
+# Raw personal exports — NEVER commit; fixtures are generated
+# (see tests/fixtures/README.md)
+Takeout/
+takeout-*.zip
+*.mbox
+*.zip
+!tests/fixtures/**/*.zip
