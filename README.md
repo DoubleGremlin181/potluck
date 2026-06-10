@@ -2,9 +2,102 @@
 
 **Privacy-first personal knowledge database for your AI** — local-first, MCP-native.
 
-> [!NOTE]
-> Potluck is being rewritten from the ground up (v1). Progress, architecture, and the full
-> roadmap are tracked in [issue #98](https://github.com/DoubleGremlin181/potluck/issues/98).
-> v0 is archived at [`archive/v0`](https://github.com/DoubleGremlin181/potluck/tree/archive/v0).
+Potluck ingests your data exports (Google Takeout first: Keep + Gmail; more sources each
+phase), stores everything in one local SQLite database, and exposes it three ways — a web
+app, a CLI, and [MCP](https://modelcontextprotocol.io/) for AI assistants. No cloud, no
+telemetry: nothing leaves your machine.
 
-The full README lands at the end of P0 (issue #112).
+## Status — v1 rewrite in progress
+
+| Phase | Shippable increment | Status |
+|---|---|---|
+| P0 Reset & Walking Skeleton | `potluck serve` zero-config: SPA shell; CLI/API/MCP answer stats from one service layer; bench rig + CI | ✅ `v1.0.0-alpha.1` |
+| P1 Storage Core & First Ingest | Google Keep from a Takeout zip; FTS search via CLI + MCP | — |
+| P2 Gmail at Scale & Search v1 | Multi-GB mbox ingested incrementally; filtered/snippeted search | — |
+| P3 MVP Interfaces | Real search/item/imports UI, MCP toolset v1 — **beta.1 = MVP** | — |
+| P4 Source Expansion & Automation | All v0 sources, watch-folder, scheduled GDrive pull | — |
+| P5 Semantic Search | Unified embedding space, HNSW index, hybrid RRF | — |
+| P6 Vision & Media Enrichment | OCR, image embeddings, faces, media gallery | — |
+| P7 Linkers, People & Timeline | Related-items everywhere, people review, timeline | — |
+| P8 Hardening & 1.0 | Docs, backup/restore, doctor, perf sweep | — |
+
+Full plan, architecture, and locked decisions: pinned
+[issue #98](https://github.com/DoubleGremlin181/potluck/issues/98). v0 is archived at
+[`archive/v0`](https://github.com/DoubleGremlin181/potluck/tree/archive/v0).
+
+## Quickstart
+
+Requires [uv](https://docs.astral.sh/uv/) (Python is fetched automatically).
+
+Run straight from GitHub — CLI, API, and MCP work; the web UI needs a built SPA, which this
+form does not include:
+
+```bash
+uvx --from git+https://github.com/DoubleGremlin181/potluck potluck serve
+```
+
+Release wheels ship with the web app embedded:
+
+```bash
+uvx --from https://github.com/DoubleGremlin181/potluck/releases/download/v1.0.0-alpha.1/potluck-1.0.0a1-py3-none-any.whl potluck serve
+```
+
+Or Docker (data persists in the `potluck-data` volume):
+
+```bash
+docker run -p 127.0.0.1:8765:8765 -v potluck-data:/data ghcr.io/doublegremlin181/potluck:1.0.0-alpha.1
+```
+
+Then open <http://127.0.0.1:8765>.
+
+> [!WARNING]
+> Potluck is localhost-only by design — there is no authentication in v1. Do not expose it
+> to other machines or the internet.
+
+## MCP for AI assistants
+
+stdio (Claude Desktop, Claude Code, …):
+
+```json
+{
+  "mcpServers": {
+    "potluck": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/DoubleGremlin181/potluck", "potluck", "mcp"]
+    }
+  }
+}
+```
+
+Streamable HTTP instead: `potluck mcp --http` (default `127.0.0.1:8766`).
+
+P0 toolset: `get_stats`. Search and item tools land with P1.
+
+## CLI
+
+```text
+potluck status      database overview (counts, paths, versions)
+potluck serve       web app + API on one port (opens your browser)
+potluck mcp         MCP server (stdio; --http for streamable HTTP)
+potluck bench run   benchmark harness (smoke/full tiers)
+```
+
+Configuration is optional: defaults work out of the box. Override via `POTLUCK_*` env vars
+or `~/.config/potluck/config.toml` (env > toml > defaults); the database lives at
+`~/.local/share/potluck/potluck.db` by default.
+
+## Development
+
+```bash
+git clone https://github.com/DoubleGremlin181/potluck && cd potluck
+uv sync && uv run pre-commit install
+(cd web && npm ci && npm run build)
+uv run potluck serve
+```
+
+Tests: `uv run pytest` (unit tier), `-m browser` for the Playwright smoke. Conventions live
+in [CLAUDE.md](CLAUDE.md); test patterns in [tests/README.md](tests/README.md).
+
+## License
+
+[MIT](LICENSE)
