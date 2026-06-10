@@ -12,7 +12,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from potluck.api.app import create_app
 from potluck.core.config import Settings
 from potluck.services.context import AppContext, create_context
 
@@ -48,3 +50,10 @@ def ctx(settings: Settings) -> Iterator[AppContext]:
     context = create_context(settings)
     yield context
     context.db.close()
+
+
+@pytest.fixture
+def api_client(ctx: AppContext) -> Iterator[TestClient]:
+    """FastAPI TestClient over the ctx fixture (lifespan runs; no SPA build)."""
+    with TestClient(create_app(ctx)) as client:
+        yield client

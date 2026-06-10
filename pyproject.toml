@@ -36,6 +36,7 @@ dev = [
     "mypy>=1.14",
     "pre-commit>=4",
     "import-linter>=2",
+    "httpx2>=2",  # starlette 1.x TestClient deprecates httpx 0.x at test time
 ]
 
 [tool.importlinter]
