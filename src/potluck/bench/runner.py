@@ -31,8 +31,11 @@ def run_tier(tier: Tier, json_out: Path | None = None) -> BenchReport:
         times: list[float] = []
         for _ in range(REPS):
             with tempfile.TemporaryDirectory(prefix=f"potluck-bench-{scenario.name}-") as tmp:
+                workdir = Path(tmp)
+                if scenario.setup is not None:
+                    scenario.setup(workdir)
                 start = time.perf_counter()
-                scenario.run(Path(tmp))
+                scenario.run(workdir)
                 times.append(time.perf_counter() - start)
         median = statistics.median(times)
         p95 = (

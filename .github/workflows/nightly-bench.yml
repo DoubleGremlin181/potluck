@@ -18,9 +18,9 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run potluck bench run --tier full --json bench-full.json
-      # Hard per-scenario budgets arrive with the real P1+ scenarios; until
-      # then the nightly gate is the same wide-tolerance compare as PR smoke
-      # (shared-runner variance exceeds 30% on the tiny P0 placeholder).
+      # Hard P1 budget assertions (ingest 10k < 30s, no-op re-import < 5s,
+      # FTS p95 < 50ms @ 10k, 1x-vs-4x scaling) live in bench-marked tests.
+      - run: uv run pytest -m bench -q
       - run: >
           uv run potluck bench compare
           benchmarks/baselines-ci.json bench-full.json --tolerance 100

@@ -1,11 +1,14 @@
 """Bench rig: run writes valid JSON; compare gates on regressions."""
 
+import time
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
-from potluck.bench.registry import scenarios_for
+from potluck.bench.registry import Scenario, scenarios_for
 from potluck.bench.report import BenchReport, ScenarioResult
+from potluck.bench.runner import REPS, run_tier
 from potluck.bench.scenarios import ALL_SCENARIOS
 from potluck.cli.app import app
 
@@ -78,3 +81,28 @@ def test_compare_fails_when_scenario_disappears(tmp_path: Path) -> None:
     result = runner.invoke(app, ["bench", "compare", str(base), str(current)])
     assert result.exit_code == 1
     assert "missing" in result.output.lower()
+
+
+def test_runner_calls_setup_before_run_and_excludes_from_timing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """setup() must be called before run() and its duration must not appear in timing."""
+    call_order: list[str] = []
+
+    def setup(workdir: Path) -> None:
+        call_order.append("setup")
+        # 50ms sleep that must NOT appear in the measured median
+        time.sleep(0.05)
+
+    def run(workdir: Path) -> None:
+        call_order.append("run")
+
+    test_scenario = Scenario(name="test_setup", tier="smoke", item_count=1, run=run, setup=setup)
+    monkeypatch.setattr("potluck.bench.runner.ALL_SCENARIOS", [test_scenario])
+
+    report = run_tier("smoke")
+
+    # setup must precede run in every repetition
+    assert call_order == ["setup", "run"] * REPS
+    # 50ms sleep in setup must NOT inflate the measured median
+    assert report.results[0].median_s < 0.05
