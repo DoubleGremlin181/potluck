@@ -94,6 +94,24 @@ def row_to_item(row: sqlite3.Row, source_name: str) -> Item:
     )
 
 
+def get_item_row(conn: sqlite3.Connection, item_id: int) -> tuple[sqlite3.Row, str] | None:
+    """Fetch the items row plus its source name for the given *item_id*.
+
+    Returns ``(row, source_name)`` if found, or ``None`` if no row matches.
+    The row contains all items columns (id, source_id, import_id, kind, …).
+    """
+    row = conn.execute(
+        """SELECT i.*, s.name AS source_name
+           FROM items AS i
+           JOIN sources AS s ON s.id = i.source_id
+           WHERE i.id = ?""",
+        (item_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return row, str(row["source_name"])
+
+
 def existing_hashes(conn: sqlite3.Connection, hashes: Sequence[str]) -> set[str]:
     """Return the subset of ``hashes`` that already exist in the items table.
 

@@ -18,11 +18,23 @@ from fastapi.testclient import TestClient
 from potluck.api.app import create_app
 from potluck.core.config import Settings
 from potluck.services.context import AppContext, create_context
+from potluck.services.imports import import_path
+from potluck.testing.keep import write_keep_takeout
 
 # ---------------------------------------------------------------------------
 # Plain FK-scaffolding helpers (importable by any test module, reused across
 # storage and ingest-layer tests).
 # ---------------------------------------------------------------------------
+
+
+def ingest_keep_corpus(ctx: AppContext, tmp_path: Path, count: int = 20, seed: int = 42) -> None:
+    """Ingest a synthetic Keep corpus into *ctx*.
+
+    Shared by any test module that needs a populated FTS corpus.  Uses a
+    deterministic RNG seed so results are identical across runs.
+    """
+    archive = write_keep_takeout(tmp_path / "keep_takeout", count, seed=seed, fmt="dir")
+    import_path(ctx, archive)
 
 
 def insert_source(conn: sqlite3.Connection, name: str = "test-src") -> int:

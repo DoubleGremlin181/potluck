@@ -23,3 +23,7 @@ class UnknownSourceError(PotluckError):
 
 class DuplicateSourceError(PotluckError):
     """A source plugin with this name is already registered in the registry."""
+
+
+class ItemNotFoundError(PotluckError):
+    """No item with the given id exists in the database."""
