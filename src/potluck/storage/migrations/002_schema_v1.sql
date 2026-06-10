@@ -20,7 +20,7 @@ CREATE TABLE imports (
 ) STRICT;
 
 CREATE TABLE items (
-    id           INTEGER PRIMARY KEY,   -- rowid alias; FTS content_rowid in migration 003 (next task)
+    id           INTEGER PRIMARY KEY,   -- rowid alias; used as content_rowid by items_fts (migration 003)
     source_id    INTEGER NOT NULL REFERENCES sources(id),
     import_id    INTEGER NOT NULL REFERENCES imports(id),
     kind         TEXT NOT NULL CHECK (kind IN ('note','email','message','photo','file','event',

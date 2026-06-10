@@ -50,12 +50,12 @@ def _make_item_inserter(
 
 
 def test_migration_002_applies_on_fresh_db(tmp_path: Path) -> None:
-    """Database.open() applies all migrations; version == 2, all tables exist."""
+    """Database.open() applies all migrations through 002; all v1 tables exist."""
     db = Database.open(tmp_path / "v1.db")
     try:
         with db.read() as conn:
             version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-        assert version == 2
+        assert version >= 2
 
         with db.read() as conn:
             tables = _table_names(conn)
@@ -66,13 +66,13 @@ def test_migration_002_applies_on_fresh_db(tmp_path: Path) -> None:
 
 
 def test_migration_002_idempotent(tmp_path: Path) -> None:
-    """Calling apply_migrations twice is a no-op; version stays 2."""
+    """Calling apply_migrations twice is a no-op; version stays at latest."""
     conn = connect(tmp_path / "idem.db")
     try:
         v1 = apply_migrations(conn)
-        assert v1 == 2
+        assert v1 >= 2
         v2 = apply_migrations(conn)
-        assert v2 == 2
+        assert v2 == v1  # idempotent
     finally:
         conn.close()
 
