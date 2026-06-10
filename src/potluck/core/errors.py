@@ -15,3 +15,11 @@ class FtsIntegrityError(PotluckError):
 
 class UnsupportedArchiveError(PotluckError):
     """The path is not a recognised archive format (zip / tgz / tar.gz / directory)."""
+
+
+class UnknownSourceError(PotluckError):
+    """No registered source plugin recognises the given archive."""
+
+
+class DuplicateSourceError(PotluckError):
+    """A source plugin with this name is already registered in the registry."""
