@@ -1,0 +1,19 @@
+{
+  "tier": "full",
+  "fingerprint": {
+    "platform": "Linux-7.0.0-22-generic-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "python": "3.13.2",
+    "cpu_count": "16"
+  },
+  "results": [
+    {
+      "name": "meta_roundtrip_5k",
+      "reps": 5,
+      "median_s": 0.142337,
+      "p95_s": 0.146399,
+      "throughput_items_s": 35127.79,
+      "peak_rss_kb": 91872
+    }
+  ]
+}

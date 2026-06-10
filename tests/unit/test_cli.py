@@ -57,7 +57,8 @@ def test_mcp_command_runs_stdio_then_http(monkeypatch: pytest.MonkeyPatch) -> No
     assert calls == ["stdio", ("http", "127.0.0.1", 9000)]
 
 
-def test_bench_stub_runs() -> None:
-    result = runner.invoke(app, ["bench", "run"])
+def test_bench_run_prints_summary() -> None:
+    result = runner.invoke(app, ["bench", "run", "--tier", "smoke"])
     assert result.exit_code == 0
-    assert "no scenarios" in result.output.lower()
+    assert "meta_roundtrip_5k" in result.output
+    assert "items/s" in result.output

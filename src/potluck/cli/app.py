@@ -1,12 +1,16 @@
 """Potluck command-line interface: thin Typer adapter over services."""
 
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import typer
 import uvicorn
 
 from potluck import __version__
 from potluck.api.app import create_app
+from potluck.bench.compare import compare, load_report
+from potluck.bench.registry import TIERS, Tier
+from potluck.bench.runner import run_tier
 from potluck.core.config import Settings
 from potluck.mcp.server import run_http, run_stdio
 from potluck.services import stats as stats_service
@@ -88,12 +92,42 @@ def mcp(
 
 
 @bench_app.command("run")
-def bench_run() -> None:
-    """Run benchmark scenarios."""
-    typer.echo("bench: no scenarios registered yet (the bench rig lands with #109)")
+def bench_run(
+    tier: str = typer.Option("smoke", help=f"Scenario tier: {', '.join(TIERS)}."),
+    json_out: Path | None = typer.Option(None, "--json", help="Write results JSON to this path."),
+) -> None:
+    """Run benchmark scenarios and print a summary."""
+    if tier not in TIERS:
+        raise typer.BadParameter(f"tier must be one of: {', '.join(TIERS)}")
+    report = run_tier(cast(Tier, tier), json_out)
+    for result in report.results:
+        typer.echo(
+            f"{result.name}: median {result.median_s * 1000:.1f} ms | "
+            f"p95 {result.p95_s * 1000:.1f} ms | "
+            f"{result.throughput_items_s:.0f} items/s | "
+            f"peak RSS {result.peak_rss_kb // 1024} MiB"
+        )
+    if json_out is not None:
+        typer.echo(f"results written to {json_out}")
 
 
 @bench_app.command("compare")
-def bench_compare() -> None:
-    """Compare two benchmark result files."""
-    typer.echo("bench: no scenarios registered yet (the bench rig lands with #109)")
+def bench_compare(
+    baseline: Path = typer.Argument(help="Baseline JSON (e.g. benchmarks/baselines-ci.json)."),
+    current: Path = typer.Argument(help="Current run JSON."),
+    tolerance: float = typer.Option(30.0, help="Allowed median regression in percent."),
+) -> None:
+    """Compare a bench run against a baseline; exit 1 on any regression."""
+    regressions = compare(load_report(baseline), load_report(current), tolerance)
+    if not regressions:
+        typer.echo(f"OK: no regressions beyond {tolerance:.0f}% tolerance")
+        return
+    for reg in regressions:
+        if reg.metric == "missing":
+            typer.echo(f"REGRESSION {reg.scenario}: missing from current run")
+        else:
+            typer.echo(
+                f"REGRESSION {reg.scenario}: {reg.metric} {reg.baseline:.4f}s -> "
+                f"{reg.current:.4f}s (+{reg.change_pct:.1f}% > {tolerance:.0f}%)"
+            )
+    raise typer.Exit(1)
