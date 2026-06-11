@@ -35,7 +35,6 @@ def _run(
     *,
     source_name: str = "test-src",
     batch_size: int = 1000,
-    on_progress: list[int] | None = None,
 ) -> int:
     return run_import(
         ctx.db,
@@ -45,7 +44,6 @@ def _run(
         path="/tmp/test.zip",
         file_hash=None,
         batch_size=batch_size,
-        on_progress=on_progress.append if on_progress is not None else None,
     )
 
 
@@ -275,15 +273,6 @@ def test_one_dedup_query_and_one_insert_per_batch(
     assert call_counts["insert"] == expected_batches, (
         f"expected {expected_batches} insert_items calls, got {call_counts['insert']}"
     )
-
-
-def test_on_progress_called(ctx: AppContext) -> None:
-    progress: list[int] = []
-    drafts = _make_drafts(2500)
-    _run(ctx, drafts, batch_size=1000, on_progress=progress)
-
-    # Called after each batch: 1000, 2000, 2500
-    assert progress == [1000, 2000, 2500]
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 import contextlib
 import itertools
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import Final
 
 from potluck.ingest.hashing import content_hash
@@ -34,7 +34,6 @@ def run_import(
     path: str,
     file_hash: str | None,
     batch_size: int = DEFAULT_BATCH_SIZE,
-    on_progress: Callable[[int], None] | None = None,
 ) -> int:
     """Drive a full import; returns import_id.
 
@@ -49,9 +48,6 @@ def run_import(
     external_id repeats *within* one batch the earlier draft is displaced and
     counted items_duplicate (last wins); across batches the later draft lands
     as an UPDATE and counts items_updated.
-
-    on_progress: called after each batch with the cumulative count of source
-    items consumed (new + duplicates + updated, i.e. every item yielded so far).
 
     skipped stays 0: the engine does not yet drop drafts for validation reasons.
     """
@@ -70,7 +66,6 @@ def run_import(
     source_id, import_id = db.write(_setup)
 
     seen: set[str] = set()
-    total_processed = 0
 
     try:
         for chunk in itertools.batched(drafts, batch_size, strict=False):
@@ -192,9 +187,6 @@ def run_import(
                 return displaced_hashes
 
             seen.difference_update(db.write(_write_batch))
-            total_processed += len(chunk)
-            if on_progress is not None:
-                on_progress(total_processed)
 
     except BaseException as exc:
         # BaseException: Ctrl-C / SystemExit must not leave the ledger row
