@@ -57,10 +57,25 @@ def test_content_hash_sensitive_to_fields() -> None:
     d_text = _note(title="hello", text="WORLD")
     assert content_hash(base) != content_hash(d_text)
 
-    # Field-boundary safety: \x1f separator prevents ("ab","c") == ("a","bc")
+    # Field-boundary safety: ("ab","c") must differ from ("a","bc")
     d_boundary1 = _note(title="ab", text="c")
     d_boundary2 = _note(title="a", text="bc")
     assert content_hash(d_boundary1) != content_hash(d_boundary2)
+
+    # lat/lon change hash: a coordinate-only edit is a content change, not a dup
+    d_geo = _note(title="hello", text="world", lat=37.7749, lon=-122.4194)
+    d_geo2 = _note(title="hello", text="world", lat=37.7749, lon=-122.4195)
+    assert content_hash(base) != content_hash(d_geo)
+    assert content_hash(d_geo) != content_hash(d_geo2)
+
+
+def test_content_hash_injective_against_separator_in_values() -> None:
+    """The encoding must be injective even when field values contain the
+    separator byte: a crafted title can't shift content across the title/text
+    boundary and collide (reachable for external_id-less drafts)."""
+    d1 = _note(title="a\x1fb", text="c")
+    d2 = _note(title="a", text="b\x1fc")
+    assert content_hash(d1) != content_hash(d2)
 
 
 def test_file_hash_matches_hashlib(tmp_path: Path) -> None:
