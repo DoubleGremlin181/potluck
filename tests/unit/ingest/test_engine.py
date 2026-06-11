@@ -114,6 +114,30 @@ def test_cross_batch_duplicates_collapse(ctx: AppContext) -> None:
     assert int(imp_row["items_duplicate"]) == 1
 
 
+def test_same_content_in_two_sources_stored_per_source(ctx: AppContext) -> None:
+    """Content-hash dedup is scoped per source: identical content imported under
+    two source names yields one row per source, not a cross-source duplicate."""
+    _run(ctx, [NoteDraft(title="shared", text="identical body")], source_name="source-a")
+    import_id2 = _run(
+        ctx, [NoteDraft(title="shared", text="identical body")], source_name="source-b"
+    )
+
+    with ctx.db.read() as conn:
+        count = int(conn.execute("SELECT COUNT(*) FROM items").fetchone()[0])
+        sources = {
+            str(r[0])
+            for r in conn.execute(
+                "SELECT s.name FROM items i JOIN sources s ON s.id = i.source_id"
+            ).fetchall()
+        }
+        imp_row = conn.execute("SELECT * FROM imports WHERE id = ?", (import_id2,)).fetchone()
+
+    assert count == 2
+    assert sources == {"source-a", "source-b"}
+    assert int(imp_row["items_new"]) == 1
+    assert int(imp_row["items_duplicate"]) == 0
+
+
 def test_crash_mid_import_consistent(ctx: AppContext) -> None:
     full_drafts = _make_drafts(3000)
 
@@ -202,9 +226,11 @@ def test_one_dedup_query_and_one_insert_per_batch(
     real_existing = items_storage.existing_hashes
     real_insert = items_storage.insert_items
 
-    def counting_existing(conn: sqlite3.Connection, hashes: Sequence[str]) -> set[str]:
+    def counting_existing(
+        conn: sqlite3.Connection, source_id: int, hashes: Sequence[str]
+    ) -> set[str]:
         call_counts["existing"] += 1
-        return real_existing(conn, hashes)
+        return real_existing(conn, source_id, hashes)
 
     def counting_insert(conn: sqlite3.Connection, rows: Sequence[ItemRow]) -> None:
         call_counts["insert"] += 1

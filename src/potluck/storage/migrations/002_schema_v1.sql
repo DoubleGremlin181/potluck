@@ -26,7 +26,7 @@ CREATE TABLE items (
     kind         TEXT NOT NULL CHECK (kind IN ('note','email','message','photo','file','event',
                      'contact','location','transaction','bookmark','post','activity')),
     external_id  TEXT,
-    content_hash TEXT NOT NULL UNIQUE,
+    content_hash TEXT NOT NULL,
     ts           TEXT,
     title        TEXT,
     text         TEXT,
@@ -35,6 +35,10 @@ CREATE TABLE items (
     parent_id    INTEGER REFERENCES items(id),
     meta         TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(meta))
 ) STRICT;
+
+-- Dedup identity is per source: the same content under two sources is two
+-- logical items (migration 004's (source_id, external_id) identity agrees).
+CREATE UNIQUE INDEX idx_items_source_hash ON items (source_id, content_hash);
 
 CREATE INDEX idx_items_kind_ts ON items (kind, ts);
 CREATE INDEX idx_items_import  ON items (import_id);

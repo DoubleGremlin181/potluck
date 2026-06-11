@@ -259,9 +259,11 @@ def update_items_meta(conn: sqlite3.Connection, rows: Sequence[MetaUpdate]) -> N
     )
 
 
-def existing_hashes(conn: sqlite3.Connection, hashes: Sequence[str]) -> set[str]:
-    """Return the subset of ``hashes`` that already exist in the items table.
+def existing_hashes(conn: sqlite3.Connection, source_id: int, hashes: Sequence[str]) -> set[str]:
+    """Return the subset of ``hashes`` that already exist for *source_id*.
 
+    Dedup identity is per source (UNIQUE(source_id, content_hash)): the same
+    content under another source is a different logical item, never a dup.
     Uses a single ``IN (...)`` query.  Caller guarantees len(hashes) ≤ batch
     size (2 000 max) — well under SQLite's variable limit.
     """
@@ -269,8 +271,8 @@ def existing_hashes(conn: sqlite3.Connection, hashes: Sequence[str]) -> set[str]
         return set()
     placeholders = ",".join("?" * len(hashes))
     rows = conn.execute(
-        f"SELECT content_hash FROM items WHERE content_hash IN ({placeholders})",
-        list(hashes),
+        f"SELECT content_hash FROM items WHERE source_id = ? AND content_hash IN ({placeholders})",
+        [source_id, *hashes],
     ).fetchall()
     return {str(row[0]) for row in rows}
 

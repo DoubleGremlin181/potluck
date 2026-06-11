@@ -111,7 +111,9 @@ def run_import(
             ) -> None:
                 new_hashes = [h for _, h in new_pairs]
                 # ONE IN(...) query for the whole batch; skip when nothing new.
-                already_in_db = existing_hashes(conn, new_hashes) if new_hashes else set()
+                already_in_db = (
+                    existing_hashes(conn, source_id, new_hashes) if new_hashes else set()
+                )
 
                 # ONE identity lookup for the whole batch (source_id is constant
                 # per run, so no composite IN is needed).
