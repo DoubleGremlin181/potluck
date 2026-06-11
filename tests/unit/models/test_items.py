@@ -79,6 +79,15 @@ def test_draft_to_row_to_item_roundtrip(tmp_path: Path) -> None:
         db.close()
 
 
+def test_draft_to_row_rejects_non_finite_meta_floats() -> None:
+    """NaN/Infinity in meta would serialize to literal NaN — invalid JSON that
+    only explodes later at migration 002's json_valid CHECK. Fail fast with a
+    clear ValueError at row construction instead."""
+    draft = NoteDraft(title="n", text="t", meta={"weird": float("nan")})
+    with pytest.raises(ValueError, match="[Oo]ut of range float"):
+        draft_to_row(draft, source_id=1, import_id=1, content_hash="h")
+
+
 def test_draft_to_row_none_fields(tmp_path: Path) -> None:
     """A minimal NoteDraft (all optional fields None) round-trips with Nones preserved."""
     draft = NoteDraft()

@@ -70,7 +70,9 @@ def draft_to_row(
         lat=draft.lat,
         lon=draft.lon,
         parent_id=None,  # parent_external_id resolution is the engine's job
-        meta=json.dumps(draft.meta, sort_keys=True),
+        # allow_nan=False: literal NaN/Infinity is invalid JSON and would only
+        # fail later at migration 002's json_valid CHECK, aborting the batch.
+        meta=json.dumps(draft.meta, sort_keys=True, allow_nan=False),
     )
 
 
