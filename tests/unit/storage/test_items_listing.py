@@ -6,7 +6,7 @@ from typing import Any
 from potluck.models.items import ItemSort
 from potluck.services.context import AppContext
 from potluck.storage.items import list_item_rows
-from tests.conftest import insert_import, insert_source
+from tests.conftest import insert_import, insert_item, insert_source
 
 
 def _seed(ctx: AppContext, count: int = 5) -> None:
@@ -14,10 +14,13 @@ def _seed(ctx: AppContext, count: int = 5) -> None:
         src = insert_source(conn, "listing-src")
         imp = insert_import(conn, src)
         for i in range(count):
-            conn.execute(
-                """INSERT INTO items (source_id, import_id, kind, content_hash, ts, title)
-                   VALUES (?, ?, 'note', ?, ?, ?)""",
-                (src, imp, f"hash-{i}", f"2024-01-{i + 1:02d}T00:00:00+00:00", f"t{i}"),
+            insert_item(
+                conn,
+                src,
+                imp,
+                content_hash=f"hash-{i}",
+                ts=f"2024-01-{i + 1:02d}T00:00:00+00:00",
+                title=f"t{i}",
             )
 
     ctx.db.write(_setup)

@@ -13,30 +13,6 @@ from potluck.services.context import AppContext
 from potluck.testing.archives import write_archive
 
 # ---------------------------------------------------------------------------
-# Registry isolation fixture
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def clean_registry(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Isolate the plugin registry; restored by monkeypatch on teardown.
-
-    Also patches potluck.ingest.sources.__path__ to an empty list so that
-    detect_source's internal discover() call cannot import real source modules
-    (e.g. google_keep) and accidentally pollute the registry.
-    Toy plugins are registered directly into the fresh registry via @source,
-    so end-to-end tests continue to work.
-    """
-    import potluck.ingest.plugins as plugins_mod
-    import potluck.ingest.sources as sources_pkg
-
-    fresh: dict[str, Any] = {}
-    monkeypatch.setattr(plugins_mod, "_registry", fresh)
-    monkeypatch.setattr(sources_pkg, "__path__", [])
-    return fresh
-
-
-# ---------------------------------------------------------------------------
 # Toy parse function used by end-to-end test
 # ---------------------------------------------------------------------------
 

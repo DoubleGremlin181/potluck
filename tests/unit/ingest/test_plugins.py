@@ -44,25 +44,6 @@ class CountingArchive:
 
 
 # ---------------------------------------------------------------------------
-# Registry isolation fixture
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def clean_registry(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Swap plugin registry to an empty dict for the duration of the test.
-
-    monkeypatch automatically restores the original _registry after each test.
-    Tests use this fixture to avoid polluting the real registry.
-    """
-    import potluck.ingest.plugins as plugins_mod
-
-    fresh: dict[str, Any] = {}
-    monkeypatch.setattr(plugins_mod, "_registry", fresh)
-    return fresh
-
-
-# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 

@@ -9,7 +9,7 @@ import pytest
 from potluck.models.items import ItemKind
 from potluck.storage.db import Database, connect
 from potluck.storage.migrate import apply_migrations
-from tests.conftest import insert_import, insert_source
+from tests.conftest import insert_import, insert_item, insert_source
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -21,25 +21,11 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
     return {str(r[0]) for r in rows}
 
 
-def _insert_item(
-    conn: sqlite3.Connection,
-    source_id: int,
-    import_id: int,
-    kind: str,
-    content_hash: str,
-) -> None:
-    conn.execute(
-        """INSERT INTO items (source_id, import_id, kind, content_hash)
-           VALUES (?, ?, ?, ?)""",
-        (source_id, import_id, kind, content_hash),
-    )
-
-
 def _make_item_inserter(
     source_id: int, import_id: int, kind: str, content_hash: str
 ) -> Callable[[sqlite3.Connection], None]:
     def _insert(conn: sqlite3.Connection) -> None:
-        _insert_item(conn, source_id, import_id, kind, content_hash)
+        insert_item(conn, source_id, import_id, kind=kind, content_hash=content_hash)
 
     return _insert
 

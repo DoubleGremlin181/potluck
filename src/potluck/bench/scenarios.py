@@ -105,7 +105,12 @@ def _keep_ingest_scenario(name: str, tier: Tier, count: int) -> Scenario:
 # ---------------------------------------------------------------------------
 
 
-def _reimport_noop_10k_setup(workdir: Path) -> None:
+def _imported_keep_10k_setup(workdir: Path) -> None:
+    """Shared setup: generate a 10k Keep archive and import it once.
+
+    Used by both reimport_noop_10k (run = second import) and search_fts_10k
+    (run = query batch).
+    """
     archive = write_keep_takeout(workdir / "archives", 10_000, seed=42)
     if archive != _archive_path(workdir):
         raise RuntimeError(f"keep generator naming changed: {archive}")
@@ -138,17 +143,6 @@ _SEARCH_QUERIES: tuple[str, ...] = tuple(
 )
 
 
-def _search_fts_10k_setup(workdir: Path) -> None:
-    archive = write_keep_takeout(workdir / "archives", 10_000, seed=42)
-    if archive != _archive_path(workdir):
-        raise RuntimeError(f"keep generator naming changed: {archive}")
-    ctx = _make_ctx(workdir)
-    try:
-        import_path(ctx, archive)
-    finally:
-        ctx.db.close()
-
-
 def _search_fts_10k_run(workdir: Path) -> None:
     ctx = _make_ctx(workdir)
     try:
@@ -173,7 +167,7 @@ ALL_SCENARIOS = [
         name="reimport_noop_10k",
         tier="full",
         item_count=10_000,
-        setup=_reimport_noop_10k_setup,
+        setup=_imported_keep_10k_setup,
         run=_reimport_noop_10k_run,
     ),
     # FTS search: item_count = query count so throughput = queries/s
@@ -181,7 +175,7 @@ ALL_SCENARIOS = [
         name="search_fts_10k",
         tier="smoke",
         item_count=_SEARCH_QUERY_COUNT,
-        setup=_search_fts_10k_setup,
+        setup=_imported_keep_10k_setup,
         run=_search_fts_10k_run,
     ),
 ]

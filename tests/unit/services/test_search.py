@@ -10,31 +10,7 @@ from potluck.models.items import ItemKind
 from potluck.models.search import SearchRequest
 from potluck.services.context import AppContext
 from potluck.services.search import search
-from tests.conftest import ingest_keep_corpus, insert_import, insert_source
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _insert_item_direct(
-    conn: sqlite3.Connection,
-    source_id: int,
-    import_id: int,
-    *,
-    title: str | None = None,
-    text: str | None = None,
-    kind: str = "note",
-    content_hash: str,
-) -> int:
-    """Insert a minimal item row and return its id."""
-    conn.execute(
-        """INSERT INTO items (source_id, import_id, kind, content_hash, title, text)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (source_id, import_id, kind, content_hash, title, text),
-    )
-    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
-
+from tests.conftest import ingest_keep_corpus, insert_import, insert_item, insert_source
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -88,7 +64,7 @@ def test_title_match_outranks_text_match(ctx: AppContext) -> None:
     def _setup(conn: sqlite3.Connection) -> tuple[int, int]:
         src = insert_source(conn)
         imp = insert_import(conn, src)
-        title_id = _insert_item_direct(
+        title_id = insert_item(
             conn,
             src,
             imp,
@@ -96,7 +72,7 @@ def test_title_match_outranks_text_match(ctx: AppContext) -> None:
             text="plain unrelated text here",
             content_hash="title-match-hash",
         )
-        text_id = _insert_item_direct(
+        text_id = insert_item(
             conn,
             src,
             imp,

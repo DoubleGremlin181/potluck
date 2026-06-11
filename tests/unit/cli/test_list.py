@@ -8,19 +8,14 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from potluck.cli.app import app
-from potluck.testing.keep import write_keep_takeout
-
-_SEED = 7
-_COUNT = 12
-_GOLDEN_NEW = 11  # seed=7 / count=12 golden: 1 trashed note skipped by parser
+from tests.unit.cli.conftest import GOLDEN_NEW as _GOLDEN_NEW
+from tests.unit.cli.conftest import import_keep_golden
 
 runner = CliRunner()
 
 
 def _import_keep(tmp_path: Path) -> None:
-    zip_path = write_keep_takeout(tmp_path / "keep", _COUNT, seed=_SEED, fmt="zip")
-    result = runner.invoke(app, ["import", str(zip_path)])
-    assert result.exit_code == 0, f"import failed: {result.output}"
+    import_keep_golden(runner, tmp_path)
 
 
 def test_list_table_output(tmp_path: Path) -> None:

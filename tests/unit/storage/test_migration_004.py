@@ -14,7 +14,7 @@ import pytest
 from potluck.storage import fts
 from potluck.storage.db import connect
 from potluck.storage.migrate import apply_migrations
-from tests.conftest import insert_import, insert_source
+from tests.conftest import insert_import, insert_item, insert_source
 
 
 def _migrations_through_003(tmp_path: Path) -> Path:
@@ -27,36 +27,17 @@ def _migrations_through_003(tmp_path: Path) -> Path:
     return target
 
 
-def _insert_item(
-    conn: sqlite3.Connection,
-    *,
-    source_id: int,
-    import_id: int,
-    external_id: str | None,
-    content_hash: str,
-    title: str = "t",
-    text: str = "x",
-) -> int:
-    cursor = conn.execute(
-        """INSERT INTO items (source_id, import_id, kind, external_id, content_hash, title, text)
-           VALUES (?, ?, 'note', ?, ?, ?, ?)""",
-        (source_id, import_id, external_id, content_hash, title, text),
-    )
-    assert cursor.lastrowid is not None
-    return int(cursor.lastrowid)
-
-
 def test_unique_index_rejects_duplicate_source_external_id(tmp_path: Path) -> None:
     conn = connect(tmp_path / "m.db")
     try:
         apply_migrations(conn)
         src = insert_source(conn)
         imp = insert_import(conn, src)
-        _insert_item(
+        insert_item(
             conn, source_id=src, import_id=imp, external_id="Keep/a.json", content_hash="h1"
         )
         with pytest.raises(sqlite3.IntegrityError):
-            _insert_item(
+            insert_item(
                 conn, source_id=src, import_id=imp, external_id="Keep/a.json", content_hash="h2"
             )
     finally:
@@ -69,8 +50,8 @@ def test_null_external_ids_are_not_constrained(tmp_path: Path) -> None:
         apply_migrations(conn)
         src = insert_source(conn)
         imp = insert_import(conn, src)
-        _insert_item(conn, source_id=src, import_id=imp, external_id=None, content_hash="h1")
-        _insert_item(conn, source_id=src, import_id=imp, external_id=None, content_hash="h2")
+        insert_item(conn, source_id=src, import_id=imp, external_id=None, content_hash="h1")
+        insert_item(conn, source_id=src, import_id=imp, external_id=None, content_hash="h2")
         count = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
         assert count == 2
     finally:
@@ -85,8 +66,8 @@ def test_same_external_id_allowed_across_sources(tmp_path: Path) -> None:
         src_b = insert_source(conn, "src-b")
         imp_a = insert_import(conn, src_a)
         imp_b = insert_import(conn, src_b)
-        _insert_item(conn, source_id=src_a, import_id=imp_a, external_id="x", content_hash="h1")
-        _insert_item(conn, source_id=src_b, import_id=imp_b, external_id="x", content_hash="h2")
+        insert_item(conn, source_id=src_a, import_id=imp_a, external_id="x", content_hash="h1")
+        insert_item(conn, source_id=src_b, import_id=imp_b, external_id="x", content_hash="h2")
     finally:
         conn.close()
 
@@ -99,22 +80,22 @@ def test_dedupe_keeps_newest_row_and_fts_stays_consistent(tmp_path: Path) -> Non
         src = insert_source(conn)
         imp = insert_import(conn, src)
         # Insert-only era: three versions of the same note, plus unaffected rows.
-        _insert_item(
+        insert_item(
             conn, source_id=src, import_id=imp, external_id="dup", content_hash="d1", text="old"
         )
-        _insert_item(
+        insert_item(
             conn, source_id=src, import_id=imp, external_id="dup", content_hash="d2", text="mid"
         )
-        survivor = _insert_item(
+        survivor = insert_item(
             conn, source_id=src, import_id=imp, external_id="dup", content_hash="d3", text="new"
         )
-        other = _insert_item(
+        other = insert_item(
             conn, source_id=src, import_id=imp, external_id="other", content_hash="o1"
         )
-        null_a = _insert_item(
+        null_a = insert_item(
             conn, source_id=src, import_id=imp, external_id=None, content_hash="n1"
         )
-        null_b = _insert_item(
+        null_b = insert_item(
             conn, source_id=src, import_id=imp, external_id=None, content_hash="n2"
         )
         conn.commit()

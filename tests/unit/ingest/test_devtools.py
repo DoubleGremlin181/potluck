@@ -1,45 +1,12 @@
-"""Tests for potluck.ingest.devtools: new_source scaffold and check_source validator."""
+"""Tests for potluck.ingest.devtools: new_source scaffold and check_source validator.
 
-import sys
-from collections.abc import Iterator
+Registry/discovery isolation comes from the shared ``isolated_sources``
+fixture in tests/conftest.py.
+"""
+
 from pathlib import Path
-from typing import Any
 
 import pytest
-
-# ---------------------------------------------------------------------------
-# Combined fixture: clean registry + extended sources.__path__
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def isolated_sources(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
-    """Isolate sources discovery for devtools tests.
-
-    - Swaps _registry to a fresh dict (restored by monkeypatch on teardown).
-    - Appends tmp_path to potluck.ingest.sources.__path__ (restored by monkeypatch).
-    - Removes any modules imported during the test from sys.modules on teardown.
-    """
-    import potluck.ingest.plugins as plugins_mod
-    import potluck.ingest.sources as sources_pkg
-
-    before_modules = set(sys.modules.keys())
-
-    # Empty registry
-    fresh: dict[str, Any] = {}
-    monkeypatch.setattr(plugins_mod, "_registry", fresh)
-
-    # Extend sources.__path__ so discover() finds modules in tmp_path
-    new_path = list(sources_pkg.__path__) + [str(tmp_path)]
-    monkeypatch.setattr(sources_pkg, "__path__", new_path)
-
-    yield tmp_path
-
-    # Remove modules imported from tmp_path during the test
-    for key in list(sys.modules.keys()):
-        if key not in before_modules:
-            del sys.modules[key]
-
 
 # ---------------------------------------------------------------------------
 # Tests — new_source

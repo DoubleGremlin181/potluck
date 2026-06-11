@@ -10,27 +10,17 @@ from typer.testing import CliRunner
 from potluck.cli.app import app
 from potluck.testing.archives import write_archive
 from potluck.testing.keep import write_keep_takeout
+from tests.unit.cli.conftest import GOLDEN_COUNT, GOLDEN_SEED, import_keep_golden
+from tests.unit.cli.conftest import GOLDEN_NEW as _GOLDEN_NEW
 
-# Deterministic corpus parameters matching spec golden count
-_SEED = 7
-_COUNT = 12
-_GOLDEN_NEW = 11  # seed=7 / count=12 golden: 1 empty note skipped by parser
 _KNOWN_WORD = "ember"  # appears in note 0 text and note 1 title "Ember Walnut Hazel"
 
 runner = CliRunner()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _import_keep(tmp_path: Path) -> str:
-    """Build and import a Keep zip; return the archive path string."""
-    zip_path = write_keep_takeout(tmp_path / "keep", _COUNT, seed=_SEED, fmt="zip")
-    result = runner.invoke(app, ["import", str(zip_path)])
-    assert result.exit_code == 0, f"import failed: {result.output}"
-    return str(zip_path)
+    """Build and import the golden Keep zip; return the archive path string."""
+    return import_keep_golden(runner, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +30,7 @@ def _import_keep(tmp_path: Path) -> str:
 
 def test_import_command(tmp_path: Path) -> None:
     """Successful import prints source name and item counts."""
-    zip_path = write_keep_takeout(tmp_path / "keep", _COUNT, seed=_SEED, fmt="zip")
+    zip_path = write_keep_takeout(tmp_path / "keep", GOLDEN_COUNT, seed=GOLDEN_SEED, fmt="zip")
     result = runner.invoke(app, ["import", str(zip_path)])
     assert result.exit_code == 0, result.output
     assert "google_keep" in result.output
@@ -54,7 +44,7 @@ def test_import_command(tmp_path: Path) -> None:
 
 def test_import_json(tmp_path: Path) -> None:
     """--json flag produces parseable JSON with correct golden counts."""
-    zip_path = write_keep_takeout(tmp_path / "keep", _COUNT, seed=_SEED, fmt="zip")
+    zip_path = write_keep_takeout(tmp_path / "keep", GOLDEN_COUNT, seed=GOLDEN_SEED, fmt="zip")
     result = runner.invoke(app, ["import", str(zip_path), "--json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
