@@ -74,6 +74,37 @@ def test_compare_fails_on_regression(tmp_path: Path) -> None:
     assert "median_s" in result.output
 
 
+def test_compare_smoke_run_skips_full_only_baseline_scenarios(tmp_path: Path) -> None:
+    """One baseline file serves both gates: a smoke-tier run is not penalized
+    for full-only scenarios it never runs (e.g. ingest_keep_10k), while a
+    full-tier run missing them still fails."""
+    full_baseline = BenchReport(
+        tier="full",
+        fingerprint={"platform": "test", "python": "3.13", "cpu_count": "4"},
+        results=[
+            _report(0.100).results[0],
+            _report(1.0, name="ingest_keep_10k").results[0],
+        ],
+    )
+    base, current = tmp_path / "base.json", tmp_path / "current.json"
+    base.write_text(full_baseline.model_dump_json())
+    current.write_text(_report(0.100).model_dump_json())  # tier=smoke, 10k absent
+
+    smoke_result = runner.invoke(
+        app, ["bench", "compare", str(base), str(current), "--tolerance", "30"]
+    )
+    assert smoke_result.exit_code == 0, smoke_result.output
+
+    full_current = _report(0.100)
+    full_current = full_current.model_copy(update={"tier": "full"})
+    current.write_text(full_current.model_dump_json())
+    full_result = runner.invoke(
+        app, ["bench", "compare", str(base), str(current), "--tolerance", "30"]
+    )
+    assert full_result.exit_code == 1
+    assert "missing" in full_result.output.lower()
+
+
 def test_compare_fails_when_scenario_disappears(tmp_path: Path) -> None:
     base, current = tmp_path / "base.json", tmp_path / "current.json"
     base.write_text(_report(0.100).model_dump_json())

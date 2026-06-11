@@ -23,7 +23,7 @@ jobs:
       - run: uv run pytest -m bench -q
       - run: >
           uv run potluck bench compare
-          benchmarks/baselines-ci.json bench-full.json --tolerance 100
+          benchmarks/baselines-ci.json bench-full.json --tolerance 30
       - uses: actions/upload-artifact@v7
         if: always()
         with:

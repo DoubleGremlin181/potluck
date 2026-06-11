@@ -81,13 +81,13 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run potluck bench run --tier smoke --json bench-out.json
-      # Tolerance 100% while the only scenario is the tiny I/O-bound P0
-      # placeholder: shared-runner variance alone exceeds 30% (observed
-      # 111->165 ms on identical code). Catches blowups, not noise. Tighten
-      # to ±30% + 1x-vs-4x scaling assertions with the real P1 scenarios.
+      # ±30% per the documented plan (CLAUDE.md), against baselines refreshed
+      # from the CI bench artifact (now covering the real P1 scenarios). The
+      # tiny meta_roundtrip_5k is the known flake risk on shared runners — if
+      # it trips on identical code, fix the scenario, don't widen the gate.
       - run: >
           uv run potluck bench compare
-          benchmarks/baselines-ci.json bench-out.json --tolerance 100
+          benchmarks/baselines-ci.json bench-out.json --tolerance 30
       - uses: actions/upload-artifact@v7
         if: always()
         with:

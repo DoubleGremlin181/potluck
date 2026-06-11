@@ -19,17 +19,29 @@ def load_report(path: Path) -> BenchReport:
     return BenchReport.model_validate_json(path.read_text())
 
 
-def compare(baseline: BenchReport, current: BenchReport, tolerance_pct: float) -> list[Regression]:
+def compare(
+    baseline: BenchReport,
+    current: BenchReport,
+    tolerance_pct: float,
+    *,
+    out_of_tier: frozenset[str] = frozenset(),
+) -> list[Regression]:
     """Median-time regressions beyond ``tolerance_pct``, and vanished scenarios.
 
     Scenarios new in ``current`` (no baseline entry yet) are not failures —
-    they get a baseline on the next refresh.
+    they get a baseline on the next refresh. Baseline scenarios named in
+    ``out_of_tier`` are skipped when absent from ``current``: one full-tier
+    baseline file serves both gates, and a smoke run must not be penalized
+    for full-only scenarios it never executes (the CLI derives this set from
+    the scenario registry).
     """
     regressions: list[Regression] = []
     current_by_name = {result.name: result for result in current.results}
     for base in baseline.results:
         result = current_by_name.get(base.name)
         if result is None:
+            if base.name in out_of_tier:
+                continue
             regressions.append(
                 Regression(
                     scenario=base.name,

@@ -15,8 +15,9 @@ from rich.table import Table
 from potluck import __version__
 from potluck.api.app import create_app
 from potluck.bench.compare import compare, load_report
-from potluck.bench.registry import TIERS, Tier
+from potluck.bench.registry import TIERS, Tier, scenarios_for
 from potluck.bench.runner import run_tier
+from potluck.bench.scenarios import ALL_SCENARIOS
 from potluck.core.config import Settings
 from potluck.core.errors import ItemNotFoundError, PotluckError
 from potluck.mcp.server import run_http, run_stdio
@@ -352,7 +353,12 @@ def bench_compare(
     tolerance: float = typer.Option(30.0, help="Allowed median regression in percent."),
 ) -> None:
     """Compare a bench run against a baseline; exit 1 on any regression."""
-    regressions = compare(load_report(baseline), load_report(current), tolerance)
+    current_report = load_report(current)
+    # Scenarios the current tier never runs (full-only vs a smoke run) are not
+    # "missing" — one full-tier baseline file serves both CI gates.
+    in_tier = {s.name for s in scenarios_for(cast(Tier, current_report.tier), ALL_SCENARIOS)}
+    out_of_tier = frozenset(s.name for s in ALL_SCENARIOS if s.name not in in_tier)
+    regressions = compare(load_report(baseline), current_report, tolerance, out_of_tier=out_of_tier)
     if not regressions:
         typer.echo(f"OK: no regressions beyond {tolerance:.0f}% tolerance")
         return
