@@ -1,6 +1,7 @@
 """Potluck command-line interface: thin Typer adapter over services."""
 
 import json as _json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +19,7 @@ from potluck.bench.runner import run_tier
 from potluck.core.config import Settings
 from potluck.core.errors import ItemNotFoundError, UnknownSourceError, UnsupportedArchiveError
 from potluck.mcp.server import run_http, run_stdio
-from potluck.models.items import ItemKind
+from potluck.models.items import ItemKind, ItemSort, ListItemsRequest
 from potluck.models.search import SearchRequest
 from potluck.services import dev as dev_service
 from potluck.services import imports as imports_service
@@ -136,6 +137,69 @@ def search(
         t.add_row(str(hit.id), hit.kind, ts_str, title_str, snippet_str)
 
     console.print(t)
+
+
+@app.command("list")
+def list_(
+    kinds: list[ItemKind] | None = typer.Option(
+        None, "--kind", help="Filter by item kind (repeatable)."
+    ),
+    sources: list[str] | None = typer.Option(
+        None, "--source", help="Filter by source name (repeatable)."
+    ),
+    since: datetime | None = typer.Option(
+        None, help="Only items with ts on/after this (ISO-8601; naive means UTC)."
+    ),
+    until: datetime | None = typer.Option(
+        None, help="Only items with ts before this (ISO-8601; naive means UTC)."
+    ),
+    sort: ItemSort = typer.Option(ItemSort.TS_DESC, "--sort", help="Sort order."),
+    limit: int = typer.Option(20, help="Maximum results to return (1-100)."),
+    offset: int = typer.Option(0, help="Results offset."),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON output."),
+) -> None:
+    """List items with filters — no search query needed."""
+    ctx = create_context()
+    try:
+        req = ListItemsRequest(
+            kinds=kinds,
+            sources=sources,
+            since=since,
+            until=until,
+            sort=sort,
+            limit=limit,
+            offset=offset,
+        )
+        resp = items_service.list_items(ctx, req)
+    finally:
+        ctx.db.close()
+
+    if as_json:
+        print(resp.model_dump_json(indent=2))
+        return
+
+    if not resp.items:
+        console.print("No items found.")
+        return
+
+    t = Table(show_header=True, header_style="bold")
+    t.add_column("ID")
+    t.add_column("KIND")
+    t.add_column("SOURCE")
+    t.add_column("TS")
+    t.add_column("TITLE")
+    t.add_column("TEXT")
+
+    for item in resp.items:
+        ts_str = item.ts.date().isoformat() if item.ts is not None else "-"
+        title_str = escape(item.title) if item.title is not None else "-"
+        preview = escape(item.text_preview) if item.text_preview is not None else "-"
+        t.add_row(str(item.id), item.kind, item.source, ts_str, title_str, preview)
+
+    console.print(t)
+    first = resp.offset + 1
+    last = resp.offset + len(resp.items)
+    console.print(f"showing {first}-{last} of {resp.total}")
 
 
 @app.command()

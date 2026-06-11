@@ -7,10 +7,10 @@ import json
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import NamedTuple
+from typing import Final, NamedTuple
 
 from potluck.models.drafts import ItemDraft
-from potluck.models.items import Item, ItemKind
+from potluck.models.items import Item, ItemKind, ItemSort
 
 
 class ItemRow(NamedTuple):
@@ -110,6 +110,70 @@ def get_item_row(conn: sqlite3.Connection, item_id: int) -> tuple[sqlite3.Row, s
     if row is None:
         return None
     return row, str(row["source_name"])
+
+
+PREVIEW_CHARS: Final = 200
+
+_LIST_SELECT: Final = (
+    "SELECT i.id, i.kind, i.ts, i.title, "
+    f"substr(i.text, 1, {PREVIEW_CHARS}) AS text_preview, "
+    "s.name AS source_name "
+    "FROM items AS i JOIN sources AS s ON s.id = i.source_id"
+)
+
+_LIST_COUNT: Final = "SELECT COUNT(*) FROM items AS i JOIN sources AS s ON s.id = i.source_id"
+
+# ORDER BY fragments are whitelisted per ItemSort member — user input never
+# reaches the SQL string. The i.id tiebreaker keeps pagination deterministic;
+# NULLS LAST puts undated items at the end in both ts directions.
+_LIST_ORDER: Final[dict[ItemSort, str]] = {
+    ItemSort.TS_DESC: "i.ts DESC NULLS LAST, i.id DESC",
+    ItemSort.TS_ASC: "i.ts ASC NULLS LAST, i.id ASC",
+    ItemSort.ID_DESC: "i.id DESC",
+    ItemSort.ID_ASC: "i.id ASC",
+}
+
+
+def list_item_rows(
+    conn: sqlite3.Connection,
+    *,
+    kinds: Sequence[ItemKind] | None,
+    sources: Sequence[str] | None,
+    since_iso: str | None,
+    until_iso: str | None,
+    sort: ItemSort,
+    limit: int,
+    offset: int,
+) -> tuple[list[sqlite3.Row], int]:
+    """Return one page of item summary rows plus the unpaginated total.
+
+    Two queries under the same fully-parameterized WHERE: a COUNT(*) and the
+    page SELECT. ISO-string ts comparison is sound because every items.ts is
+    written by dt_to_iso (always a +00:00 offset); NULL ts rows never match a
+    date filter.
+    """
+    where: list[str] = []
+    params: list[object] = []
+    if kinds:
+        where.append(f"i.kind IN ({','.join('?' * len(kinds))})")
+        params.extend(k.value for k in kinds)
+    if sources:
+        where.append(f"s.name IN ({','.join('?' * len(sources))})")
+        params.extend(sources)
+    if since_iso is not None:
+        where.append("i.ts >= ?")
+        params.append(since_iso)
+    if until_iso is not None:
+        where.append("i.ts < ?")
+        params.append(until_iso)
+    where_sql = f" WHERE {' AND '.join(where)}" if where else ""
+
+    total = int(conn.execute(_LIST_COUNT + where_sql, params).fetchone()[0])
+    rows = conn.execute(
+        f"{_LIST_SELECT}{where_sql} ORDER BY {_LIST_ORDER[sort]} LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    ).fetchall()
+    return rows, total
 
 
 class ExistingItem(NamedTuple):

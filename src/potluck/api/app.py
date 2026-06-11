@@ -7,15 +7,19 @@ calling the same sync services the CLI and MCP server use.
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from potluck import __version__
 from potluck.api.static import find_web_dist
+from potluck.models.items import ItemKind, ItemSort, ListItemsRequest, ListItemsResponse
 from potluck.models.stats import StatsResponse
 from potluck.services.context import AppContext, create_context
+from potluck.services.items import list_items
 from potluck.services.stats import get_stats
 
 _SPA_MISSING = (
@@ -51,6 +55,29 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
     @app.get("/api/stats")
     def stats() -> StatsResponse:
         return get_stats(context)
+
+    @app.get("/api/items")
+    def items(
+        kind: Annotated[list[ItemKind] | None, Query()] = None,
+        source: Annotated[list[str] | None, Query()] = None,
+        since: Annotated[datetime | None, Query()] = None,
+        until: Annotated[datetime | None, Query()] = None,
+        sort: Annotated[ItemSort, Query()] = ItemSort.TS_DESC,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> ListItemsResponse:
+        return list_items(
+            context,
+            ListItemsRequest(
+                kinds=kind,
+                sources=source,
+                since=since,
+                until=until,
+                sort=sort,
+                limit=limit,
+                offset=offset,
+            ),
+        )
 
     web_dist = find_web_dist(context.settings)
     if web_dist is not None:

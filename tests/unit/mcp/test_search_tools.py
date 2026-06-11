@@ -7,7 +7,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from potluck.mcp.server import create_mcp
-from potluck.models.items import ItemKind
+from potluck.models.items import ItemKind, ListItemsRequest
 from potluck.models.search import SearchRequest
 from potluck.services import items as items_service
 from potluck.services import search as search_service
@@ -19,11 +19,11 @@ from tests.conftest import ingest_keep_corpus
 # ---------------------------------------------------------------------------
 
 
-async def test_mcp_lists_three_tools(ctx: AppContext) -> None:
-    """Server exposes exactly three tools: get_stats, search, get_item."""
+async def test_mcp_lists_four_tools(ctx: AppContext) -> None:
+    """Server exposes exactly four tools: get_stats, search, list_items, get_item."""
     async with Client(create_mcp(ctx)) as client:
         tools = {tool.name for tool in await client.list_tools()}
-    assert tools == {"get_stats", "search", "get_item"}
+    assert tools == {"get_stats", "search", "list_items", "get_item"}
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +97,41 @@ async def test_mcp_search_empty_query_ok(ctx: AppContext, tmp_path: Path) -> Non
     structured = result.structured_content
     assert structured is not None
     assert structured.get("hits", []) == []
+
+
+# ---------------------------------------------------------------------------
+# list_items tool behaviour
+# ---------------------------------------------------------------------------
+
+
+async def test_mcp_list_items_matches_service(ctx: AppContext, tmp_path: Path) -> None:
+    """MCP list_items returns the same rows as the service layer."""
+    ingest_keep_corpus(ctx, tmp_path)
+
+    async with Client(create_mcp(ctx)) as client:
+        result = await client.call_tool("list_items", {"limit": 5})
+
+    assert not result.is_error
+    structured = result.structured_content
+    assert structured is not None
+    assert len(structured["items"]) == 5
+
+    expected = items_service.list_items(ctx, ListItemsRequest(limit=5))
+    assert structured == expected.model_dump(mode="json")
+
+
+async def test_mcp_list_items_kind_filter(ctx: AppContext, tmp_path: Path) -> None:
+    """Filtering by kind=email returns nothing (corpus is notes only)."""
+    ingest_keep_corpus(ctx, tmp_path)
+
+    async with Client(create_mcp(ctx)) as client:
+        result = await client.call_tool("list_items", {"kinds": [ItemKind.EMAIL]})
+
+    assert not result.is_error
+    structured = result.structured_content
+    assert structured is not None
+    assert structured["items"] == []
+    assert structured["total"] == 0
 
 
 # ---------------------------------------------------------------------------

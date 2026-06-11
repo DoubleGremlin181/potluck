@@ -4,12 +4,14 @@ Tool descriptions are written for AI consumption — they tell the model when
 to reach for the tool, not how it is implemented.
 """
 
+from datetime import datetime
+
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from potluck import __version__
 from potluck.core.errors import ItemNotFoundError
-from potluck.models.items import Item, ItemKind
+from potluck.models.items import Item, ItemKind, ItemSort, ListItemsRequest, ListItemsResponse
 from potluck.models.search import SearchRequest, SearchResponse
 from potluck.models.stats import StatsResponse
 from potluck.services import items as items_service
@@ -54,6 +56,37 @@ def create_mcp(ctx: AppContext | None = None) -> FastMCP:
         the user asks about anything they may have written down, saved or noted.
         """
         return search_service.search(context, SearchRequest(query=query, kinds=kinds, limit=limit))
+
+    @server.tool
+    def list_items(
+        kinds: list[ItemKind] | None = None,
+        sources: list[str] | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        sort: ItemSort = ItemSort.TS_DESC,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ListItemsResponse:
+        """Browse the user's items without a keyword query.
+
+        Complements search: use this when the user wants recent items, a date
+        range (since inclusive, until exclusive; naive datetimes mean UTC), or
+        an inventory per kind/source rather than a keyword match. Returns one
+        page of summaries (sorted newest-first by default) plus the unpaginated
+        total; follow up with get_item using an item's id to read full content.
+        """
+        return items_service.list_items(
+            context,
+            ListItemsRequest(
+                kinds=kinds,
+                sources=sources,
+                since=since,
+                until=until,
+                sort=sort,
+                limit=limit,
+                offset=offset,
+            ),
+        )
 
     @server.tool
     def get_item(item_id: int) -> Item:
