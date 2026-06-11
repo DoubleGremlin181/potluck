@@ -32,6 +32,15 @@ def test_list_table_output(tmp_path: Path) -> None:
     assert f"of {_GOLDEN_NEW}" in result.output  # footer: showing X-Y of total
 
 
+def test_list_limit_out_of_range_reports_error() -> None:
+    """The help text advertises 1-100; out-of-range exits 1 with 'Error: …',
+    not a pydantic traceback."""
+    result = runner.invoke(app, ["list", "--limit", "200"])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_list_json_matches_filters(tmp_path: Path) -> None:
     """--json output parses; kind/source filters and pagination are honoured."""
     _import_keep(tmp_path)

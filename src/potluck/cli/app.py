@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import typer
 import uvicorn
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
@@ -17,7 +18,7 @@ from potluck.bench.compare import compare, load_report
 from potluck.bench.registry import TIERS, Tier
 from potluck.bench.runner import run_tier
 from potluck.core.config import Settings
-from potluck.core.errors import ItemNotFoundError, UnknownSourceError, UnsupportedArchiveError
+from potluck.core.errors import ItemNotFoundError, PotluckError
 from potluck.mcp.server import run_http, run_stdio
 from potluck.models.items import ItemKind, ItemSort, ListItemsRequest
 from potluck.models.search import SearchRequest
@@ -71,7 +72,7 @@ def import_(
     ctx = create_context()
     try:
         run = imports_service.import_path(ctx, path)
-    except (UnknownSourceError, UnsupportedArchiveError) as exc:
+    except PotluckError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
@@ -112,6 +113,9 @@ def search(
     try:
         req = SearchRequest(query=query, kinds=kinds, limit=limit, offset=offset)
         resp = search_service.search(ctx, req)
+    except ValidationError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
     finally:
         ctx.db.close()
 
@@ -171,6 +175,9 @@ def list_(
             offset=offset,
         )
         resp = items_service.list_items(ctx, req)
+    except ValidationError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
     finally:
         ctx.db.close()
 

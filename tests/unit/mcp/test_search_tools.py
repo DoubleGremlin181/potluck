@@ -164,6 +164,24 @@ async def test_mcp_get_item_full_text(ctx: AppContext, tmp_path: Path) -> None:
     assert "meta" in structured
 
 
+async def test_mcp_search_invalid_limit_is_tool_error(ctx: AppContext) -> None:
+    """Out-of-range arguments surface as an informative ToolError (like
+    get_item), not a masked internal error."""
+    async with Client(create_mcp(ctx)) as client:
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("search", {"query": "x", "limit": 500})
+
+    assert "limit" in str(exc_info.value).lower()
+
+
+async def test_mcp_list_items_invalid_limit_is_tool_error(ctx: AppContext) -> None:
+    async with Client(create_mcp(ctx)) as client:
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("list_items", {"limit": 500})
+
+    assert "limit" in str(exc_info.value).lower()
+
+
 async def test_mcp_get_item_missing_is_tool_error(ctx: AppContext) -> None:
     """Requesting a non-existent item surfaces as a ToolError with 'not found' in message."""
     async with Client(create_mcp(ctx)) as client:

@@ -117,6 +117,30 @@ def test_import_path_unsupported_archive(ctx: AppContext, tmp_path: Path) -> Non
         import_path(ctx, txt_path)
 
 
+def test_import_path_corrupt_zip_raises_potluck_error(ctx: AppContext, tmp_path: Path) -> None:
+    """A corrupt zip surfaces as UnsupportedArchiveError (a PotluckError the
+    interface layers handle), not a raw zipfile.BadZipFile."""
+    from potluck.core.errors import UnsupportedArchiveError
+    from potluck.services.imports import import_path
+
+    bad = tmp_path / "corrupt.zip"
+    bad.write_bytes(b"PK\x03\x04" + b"\x00" * 32)
+
+    with pytest.raises(UnsupportedArchiveError, match="corrupt or unreadable"):
+        import_path(ctx, bad)
+
+
+def test_import_path_corrupt_tgz_raises_potluck_error(ctx: AppContext, tmp_path: Path) -> None:
+    from potluck.core.errors import UnsupportedArchiveError
+    from potluck.services.imports import import_path
+
+    bad = tmp_path / "corrupt.tgz"
+    bad.write_bytes(b"\x1f\x8b" + b"\x00" * 32)
+
+    with pytest.raises(UnsupportedArchiveError, match="corrupt or unreadable"):
+        import_path(ctx, bad)
+
+
 def test_list_imports(ctx: AppContext, tmp_path: Path, clean_registry: dict[str, Any]) -> None:
     from potluck.ingest.plugins import Glob, source
     from potluck.services.imports import import_path, list_imports

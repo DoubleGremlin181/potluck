@@ -85,6 +85,34 @@ def test_import_unsupported_path(tmp_path: Path) -> None:
     assert result.exit_code == 1
 
 
+def test_import_corrupt_zip_reports_error(tmp_path: Path) -> None:
+    """A truncated/corrupt zip prints 'Error: …' and exits 1 — no raw traceback."""
+    bad = tmp_path / "corrupt.zip"
+    bad.write_bytes(b"PK\x03\x04" + b"\x00" * 32)  # zip magic, garbage body
+    result = runner.invoke(app, ["import", str(bad)])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_import_corrupt_tgz_reports_error(tmp_path: Path) -> None:
+    bad = tmp_path / "corrupt.tgz"
+    bad.write_bytes(b"\x1f\x8b" + b"\x00" * 32)  # gzip magic, garbage body
+    result = runner.invoke(app, ["import", str(bad)])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_search_limit_out_of_range_reports_error() -> None:
+    """The help text advertises 1-100; out-of-range exits 1 with 'Error: …',
+    not a pydantic traceback."""
+    result = runner.invoke(app, ["search", "foo", "--limit", "200"])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert "Traceback" not in result.output
+
+
 # ---------------------------------------------------------------------------
 # search command
 # ---------------------------------------------------------------------------
