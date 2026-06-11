@@ -16,8 +16,17 @@ Skip policy (authoritative spec; tested in tests/unit/ingest/sources/test_google
      Empty-text list items are skipped.
 
 - If both the derived text and the ``title`` are empty → skip (empty note).
-- Malformed JSON or non-``dict`` root → log a WARNING and skip; one corrupt
-  member must not abort a 10 000-note import.
+- Malformed JSON, non-``dict`` root, literal ``NaN``/``Infinity`` values, or a
+  corrupt field that breaks draft conversion (e.g. a non-numeric timestamp) →
+  log a WARNING and skip; one corrupt member must not abort a 10 000-note
+  import.
+
+Identity policy:
+
+- ``external_id`` is the member path anchored at the ``Keep/`` segment
+  (``Keep/note.json``), so the zip (``Takeout/Keep/...``) and an extracted
+  directory rooted at ``Takeout/`` (``Keep/...``) agree on identity. Member
+  names without a ``Keep`` segment fall back to the full member path.
 
 Timestamp policy:
 
@@ -82,6 +91,26 @@ _KNOWN_KEYS: frozenset[str] = frozenset(
 def _usec_to_dt(usec: int) -> datetime:
     """Convert microseconds-since-epoch integer to timezone-aware UTC datetime."""
     return _EPOCH + timedelta(microseconds=usec)
+
+
+def _external_id(member_name: str) -> str:
+    """Layout-independent identity: the member path anchored at ``Keep/``.
+
+    Reimport identity must not depend on how the archive was opened — the zip
+    yields ``Takeout/Keep/note.json`` while an extracted directory rooted at
+    ``Takeout/`` yields ``Keep/note.json``.
+    """
+    parts = member_name.split("/")
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == "Keep":
+            return "/".join(parts[i:])
+    return member_name
+
+
+def _reject_constant(value: str) -> None:
+    """json.loads parse_constant hook: NaN/Infinity are not valid Keep data
+    (they would serialize to invalid JSON in items.meta)."""
+    raise ValueError(f"non-finite JSON constant {value!r}")
 
 
 def _to_draft(data: dict[str, Any], member_name: str) -> NoteDraft | None:
@@ -178,7 +207,7 @@ def _to_draft(data: dict[str, Any], member_name: str) -> NoteDraft | None:
             meta[key] = value
 
     return NoteDraft(
-        external_id=member_name,
+        external_id=_external_id(member_name),
         ts=ts,
         title=title,
         text=text,
@@ -186,13 +215,15 @@ def _to_draft(data: dict[str, Any], member_name: str) -> NoteDraft | None:
     )
 
 
-@source(name="google_keep", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,), parser_version=2)
+@source(name="google_keep", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,), parser_version=3)
 def parse(archive: Archive) -> Iterator[NoteDraft]:
     """Yield one :class:`~potluck.models.drafts.NoteDraft` per non-skipped Keep note."""
     for member, stream in archive.iter_members("*Keep/*.json"):
         try:
-            raw: Any = json.loads(stream.read())
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            # ValueError subsumes JSONDecodeError and the parse_constant
+            # rejection of literal NaN/Infinity.
+            raw: Any = json.loads(stream.read(), parse_constant=_reject_constant)
+        except (ValueError, UnicodeDecodeError) as exc:
             _logger.warning(
                 "google_keep: skipping malformed member %r: %s",
                 member.name,
@@ -206,6 +237,16 @@ def parse(archive: Archive) -> Iterator[NoteDraft]:
                 type(raw).__name__,
             )
             continue
-        draft = _to_draft(raw, member.name)
+        try:
+            draft = _to_draft(raw, member.name)
+        except (ValueError, TypeError, OverflowError) as exc:
+            # One corrupt field (e.g. a non-numeric timestamp) must not abort
+            # a 10 000-note import — same containment as malformed JSON.
+            _logger.warning(
+                "google_keep: skipping member %r with corrupt field: %s",
+                member.name,
+                exc,
+            )
+            continue
         if draft is not None:
             yield draft

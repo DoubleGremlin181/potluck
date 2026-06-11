@@ -234,12 +234,20 @@ def test_title_preserved_when_non_empty() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_external_id_is_member_name() -> None:
-    """external_id is set to the archive member name."""
-    member_name = "Takeout/Keep/My Note.json"
-    draft = _to_draft(_minimal_note(), member_name)
+def test_external_id_is_layout_independent() -> None:
+    """external_id anchors at the Keep/ path segment, so the same note has one
+    identity whether imported from the zip (Takeout/Keep/...) or from an
+    extracted directory rooted at Takeout/ (Keep/...)."""
+    zip_style = _to_draft(_minimal_note(), "Takeout/Keep/My Note.json")
+    dir_style = _to_draft(_minimal_note(), "Keep/My Note.json")
+    assert zip_style is not None and dir_style is not None
+    assert zip_style.external_id == dir_style.external_id == "Keep/My Note.json"
+
+
+def test_external_id_falls_back_to_member_name_without_keep_segment() -> None:
+    draft = _to_draft(_minimal_note(), "weird/layout/note.json")
     assert draft is not None
-    assert draft.external_id == member_name
+    assert draft.external_id == "weird/layout/note.json"
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +440,53 @@ def test_non_dict_member_skipped_with_warning(
     ), f"Expected a warning about non-dict member; got: {[r.message for r in caplog.records]}"
 
 
+def test_bad_timestamp_member_skipped_with_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A corrupt field inside an otherwise-valid member is contained: warn and
+    skip that member, never abort the import (module docstring policy)."""
+    bad_string = _minimal_note(userEditedTimestampUsec="garbage")
+    bad_type = _minimal_note(createdTimestampUsec={"nested": 1})  # truthy non-numeric
+    bad_range = _minimal_note(userEditedTimestampUsec=10**30)
+    members = {
+        "Takeout/Keep/bad-string.json": json.dumps(bad_string).encode(),
+        "Takeout/Keep/bad-type.json": json.dumps(bad_type).encode(),
+        "Takeout/Keep/bad-range.json": json.dumps(bad_range).encode(),
+        "Takeout/Keep/good.json": json.dumps(_minimal_note()).encode(),
+    }
+    zip_path = write_archive(tmp_path / "test.zip", members, "zip")
+
+    archive = open_archive(zip_path)
+    with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
+        drafts = list(parse(archive))
+
+    assert len(drafts) == 1
+    skipped = [r.message for r in caplog.records if "skipping" in r.message.lower()]
+    assert len(skipped) == 3, f"expected 3 skip warnings, got: {skipped}"
+
+
+def test_nan_literal_member_skipped_with_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Python's json.loads accepts literal NaN/Infinity, which would flow into
+    meta verbatim and abort the batch at INSERT (json_valid CHECK). Such
+    members are malformed: warn and skip."""
+    members = {
+        "Takeout/Keep/nan.json": b'{"title": "x", "textContent": "y", "weird": NaN}',
+        "Takeout/Keep/inf.json": b'{"title": "x", "textContent": "y", "weird": -Infinity}',
+        "Takeout/Keep/good.json": json.dumps(_minimal_note()).encode(),
+    }
+    zip_path = write_archive(tmp_path / "test.zip", members, "zip")
+
+    archive = open_archive(zip_path)
+    with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
+        drafts = list(parse(archive))
+
+    assert len(drafts) == 1
+    skipped = [r.message for r in caplog.records if "skipping" in r.message.lower()]
+    assert len(skipped) == 2, f"expected 2 skip warnings, got: {skipped}"
+
+
 # ---------------------------------------------------------------------------
 # Detection tests
 # ---------------------------------------------------------------------------
@@ -467,6 +522,21 @@ def test_multipart_tgz_detection_and_full_parse(tmp_path: Path) -> None:
     archive2 = open_archive(part1)
     drafts = list(plugin.parse(archive2))
     assert len(drafts) == non_skipped
+
+
+def test_reimport_from_extracted_takeout_dir_is_noop(ctx: AppContext, tmp_path: Path) -> None:
+    """Importing the zip and then the extracted tree rooted at Takeout/ must
+    dedup completely: identity is layout-independent, not member-path-deep."""
+    zip_path = write_keep_takeout(tmp_path / "z", count=12, seed=7, fmt="zip")
+    run1 = import_path(ctx, zip_path)
+
+    dir_root = write_keep_takeout(tmp_path / "d", count=12, seed=7, fmt="dir")
+    run2 = import_path(ctx, dir_root / "Takeout")
+
+    assert run1.items_new > 0
+    assert run2.items_new == 0
+    assert run2.items_updated == 0
+    assert run2.items_duplicate == run1.items_new
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +575,7 @@ def test_golden_fixture(ctx: AppContext) -> None:
 
     assert run.status == "completed"
     assert run.source == "google_keep"
-    assert run.parser_version == 2
+    assert run.parser_version == 3
     assert run.items_new == _GOLDEN_ITEMS_NEW
     assert run.items_duplicate == 0
 
@@ -526,7 +596,7 @@ def test_golden_fixture(ctx: AppContext) -> None:
     with ctx.db.read() as conn:
         row2 = conn.execute(
             "SELECT text FROM items WHERE external_id = ?",
-            ("Takeout/Keep/2020-01-01T00_46_00.000+00_00.json",),
+            ("Keep/2020-01-01T00_46_00.000+00_00.json",),
         ).fetchone()
     assert row2 is not None, "Expected checklist note by external_id"
     assert row2[0].startswith("- [ ] ochre walnut valley")
