@@ -356,7 +356,7 @@ def bench_compare(
     current_report = load_report(current)
     # Scenarios the current tier never runs (full-only vs a smoke run) are not
     # "missing" — one full-tier baseline file serves both CI gates.
-    in_tier = {s.name for s in scenarios_for(cast(Tier, current_report.tier), ALL_SCENARIOS)}
+    in_tier = {s.name for s in scenarios_for(current_report.tier, ALL_SCENARIOS)}
     out_of_tier = frozenset(s.name for s in ALL_SCENARIOS if s.name not in in_tier)
     regressions = compare(load_report(baseline), current_report, tolerance, out_of_tier=out_of_tier)
     if not regressions:
