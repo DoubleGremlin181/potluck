@@ -18,8 +18,11 @@ FROM items_fts JOIN items AS i ON i.id = items_fts.rowid
 WHERE items_fts MATCH ?
 """
 
+# i.id tiebreaker: equal bm25 scores (trivial with short similar notes) have
+# unspecified relative order otherwise, so LIMIT/OFFSET pages could repeat or
+# drop rows across requests (same rationale as _LIST_ORDER in storage/items).
 _SEARCH_SQL_TAIL: Final[str] = """
-ORDER BY score
+ORDER BY score, i.id
 LIMIT ? OFFSET ?
 """
 

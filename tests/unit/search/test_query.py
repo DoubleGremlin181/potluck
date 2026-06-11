@@ -65,6 +65,37 @@ def test_sanitize_unicode() -> None:
     assert '"検索"' in result
 
 
+def test_equal_score_pagination_deterministic(tmp_path: Path) -> None:
+    """Equal-scoring hits are ordered by id (explicit tiebreaker): LIMIT/OFFSET
+    pages are disjoint, exhaustive, and stable across requests."""
+    from potluck.search.fts import search_items
+
+    conn = _open_migrated(tmp_path)
+    conn.execute("INSERT INTO sources (name) VALUES ('s')")
+    conn.execute(
+        """INSERT INTO imports (source_id, path, parser_version, started_at)
+           VALUES (1, '/tmp/x', 1, '2024-01-01T00:00:00Z')"""
+    )
+    # 10 byte-identical short notes → identical bm25 scores
+    for i in range(10):
+        conn.execute(
+            """INSERT INTO items (source_id, import_id, kind, content_hash, title, text)
+               VALUES (1, 1, 'note', ?, 'pear', 'pear tree')""",
+            (f"h{i}",),
+        )
+    conn.commit()
+
+    pages = [
+        [int(row["id"]) for row in search_items(conn, '"pear"', kinds=None, limit=4, offset=off)]
+        for off in (0, 4, 8)
+    ]
+    collected = [item_id for page in pages for item_id in page]
+
+    assert sorted(collected) == list(range(1, 11)), "pages must be disjoint and exhaustive"
+    assert collected == sorted(collected), "equal scores must fall back to id order"
+    conn.close()
+
+
 def test_fuzz_no_operational_error(tmp_path: Path) -> None:
     """Nasty inputs never cause sqlite3.OperationalError on MATCH."""
     nasty_inputs = [
