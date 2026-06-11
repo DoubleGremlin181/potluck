@@ -163,3 +163,35 @@ def test_check_source_missing_module(isolated_sources: Path) -> None:
     problems = check_source("no_such_source")
     assert len(problems) > 0
     assert any("no_such_source" in p for p in problems)
+
+
+def test_check_source_reports_syntax_error(isolated_sources: Path) -> None:
+    """A half-edited scaffold raises SyntaxError (not ImportError) at import;
+    check_source must diagnose it instead of crashing."""
+    from potluck.ingest.devtools import check_source
+
+    (isolated_sources / "toy_broken.py").write_text("def parse(:\n")
+
+    problems = check_source("toy_broken")
+    assert any("not importable" in p for p in problems), problems
+
+
+def test_discover_survives_broken_module(
+    isolated_sources: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One broken plugin module must not take down every import: discover()
+    warns and continues, still returning the healthy plugins."""
+    import logging
+
+    from potluck.ingest.plugins import discover
+
+    (isolated_sources / "toy_broken.py").write_text("def parse(:\n")
+    (isolated_sources / "toy_ok.py").write_text(_VALID_MODULE)
+
+    with caplog.at_level(logging.WARNING, logger="potluck.ingest.plugins"):
+        plugins = discover()
+
+    assert "toy_ok" in plugins
+    assert any("toy_broken" in r.message for r in caplog.records), (
+        f"expected a warning naming the broken module; got {[r.message for r in caplog.records]}"
+    )

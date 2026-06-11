@@ -102,11 +102,12 @@ def check_source(name: str) -> list[str]:
     """
     problems: list[str] = []
 
-    # 1. Module importable
+    # 1. Module importable — Exception, not ImportError: a broken module can
+    # raise anything at import time (SyntaxError from a half-edited scaffold).
     full_name = f"potluck.ingest.sources.{name}"
     try:
         importlib.import_module(full_name)
-    except ImportError as exc:
+    except Exception as exc:
         problems.append(f"module '{full_name}' not importable: {exc}")
         return problems  # further checks require a loaded module
 

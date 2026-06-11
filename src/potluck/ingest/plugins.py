@@ -6,6 +6,7 @@ The engine owns batching/hashing/dedup/FTS/progress/ledger.
 
 import fnmatch
 import importlib
+import logging
 import pkgutil
 import sys
 from collections.abc import Callable, Iterator, Sequence
@@ -16,6 +17,8 @@ from potluck.core.errors import DuplicateSourceError
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import ItemDraft
 from potluck.models.items import ItemKind
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -103,11 +106,24 @@ def discover() -> dict[str, SourcePlugin]:
 
     Importing executes @source decorators which fill the registry.
     Idempotent: modules already in sys.modules are not re-imported.
+
+    A module that fails to import (e.g. a half-edited ``dev new-source``
+    scaffold with a SyntaxError) is logged and skipped — one broken plugin
+    must not break every import. ``dev check-source`` reports the details.
     """
     for module_info in pkgutil.iter_modules(sources_pkg.__path__):
         full_name = f"potluck.ingest.sources.{module_info.name}"
         if full_name not in sys.modules:
-            importlib.import_module(full_name)
+            try:
+                importlib.import_module(full_name)
+            except Exception as exc:
+                _logger.warning(
+                    "skipping broken source module %s: %s (run 'potluck dev "
+                    "check-source %s' for details)",
+                    full_name,
+                    exc,
+                    module_info.name,
+                )
 
     return dict(_registry)
 
