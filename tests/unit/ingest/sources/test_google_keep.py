@@ -179,6 +179,35 @@ def test_ts_microsecond_precision() -> None:
     assert draft.ts == expected
 
 
+def test_created_preserved_in_meta() -> None:
+    """createdTimestampUsec is kept as meta['created'] (ISO-8601 UTC)."""
+    created_usec = 1_600_000_000_000_000
+    data = _minimal_note(createdTimestampUsec=created_usec)
+    expected = (_EPOCH + timedelta(microseconds=created_usec)).isoformat()
+    draft = _to_draft(data, "Takeout/Keep/ts.json")
+    assert draft is not None
+    assert draft.meta["created"] == expected
+    # ts itself still prefers userEditedTimestampUsec
+    assert draft.ts == _EPOCH + timedelta(microseconds=1_700_000_000_000_000)
+
+
+def test_created_omitted_when_zero() -> None:
+    """createdTimestampUsec=0 → no meta['created'] (epoch-0 treated as absent)."""
+    data = _minimal_note(createdTimestampUsec=0)
+    draft = _to_draft(data, "Takeout/Keep/ts.json")
+    assert draft is not None
+    assert "created" not in draft.meta
+
+
+def test_created_omitted_when_missing() -> None:
+    """Absent createdTimestampUsec key → no meta['created']."""
+    data = _minimal_note()
+    del data["createdTimestampUsec"]
+    draft = _to_draft(data, "Takeout/Keep/ts.json")
+    assert draft is not None
+    assert "created" not in draft.meta
+
+
 # ---------------------------------------------------------------------------
 # _to_draft: title
 # ---------------------------------------------------------------------------
@@ -476,19 +505,22 @@ def test_golden_fixture(ctx: AppContext) -> None:
 
     assert run.status == "completed"
     assert run.source == "google_keep"
+    assert run.parser_version == 2
     assert run.items_new == _GOLDEN_ITEMS_NEW
     assert run.items_duplicate == 0
 
     # Spot-check 1: note with title "Ember Walnut Hazel"; its userEditedTimestampUsec
-    # is 0, so ts falls back to createdTimestampUsec (1577837640000000 µs).
+    # is 0, so ts falls back to createdTimestampUsec (1577837640000000 µs), and
+    # meta['created'] carries the same instant.
     with ctx.db.read() as conn:
         row = conn.execute(
-            "SELECT title, text, ts FROM items WHERE title = ?",
+            "SELECT title, text, ts, json_extract(meta, '$.created') FROM items WHERE title = ?",
             ("Ember Walnut Hazel",),
         ).fetchone()
     assert row is not None, "Expected 'Ember Walnut Hazel' in items"
     assert row[1] == "Violet cedar cedar indigo dune rowan maple."
     assert row[2] == "2020-01-01T00:14:00+00:00"
+    assert row[3] == "2020-01-01T00:14:00+00:00"
 
     # Spot-check 2: checklist note renders as markdown
     with ctx.db.read() as conn:
@@ -508,3 +540,34 @@ def test_golden_fixture(ctx: AppContext) -> None:
     run2 = import_path(ctx, fixture)
     assert run2.items_new == 0
     assert run2.items_duplicate == _GOLDEN_ITEMS_NEW
+
+
+def test_meta_created_backfills_on_reimport(ctx: AppContext) -> None:
+    """A DB ingested before meta['created'] existed is refreshed in place.
+
+    Simulates a parser_version-1 database by stripping the created key, then
+    reimports: every row must be counted items_updated (meta-only refresh),
+    with content hashes — and therefore ids — untouched.
+    """
+    fixture = REPO_ROOT / "tests" / "fixtures" / "keep" / "takeout-synth-001"
+    import_path(ctx, fixture)
+
+    ctx.db.write(
+        lambda conn: conn.execute("UPDATE items SET meta = json_remove(meta, '$.created')")
+    )
+    with ctx.db.read() as conn:
+        before = {
+            int(r[0]): str(r[1])
+            for r in conn.execute("SELECT id, content_hash FROM items").fetchall()
+        }
+
+    run = import_path(ctx, fixture)
+
+    assert run.items_new == 0
+    assert run.items_updated == _GOLDEN_ITEMS_NEW
+    with ctx.db.read() as conn:
+        rows = conn.execute(
+            "SELECT id, content_hash, json_extract(meta, '$.created') FROM items"
+        ).fetchall()
+    assert {int(r[0]): str(r[1]) for r in rows} == before
+    assert all(r[2] is not None for r in rows), "created must be back-filled on every note"

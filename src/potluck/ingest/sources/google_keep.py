@@ -28,6 +28,9 @@ Timestamp policy:
 
 Meta policy — include ONLY present/meaningful fields:
 
+- ``created``  → ``createdTimestampUsec`` as an ISO-8601 UTC string (same
+  format family as ``items.ts``); omitted when 0/missing.  ``ts`` carries the
+  last-edited instant, so this preserves the creation instant alongside it.
 - ``labels``   → list of name strings.
 - ``color``    → only when not ``"DEFAULT"``.
 - ``isPinned`` → only when ``True``.
@@ -128,6 +131,9 @@ def _to_draft(data: dict[str, Any], member_name: str) -> NoteDraft | None:
     # --- Meta ---
     meta: dict[str, Any] = {}
 
+    if created:
+        meta["created"] = _usec_to_dt(int(created)).isoformat()
+
     labels = data.get("labels")
     if labels and isinstance(labels, list):
         meta["labels"] = [lbl["name"] for lbl in labels if isinstance(lbl, dict) and "name" in lbl]
@@ -180,7 +186,7 @@ def _to_draft(data: dict[str, Any], member_name: str) -> NoteDraft | None:
     )
 
 
-@source(name="google_keep", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,), parser_version=1)
+@source(name="google_keep", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,), parser_version=2)
 def parse(archive: Archive) -> Iterator[NoteDraft]:
     """Yield one :class:`~potluck.models.drafts.NoteDraft` per non-skipped Keep note."""
     for member, stream in archive.iter_members("*Keep/*.json"):
