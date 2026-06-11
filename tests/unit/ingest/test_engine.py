@@ -189,6 +189,33 @@ def test_crash_mid_import_consistent(ctx: AppContext) -> None:
     assert int(imp_row2["items_duplicate"]) == 2000
 
 
+def test_interrupt_marks_ledger_failed_and_reraises(ctx: AppContext) -> None:
+    """Ctrl-C (KeyboardInterrupt is not an Exception) must not leave the
+    ledger row 'running' forever: best-effort mark failed, then re-raise."""
+
+    def _interrupted_iter() -> Iterator[NoteDraft]:
+        yield NoteDraft(title="a", text="before interrupt")
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_import(
+            ctx.db,
+            source_name="interrupt-src",
+            parser_version=1,
+            drafts=_interrupted_iter(),
+            path="/tmp/interrupt.zip",
+            file_hash=None,
+            batch_size=1,
+        )
+
+    with ctx.db.read() as conn:
+        imp_row = conn.execute("SELECT * FROM imports WHERE path = '/tmp/interrupt.zip'").fetchone()
+
+    assert imp_row["status"] == "failed"
+    assert "KeyboardInterrupt" in str(imp_row["error"])
+    assert imp_row["finished_at"] is not None
+
+
 def test_original_error_not_masked_when_ledger_update_fails(
     ctx: AppContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -379,6 +406,24 @@ def test_cross_batch_same_external_id_updates(ctx: AppContext) -> None:
 
     assert [r["text"] for r in rows] == ["second"]
     assert _import_counters(ctx, import_id) == (1, 0, 1)
+
+
+def test_in_run_content_revert_last_wins(ctx: AppContext) -> None:
+    """v1 → v2 → v1 for the same external_id across batches must end at v1
+    (documented last-wins): the run-wide seen set is invalidated when an
+    in-run update displaces a row's old content hash."""
+    drafts = [
+        _eid_draft("Keep/r.json", text="version-one"),
+        _eid_draft("Keep/r.json", text="version-two"),
+        _eid_draft("Keep/r.json", text="version-one"),
+    ]
+    import_id = _run(ctx, drafts, batch_size=1)
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT text FROM items").fetchall()
+
+    assert [r["text"] for r in rows] == ["version-one"]
+    assert _import_counters(ctx, import_id) == (1, 0, 2)
 
 
 def test_constant_queries_per_batch_with_external_ids(

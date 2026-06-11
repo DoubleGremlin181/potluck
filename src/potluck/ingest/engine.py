@@ -108,7 +108,7 @@ def run_import(
                 conn: sqlite3.Connection,
                 new_pairs: list[tuple[ItemDraft, str]] = _new_pairs,
                 in_run_dups: int = _in_run_dups,
-            ) -> None:
+            ) -> list[str]:
                 new_hashes = [h for _, h in new_pairs]
                 # ONE IN(...) query for the whole batch; skip when nothing new.
                 already_in_db = (
@@ -127,6 +127,7 @@ def run_import(
                 rows_to_insert: list[ItemRow] = []
                 content_updates: list[ContentUpdate] = []
                 meta_updates: list[MetaUpdate] = []
+                displaced_hashes: list[str] = []
                 db_dups = 0
                 for draft, h in new_pairs:
                     row = draft_to_row(
@@ -146,6 +147,11 @@ def run_import(
                         else:
                             db_dups += 1
                     elif ex is not None:
+                        # The row's old hash leaves the DB with this UPDATE; it
+                        # must also leave the run-wide seen set, or a later
+                        # in-run revert to the old content would be dropped as
+                        # a duplicate (violating last-wins).
+                        displaced_hashes.append(ex.content_hash)
                         content_updates.append(
                             ContentUpdate(
                                 import_id=import_id,
@@ -183,14 +189,18 @@ def run_import(
                 except Exception:
                     conn.execute("ROLLBACK")
                     raise
+                return displaced_hashes
 
-            db.write(_write_batch)
+            seen.difference_update(db.write(_write_batch))
             total_processed += len(chunk)
             if on_progress is not None:
                 on_progress(total_processed)
 
-    except Exception as exc:
-        error_text = str(exc)
+    except BaseException as exc:
+        # BaseException: Ctrl-C / SystemExit must not leave the ledger row
+        # 'running' forever (str() of KeyboardInterrupt is empty — fall back
+        # to the type name).
+        error_text = str(exc) or type(exc).__name__
         # best-effort ledger update; never mask the original error
         with contextlib.suppress(Exception):
             db.write(lambda conn: finish_import(conn, import_id, status="failed", error=error_text))
