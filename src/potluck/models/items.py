@@ -9,20 +9,20 @@ from pydantic import BaseModel, Field, JsonValue, field_validator
 class ItemKind(StrEnum):
     """Canonical 12-kind vocabulary for all ingested items.
 
-    v0 → v1 kind mapping (v0 had ~40 entity types; v1 collapses to 12 kinds):
+    Source data maps onto kinds as follows:
 
-    - Document, KnowledgeNote       → note
-    - Email                         → email
-    - ChatMessage                   → message
-    - Photo, media                  → photo
+    - documents, knowledge notes    → note
+    - emails                        → email
+    - chat messages                 → message
+    - photos, media                 → photo
     - generic files                 → file
-    - CalendarEvent                 → event
-    - Contact, Person               → contact
-    - LocationVisit, place          → location
-    - Transaction                   → transaction
-    - saved link, Bookmark          → bookmark
-    - SocialFollow, social posts    → post
-    - browser history, usage        → activity
+    - calendar events               → event
+    - contacts, people              → contact
+    - location visits, places       → location
+    - transactions                  → transaction
+    - saved links                   → bookmark
+    - social posts, follows         → post
+    - browser history, app usage    → activity
     """
 
     NOTE = "note"

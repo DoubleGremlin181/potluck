@@ -28,8 +28,8 @@ web/         Vite + React + TS + Tailwind + shadcn/ui (dist built in CI, served 
    infrastructure) — never `storage`/`ingest`/`enrich`/`search` directly. CI enforces this
    (import-linter contracts in `pyproject.toml`).
 2. **No conditional imports. No optional dependencies / extras — ever.** All imports
-   top-of-file. ML dependencies become core dependencies when their phase lands (v0's
-   lazy-import exception is rescinded). One install shape for everyone.
+   top-of-file. ML dependencies become core dependencies when their phase lands. One
+   install shape for everyone.
 3. **Batch-first**: data paths take batches (one `IN(...)` dedup query + one `executemany`
    per batch); no per-item DB round-trips. Ingestion stays a single-threaded loop until a
    bench scenario proves otherwise.

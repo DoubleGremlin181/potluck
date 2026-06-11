@@ -15,7 +15,7 @@ telemetry: nothing leaves your machine.
 | P1 Storage Core & First Ingest | Google Keep from a Takeout archive (zip/tgz/dir); FTS search via CLI + MCP | ✅ `v1.0.0-alpha.2` |
 | P2 Gmail at Scale & Search v1 | Multi-GB mbox ingested incrementally; filtered/snippeted search | — |
 | P3 MVP Interfaces | Real search/item/imports UI, MCP toolset v1 — **beta.1 = MVP** | — |
-| P4 Source Expansion & Automation | All v0 sources, watch-folder, scheduled GDrive pull | — |
+| P4 Source Expansion & Automation | Remaining planned sources, watch-folder, scheduled GDrive pull | — |
 | P5 Semantic Search | Unified embedding space, HNSW index, hybrid RRF | — |
 | P6 Vision & Media Enrichment | OCR, image embeddings, faces, media gallery | — |
 | P7 Linkers, People & Timeline | Related-items everywhere, people review, timeline | — |
