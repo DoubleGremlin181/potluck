@@ -21,5 +21,6 @@ class ImportRun(BaseModel):
     status: ImportStatus
     items_new: int
     items_duplicate: int
+    items_updated: int
     items_skipped: int
     error: str | None

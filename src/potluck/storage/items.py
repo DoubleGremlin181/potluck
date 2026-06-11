@@ -112,6 +112,89 @@ def get_item_row(conn: sqlite3.Connection, item_id: int) -> tuple[sqlite3.Row, s
     return row, str(row["source_name"])
 
 
+class ExistingItem(NamedTuple):
+    """Identity-matched row state used by the engine's update/duplicate logic."""
+
+    id: int
+    content_hash: str
+    meta: str  # canonical JSON text as stored (json.dumps(..., sort_keys=True))
+
+
+class ContentUpdate(NamedTuple):
+    """Parameters for one update_items_content row, ordered to match its SET list."""
+
+    import_id: int
+    kind: str
+    ts: str | None
+    title: str | None
+    text: str | None
+    lat: float | None
+    lon: float | None
+    content_hash: str
+    meta: str
+    id: int
+
+
+class MetaUpdate(NamedTuple):
+    """Parameters for one update_items_meta row, ordered to match its SET list."""
+
+    import_id: int
+    meta: str
+    id: int
+
+
+def existing_by_external_id(
+    conn: sqlite3.Connection, source_id: int, external_ids: Sequence[str]
+) -> dict[str, ExistingItem]:
+    """Map each existing external_id of *source_id* to its current row state.
+
+    Single ``IN (...)`` query per batch.  The explicit ``external_id IS NOT
+    NULL`` predicate lets the planner use the partial unique index
+    ``idx_items_source_external`` (migration 004).
+    """
+    if not external_ids:
+        return {}
+    placeholders = ",".join("?" * len(external_ids))
+    rows = conn.execute(
+        f"""SELECT external_id, id, content_hash, meta FROM items
+            WHERE source_id = ? AND external_id IS NOT NULL
+              AND external_id IN ({placeholders})""",
+        [source_id, *external_ids],
+    ).fetchall()
+    return {
+        str(row[0]): ExistingItem(id=int(row[1]), content_hash=str(row[2]), meta=str(row[3]))
+        for row in rows
+    }
+
+
+def update_items_content(conn: sqlite3.Connection, rows: Sequence[ContentUpdate]) -> None:
+    """Update changed-content rows via a single ``executemany``.
+
+    title/text in the SET list make the items_fts AFTER UPDATE trigger rewrite
+    the index entries — correct here, since content actually changed.
+    """
+    conn.executemany(
+        """UPDATE items
+           SET import_id = ?, kind = ?, ts = ?, title = ?, text = ?,
+               lat = ?, lon = ?, content_hash = ?, meta = ?
+           WHERE id = ?""",
+        rows,
+    )
+
+
+def update_items_meta(conn: sqlite3.Connection, rows: Sequence[MetaUpdate]) -> None:
+    """Refresh meta (and import provenance) via a single ``executemany``.
+
+    Deliberately excludes title/text from the SET list: the items_fts trigger
+    fires on SET-list membership even when values are unchanged, and a
+    meta-only refresh of a large corpus must not rewrite the FTS index.
+    """
+    conn.executemany(
+        "UPDATE items SET import_id = ?, meta = ? WHERE id = ?",
+        rows,
+    )
+
+
 def existing_hashes(conn: sqlite3.Connection, hashes: Sequence[str]) -> set[str]:
     """Return the subset of ``hashes`` that already exist in the items table.
 

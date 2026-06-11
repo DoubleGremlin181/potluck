@@ -44,6 +44,7 @@ def record_batch(
     *,
     new: int,
     duplicate: int,
+    updated: int,
     skipped: int,
 ) -> None:
     """Increment the running counters on an import row."""
@@ -51,9 +52,10 @@ def record_batch(
         """UPDATE imports
            SET items_new       = items_new       + ?,
                items_duplicate = items_duplicate + ?,
+               items_updated   = items_updated   + ?,
                items_skipped   = items_skipped   + ?
            WHERE id = ?""",
-        (new, duplicate, skipped, import_id),
+        (new, duplicate, updated, skipped, import_id),
     )
 
 
@@ -85,6 +87,7 @@ def _row_to_import_run(row: sqlite3.Row) -> ImportRun:
         status=row["status"],
         items_new=int(row["items_new"]),
         items_duplicate=int(row["items_duplicate"]),
+        items_updated=int(row["items_updated"]),
         items_skipped=int(row["items_skipped"]),
         error=row["error"],
     )

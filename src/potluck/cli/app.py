@@ -91,6 +91,7 @@ def import_(
     t.add_row("status", run.status)
     t.add_row("items_new", str(run.items_new))
     t.add_row("items_duplicate", str(run.items_duplicate))
+    t.add_row("items_updated", str(run.items_updated))
     t.add_row("items_skipped", str(run.items_skipped))
     t.add_row("duration", f"{duration_s:.2f}s" if duration_s is not None else "-")
     t.add_row("path", run.path)
@@ -201,6 +202,7 @@ def status(
         t.add_column("STATUS")
         t.add_column("NEW")
         t.add_column("DUP")
+        t.add_column("UPD")
         t.add_column("STARTED")
         t.add_column("ERROR")
         for run in import_runs:
@@ -211,6 +213,7 @@ def status(
                 run.status,
                 str(run.items_new),
                 str(run.items_duplicate),
+                str(run.items_updated),
                 run.started_at.isoformat(),
                 error_str,
             )

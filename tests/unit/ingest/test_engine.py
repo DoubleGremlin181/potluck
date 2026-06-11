@@ -1,5 +1,6 @@
 """Tests for potluck.ingest.engine: run_import batch ingest + dedup."""
 
+import json
 import math
 import sqlite3
 from collections.abc import Iterator, Sequence
@@ -81,6 +82,7 @@ def test_reimport_is_noop(ctx: AppContext) -> None:
     assert items_count == 2500
     assert int(imp_row["items_new"]) == 0
     assert int(imp_row["items_duplicate"]) == 2500
+    assert int(imp_row["items_updated"]) == 0
     assert imp_row["status"] == "completed"
 
 
@@ -229,3 +231,168 @@ def test_on_progress_called(ctx: AppContext) -> None:
 
     # Called after each batch: 1000, 2000, 2500
     assert progress == [1000, 2000, 2500]
+
+
+# ---------------------------------------------------------------------------
+# Update-in-place: one logical item per (source, external_id)
+# ---------------------------------------------------------------------------
+
+
+def _eid_draft(external_id: str, *, title: str = "T", text: str = "body") -> NoteDraft:
+    return NoteDraft(external_id=external_id, title=title, text=text)
+
+
+def _import_counters(ctx: AppContext, import_id: int) -> tuple[int, int, int]:
+    with ctx.db.read() as conn:
+        row = conn.execute("SELECT * FROM imports WHERE id = ?", (import_id,)).fetchone()
+    return (
+        int(row["items_new"]),
+        int(row["items_duplicate"]),
+        int(row["items_updated"]),
+    )
+
+
+def test_changed_content_updates_in_place(ctx: AppContext) -> None:
+    _run(ctx, [_eid_draft("Keep/a.json", text="alphaversion")])
+    with ctx.db.read() as conn:
+        first = conn.execute("SELECT id, content_hash FROM items").fetchone()
+
+    import_id2 = _run(ctx, [_eid_draft("Keep/a.json", text="betaversion")])
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT id, text, content_hash, import_id FROM items").fetchall()
+        new_hits = conn.execute(
+            "SELECT rowid FROM items_fts WHERE items_fts MATCH ?", ("betaversion",)
+        ).fetchall()
+        old_hits = conn.execute(
+            "SELECT rowid FROM items_fts WHERE items_fts MATCH ?", ("alphaversion",)
+        ).fetchall()
+
+    assert len(rows) == 1
+    assert int(rows[0]["id"]) == int(first["id"])  # id is stable across updates
+    assert rows[0]["text"] == "betaversion"
+    assert rows[0]["content_hash"] != first["content_hash"]
+    assert int(rows[0]["import_id"]) == import_id2
+    assert _import_counters(ctx, import_id2) == (0, 0, 1)
+    assert [int(r[0]) for r in new_hits] == [int(first["id"])]
+    assert old_hits == []
+
+
+def test_meta_only_change_refreshes_meta_without_fts_churn(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Meta is excluded from the content hash; a meta-only difference must still
+    refresh the stored row — through the no-FTS-churn meta-only UPDATE shape."""
+    _run(ctx, [_eid_draft("Keep/m.json", text="same").model_copy(update={"meta": {"a": 1}})])
+
+    content_rows: list[int] = []
+    meta_rows: list[int] = []
+    real_content = items_storage.update_items_content
+    real_meta = items_storage.update_items_meta
+
+    def counting_content(conn: sqlite3.Connection, rows: Sequence[object]) -> None:
+        content_rows.append(len(rows))
+        real_content(conn, rows)  # type: ignore[arg-type]
+
+    def counting_meta(conn: sqlite3.Connection, rows: Sequence[object]) -> None:
+        meta_rows.append(len(rows))
+        real_meta(conn, rows)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_mod, "update_items_content", counting_content)
+    monkeypatch.setattr(engine_mod, "update_items_meta", counting_meta)
+
+    import_id2 = _run(
+        ctx, [_eid_draft("Keep/m.json", text="same").model_copy(update={"meta": {"a": 2}})]
+    )
+
+    with ctx.db.read() as conn:
+        row = conn.execute("SELECT meta, content_hash, import_id FROM items").fetchone()
+
+    assert json.loads(row["meta"]) == {"a": 2}
+    assert int(row["import_id"]) == import_id2
+    assert _import_counters(ctx, import_id2) == (0, 0, 1)
+    assert sum(content_rows) == 0, "meta-only change must not take the FTS-rewriting path"
+    assert sum(meta_rows) == 1
+
+
+def test_null_external_id_changed_content_inserts_new_row(ctx: AppContext) -> None:
+    """Without an external_id there is no identity to update — hash dedup only."""
+    _run(ctx, [NoteDraft(title="N", text="version-one")])
+    import_id2 = _run(ctx, [NoteDraft(title="N", text="version-two")])
+
+    with ctx.db.read() as conn:
+        count = int(conn.execute("SELECT COUNT(*) FROM items").fetchone()[0])
+
+    assert count == 2
+    assert _import_counters(ctx, import_id2) == (1, 0, 0)
+
+
+def test_in_batch_same_external_id_last_wins(ctx: AppContext) -> None:
+    drafts = [
+        _eid_draft("Keep/x.json", text="first"),
+        _eid_draft("Keep/x.json", text="second"),
+    ]
+    import_id = _run(ctx, drafts, batch_size=1000)
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT text FROM items").fetchall()
+
+    assert [r["text"] for r in rows] == ["second"]
+    assert _import_counters(ctx, import_id) == (1, 1, 0)
+
+
+def test_cross_batch_same_external_id_updates(ctx: AppContext) -> None:
+    drafts = [
+        _eid_draft("Keep/x.json", text="first"),
+        _eid_draft("Keep/x.json", text="second"),
+    ]
+    import_id = _run(ctx, drafts, batch_size=1)
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT text FROM items").fetchall()
+
+    assert [r["text"] for r in rows] == ["second"]
+    assert _import_counters(ctx, import_id) == (1, 0, 1)
+
+
+def test_constant_queries_per_batch_with_external_ids(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The identity lookup and both UPDATE shapes run once per batch, like the
+    hash dedup query — never per item."""
+    n = 250
+    batch_size = 100
+    expected_batches = math.ceil(n / batch_size)  # 3
+
+    calls = {"existing_eid": 0, "update_content": 0, "update_meta": 0}
+    real_existing = items_storage.existing_by_external_id
+    real_content = items_storage.update_items_content
+    real_meta = items_storage.update_items_meta
+
+    def counting_existing(
+        conn: sqlite3.Connection, source_id: int, eids: Sequence[str]
+    ) -> dict[str, items_storage.ExistingItem]:
+        calls["existing_eid"] += 1
+        return real_existing(conn, source_id, eids)
+
+    def counting_content(conn: sqlite3.Connection, rows: Sequence[object]) -> None:
+        calls["update_content"] += 1
+        real_content(conn, rows)  # type: ignore[arg-type]
+
+    def counting_meta(conn: sqlite3.Connection, rows: Sequence[object]) -> None:
+        calls["update_meta"] += 1
+        real_meta(conn, rows)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_mod, "existing_by_external_id", counting_existing)
+    monkeypatch.setattr(engine_mod, "update_items_content", counting_content)
+    monkeypatch.setattr(engine_mod, "update_items_meta", counting_meta)
+
+    drafts = [_eid_draft(f"Keep/{i}.json", text=f"body {i}") for i in range(n)]
+    _run(ctx, drafts, batch_size=batch_size)
+    # Second run: every draft hits the update/duplicate classification path.
+    changed = [_eid_draft(f"Keep/{i}.json", text=f"body {i} edited") for i in range(n)]
+    _run(ctx, changed, batch_size=batch_size)
+
+    assert calls["existing_eid"] == 2 * expected_batches
+    assert calls["update_content"] == 2 * expected_batches
+    assert calls["update_meta"] == 2 * expected_batches

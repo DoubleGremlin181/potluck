@@ -8,7 +8,7 @@ from potluck.services.stats import get_stats
 def test_get_stats_zero_counts_on_empty_db(ctx: AppContext) -> None:
     stats = get_stats(ctx)
     assert stats.version == __version__
-    assert stats.schema_version == 3
+    assert stats.schema_version == 4
     assert stats.items == 0
     assert stats.sources == 0
     assert stats.imports == 0
