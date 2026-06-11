@@ -71,14 +71,16 @@ stdio (Claude Desktop, Claude Code, …):
 
 Streamable HTTP instead: `potluck mcp --http` (default `127.0.0.1:8766`).
 
-Toolset: `search` (keyword search with ranked, snippeted hits), `get_item` (full
-content by id), `get_stats` (database overview). Richer MCP surface lands with P3.
+Toolset: `search` (keyword search with ranked, snippeted hits), `list_items`
+(browse/filter without a query), `get_item` (full content by id), `get_stats`
+(database overview). Richer MCP surface lands with P3.
 
 ## CLI
 
 ```text
 potluck import PATH  ingest an export (Google Takeout zip/tgz/dir; auto-detected)
 potluck search Q     full-text search (--kind, --limit, --json)
+potluck list         browse items without a query (--kind, --source, --since, --sort, --json)
 potluck show ID      full item content + metadata
 potluck status       database overview + per-import stats
 potluck serve        web app + API on one port (opens your browser)
