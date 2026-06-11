@@ -121,7 +121,13 @@ _LIST_SELECT: Final = (
     "FROM items AS i JOIN sources AS s ON s.id = i.source_id"
 )
 
-_LIST_COUNT: Final = "SELECT COUNT(*) FROM items AS i JOIN sources AS s ON s.id = i.source_id"
+# The sources join only matters when filtering by source name; items.source_id
+# is a NOT NULL FK, so joining never changes an unfiltered COUNT(*).
+_LIST_COUNT: Final = "SELECT COUNT(*) FROM items AS i"
+
+_LIST_COUNT_SOURCES: Final = (
+    "SELECT COUNT(*) FROM items AS i JOIN sources AS s ON s.id = i.source_id"
+)
 
 # ORDER BY fragments are whitelisted per ItemSort member — user input never
 # reaches the SQL string. The i.id tiebreaker keeps pagination deterministic;
@@ -148,9 +154,11 @@ def list_item_rows(
     """Return one page of item summary rows plus the unpaginated total.
 
     Two queries under the same fully-parameterized WHERE: a COUNT(*) and the
-    page SELECT. ISO-string ts comparison is sound because every items.ts is
-    written by dt_to_iso (always a +00:00 offset); NULL ts rows never match a
-    date filter.
+    page SELECT, both inside one read transaction so the total and the page
+    come from a single WAL snapshot (a concurrent import committed between
+    them cannot make total disagree with the rows). ISO-string ts comparison
+    is sound because every items.ts is written by dt_to_iso (always a +00:00
+    offset); NULL ts rows never match a date filter.
     """
     where: list[str] = []
     params: list[object] = []
@@ -167,12 +175,20 @@ def list_item_rows(
         where.append("i.ts < ?")
         params.append(until_iso)
     where_sql = f" WHERE {' AND '.join(where)}" if where else ""
+    count_sql = (_LIST_COUNT_SOURCES if sources else _LIST_COUNT) + where_sql
 
-    total = int(conn.execute(_LIST_COUNT + where_sql, params).fetchone()[0])
-    rows = conn.execute(
-        f"{_LIST_SELECT}{where_sql} ORDER BY {_LIST_ORDER[sort]} LIMIT ? OFFSET ?",
-        [*params, limit, offset],
-    ).fetchall()
+    own_txn = not conn.in_transaction
+    if own_txn:
+        conn.execute("BEGIN")
+    try:
+        total = int(conn.execute(count_sql, params).fetchone()[0])
+        rows = conn.execute(
+            f"{_LIST_SELECT}{where_sql} ORDER BY {_LIST_ORDER[sort]} LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+    finally:
+        if own_txn:
+            conn.execute("COMMIT")
     return rows, total
 
 

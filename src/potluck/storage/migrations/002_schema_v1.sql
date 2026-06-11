@@ -41,6 +41,9 @@ CREATE TABLE items (
 CREATE UNIQUE INDEX idx_items_source_hash ON items (source_id, content_hash);
 
 CREATE INDEX idx_items_kind_ts ON items (kind, ts);
+-- Early-exit scan for the default unfiltered listing (ts DESC NULLS LAST,
+-- id DESC); NULL ts sorts smallest, so a DESC index is naturally NULLS LAST.
+CREATE INDEX idx_items_ts ON items (ts DESC, id DESC);
 CREATE INDEX idx_items_import  ON items (import_id);
 CREATE INDEX idx_items_parent  ON items (parent_id) WHERE parent_id IS NOT NULL;
 
