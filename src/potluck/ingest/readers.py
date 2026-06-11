@@ -11,6 +11,7 @@ Design contract: iteration is streaming / sequential.
 """
 
 import fnmatch
+import glob
 import re
 import tarfile
 import zipfile
@@ -50,8 +51,10 @@ class Archive(Protocol):
         stream content before advancing the iterator.
 
         Note: ``*`` in *pattern* crosses ``/`` separators — this is standard
-        ``fnmatch.fnmatch`` behaviour and is intentional for glob-style paths
-        like ``'*Keep/*.json'``.
+        ``fnmatch`` behaviour and is intentional for glob-style paths like
+        ``'*Keep/*.json'``. Matching is case-sensitive on every platform
+        (``fnmatch.fnmatchcase``): member names are virtual posix paths, so
+        the host OS's case folding must not apply.
         """
         ...
 
@@ -83,7 +86,7 @@ class ZipArchive:
         """
         with zipfile.ZipFile(self._path) as zf:
             for info in zf.infolist():
-                if not info.is_dir() and fnmatch.fnmatch(info.filename, pattern):
+                if not info.is_dir() and fnmatch.fnmatchcase(info.filename, pattern):
                     with zf.open(info) as stream:
                         yield Member(name=info.filename, size=info.file_size), stream
 
@@ -119,7 +122,7 @@ class TarArchive:
         """
         with tarfile.open(self._path, "r:*") as tf:
             for m in tf:
-                if m.isfile() and fnmatch.fnmatch(m.name, pattern):
+                if m.isfile() and fnmatch.fnmatchcase(m.name, pattern):
                     fileobj = tf.extractfile(m)
                     if fileobj is None:  # impossible: m.isfile() guarantees a regular file
                         raise AssertionError("extractfile returned None for a regular file")
@@ -148,7 +151,7 @@ class DirArchive:
     def iter_members(self, pattern: str) -> Iterator[tuple[Member, IO[bytes]]]:
         """Yields (Member, stream) for files matching *pattern*."""
         for name in self.iter_names():
-            if fnmatch.fnmatch(name, pattern):
+            if fnmatch.fnmatchcase(name, pattern):
                 file_path = self._path / name
                 with file_path.open("rb") as f:
                     yield Member(name=name, size=file_path.stat().st_size), f
@@ -217,7 +220,10 @@ def open_archive(path: Path) -> Archive:
         parent = path.parent
         siblings: list[Path] = sorted(
             p
-            for p in parent.glob(f"{stem}-???.{ext}")
+            # glob.escape: the stem is user-controlled and may contain glob
+            # metacharacters ('[', ']', '*') — match it literally or siblings
+            # are silently missed.
+            for p in parent.glob(f"{glob.escape(stem)}-???.{ext}")
             if (pm := _MULTIPART_RE.match(p.name)) is not None and pm.group("stem") == stem
         )
         if len(siblings) > 1:

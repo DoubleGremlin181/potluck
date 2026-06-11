@@ -26,13 +26,14 @@ type ParseFn = Callable[[Archive], Iterator[ItemDraft]]
 
 @dataclass(frozen=True)
 class Glob:
-    """Detection pattern; fnmatch semantics ('*' crosses '/')."""
+    """Detection pattern; fnmatch semantics ('*' crosses '/'), case-sensitive
+    on every platform — archive member names are virtual posix paths."""
 
     pattern: str
 
     def matches(self, name: str) -> bool:
         """Return True if *name* matches this glob pattern."""
-        return fnmatch.fnmatch(name, self.pattern)
+        return fnmatch.fnmatchcase(name, self.pattern)
 
 
 @dataclass(frozen=True)

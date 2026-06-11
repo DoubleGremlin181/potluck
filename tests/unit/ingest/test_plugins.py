@@ -78,6 +78,19 @@ def test_glob_matches() -> None:
     assert g.matches("Other/a.json") is False
 
 
+def test_glob_matches_case_sensitive_on_every_platform(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Archive member names are virtual posix paths: matching must not pick up
+    the host platform's case folding (os.path.normcase lowercases on Windows,
+    which would make imports diverge per platform)."""
+    import os.path
+
+    from potluck.ingest.plugins import Glob
+
+    monkeypatch.setattr(os.path, "normcase", lambda s: s.lower())  # simulate Windows
+    assert Glob("*Keep/*.json").matches("Takeout/KEEP/a.JSON") is False
+    assert Glob("*Keep/*.json").matches("Takeout/Keep/a.json") is True
+
+
 def test_source_decorator_registers(clean_registry: dict[str, Any]) -> None:
     from potluck.ingest.plugins import Glob, SourcePlugin, source
 

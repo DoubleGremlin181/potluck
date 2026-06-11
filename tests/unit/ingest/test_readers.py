@@ -123,6 +123,34 @@ def test_multipart_union(tmp_path: Path, fmt: Literal["zip", "tgz"]) -> None:
     assert names2 == set(ALL_MEMBERS.keys())
 
 
+@pytest.mark.parametrize("fmt", ["zip", "tgz"])
+def test_multipart_stem_with_glob_metacharacters(
+    tmp_path: Path, fmt: Literal["zip", "tgz"]
+) -> None:
+    """Sibling discovery must treat the stem literally: a renamed set like
+    'takeout [2024]-001.zip' still loads every part (no silent data loss)."""
+    parts_data = split_parts(ALL_MEMBERS, 3)
+    paths: list[Path] = []
+    for i, part_members in enumerate(parts_data, 1):
+        dest = tmp_path / f"takeout [2024]-{i:03d}.{fmt}"
+        write_archive(dest, part_members, fmt)
+        paths.append(dest)
+
+    names = set(open_archive(paths[0]).iter_names())
+    assert names == set(ALL_MEMBERS.keys())
+
+
+@pytest.mark.parametrize("fmt", ["zip", "tgz", "dir"])
+def test_iter_members_is_case_sensitive(tmp_path: Path, fmt: Literal["zip", "tgz", "dir"]) -> None:
+    """Member matching is case-sensitive on every platform: archive member
+    names are virtual posix paths, so Windows must not match more than Linux."""
+    dest = _dest(tmp_path, fmt)
+    write_archive(dest, {"Takeout/KEEP/a.JSON": b"{}", "Takeout/Keep/b.json": b"{}"}, fmt)
+    archive = open_archive(dest)
+    matched = [m.name for m, _ in archive.iter_members("*Keep/*.json")]
+    assert matched == ["Takeout/Keep/b.json"]
+
+
 # ---------------------------------------------------------------------------
 # test_open_archive_detects
 # ---------------------------------------------------------------------------
