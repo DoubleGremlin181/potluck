@@ -36,10 +36,13 @@ def write_archive(
             file_path.write_bytes(members[name])
 
     elif fmt == "zip":
-        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(dest, "w") as zf:
             for name in sorted_names:
                 zip_info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-                zf.writestr(zip_info, members[name])
+                # writestr with a ZipInfo uses the ZipInfo's own compress_type
+                # (default ZIP_STORED), ignoring the ZipFile-level setting —
+                # pass it explicitly or nothing is ever actually compressed.
+                zf.writestr(zip_info, members[name], compress_type=zipfile.ZIP_DEFLATED)
 
     elif fmt == "tgz":
         # Use gzip.GzipFile directly with filename="" and mtime=0 so the gzip

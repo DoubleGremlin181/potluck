@@ -106,3 +106,21 @@ def test_runner_calls_setup_before_run_and_excludes_from_timing(
     assert call_order == ["setup", "run"] * REPS
     # 50ms sleep in setup must NOT inflate the measured median
     assert report.results[0].median_s < 0.05
+
+
+def test_peak_rss_normalized_to_kb_per_platform(monkeypatch: pytest.MonkeyPatch) -> None:
+    """getrusage().ru_maxrss is KB on Linux but BYTES on macOS: reports must
+    not mix units depending on which machine produced the JSON."""
+    import resource
+    import sys
+
+    from potluck.bench import runner as runner_mod
+
+    fake = resource.struct_rusage((0.0, 0.0, 4096, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+    monkeypatch.setattr(resource, "getrusage", lambda _who: fake)
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert runner_mod._peak_rss_kb() == 4096
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert runner_mod._peak_rss_kb() == 4  # bytes → KB

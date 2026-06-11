@@ -4,6 +4,7 @@ import os
 import platform
 import resource
 import statistics
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -13,6 +14,14 @@ from potluck.bench.report import BenchReport, ScenarioResult
 from potluck.bench.scenarios import ALL_SCENARIOS
 
 REPS = 5
+
+
+def _peak_rss_kb() -> int:
+    """Process-wide peak RSS in KB — ru_maxrss is KB on Linux, BYTES on macOS."""
+    value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        value //= 1024
+    return value
 
 
 def _fingerprint() -> dict[str, str]:
@@ -52,7 +61,7 @@ def run_tier(tier: Tier, json_out: Path | None = None) -> BenchReport:
                 throughput_items_s=round(scenario.item_count / median, 2) if median else 0.0,
                 # Process-wide high-water mark (monotonic across scenarios);
                 # per-scenario subprocess isolation arrives with RSS budgets (P2).
-                peak_rss_kb=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                peak_rss_kb=_peak_rss_kb(),
             )
         )
     report = BenchReport(tier=tier, fingerprint=_fingerprint(), results=results)

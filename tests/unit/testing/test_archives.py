@@ -73,6 +73,21 @@ def test_write_archive_deterministic(tmp_path: Path, fmt: str) -> None:
     assert path1.read_bytes() == path2.read_bytes(), f"{fmt} output is not deterministic"
 
 
+def test_write_archive_zip_members_deflated(tmp_path: Path) -> None:
+    """Zip members must actually be compressed: real Takeout zips are deflated,
+    so stored members would make fixtures and bench archives skip the
+    decompression cost entirely."""
+    import zipfile
+
+    compressible = {"Takeout/Keep/big.json": b'{"text": "' + b"word " * 2000 + b'"}'}
+    dest = write_archive(tmp_path / "arch.zip", compressible, "zip")
+
+    with zipfile.ZipFile(dest) as zf:
+        info = zf.infolist()[0]
+        assert info.compress_type == zipfile.ZIP_DEFLATED
+        assert info.compress_size < info.file_size
+
+
 # ---------------------------------------------------------------------------
 # write_archive round-trip (dir)
 # ---------------------------------------------------------------------------
