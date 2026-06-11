@@ -54,9 +54,9 @@ def draft_to_row(
 ) -> ItemRow:
     """Convert a draft to an ItemRow ready for INSERT.
 
-    parent_external_id is intentionally not resolved here — the caller
-    (ledger / engine) is responsible for resolving external_id → rowid
-    before calling this function.
+    parent_external_id is intentionally not resolved here; engine-side
+    external_id → rowid resolution arrives with the first parented source
+    (P2+). Until then parent_id is always stored as NULL.
     """
     return ItemRow(
         source_id=source_id,

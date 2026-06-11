@@ -11,6 +11,7 @@ import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 
+import potluck.ingest.sources as sources_pkg
 from potluck.core.errors import DuplicateSourceError
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import ItemDraft
@@ -102,8 +103,6 @@ def discover() -> dict[str, SourcePlugin]:
     Importing executes @source decorators which fill the registry.
     Idempotent: modules already in sys.modules are not re-imported.
     """
-    import potluck.ingest.sources as sources_pkg
-
     for module_info in pkgutil.iter_modules(sources_pkg.__path__):
         full_name = f"potluck.ingest.sources.{module_info.name}"
         if full_name not in sys.modules:

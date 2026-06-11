@@ -8,7 +8,7 @@ CREATE TABLE imports (
     id              INTEGER PRIMARY KEY,
     source_id       INTEGER NOT NULL REFERENCES sources(id),
     path            TEXT NOT NULL,
-    file_hash       TEXT,            -- sha256 of archive; multi-part: sha256 of sorted part hashes; NULL for dirs
+    file_hash       TEXT,            -- sha256 of the passed archive file (per part for multi-part sets); NULL for dirs
     parser_version  INTEGER NOT NULL,
     started_at      TEXT NOT NULL,
     finished_at     TEXT,
