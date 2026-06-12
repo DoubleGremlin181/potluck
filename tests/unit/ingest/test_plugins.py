@@ -5,6 +5,7 @@ from typing import IO, Any
 
 import pytest
 
+from potluck.ingest.plugins import ParseContext
 from potluck.ingest.readers import Archive, Member
 from potluck.models.drafts import NoteDraft
 from potluck.models.items import ItemKind
@@ -81,7 +82,7 @@ def test_source_decorator_registers(clean_registry: dict[str, Any]) -> None:
         kinds=(ItemKind.NOTE,),
         parser_version=1,
     )
-    def parse(archive: Archive) -> Iterator[NoteDraft]:
+    def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 
@@ -99,14 +100,14 @@ def test_duplicate_name_raises(clean_registry: dict[str, Any]) -> None:
     from potluck.ingest.plugins import Glob, source
 
     @source(name="dup_plugin", detect=Glob("*.txt"), kinds=(ItemKind.NOTE,))
-    def parse1(archive: Archive) -> Iterator[NoteDraft]:
+    def parse1(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 
     with pytest.raises(DuplicateSourceError, match="dup_plugin"):
 
         @source(name="dup_plugin", detect=Glob("*.txt"), kinds=(ItemKind.NOTE,))
-        def parse2(archive: Archive) -> Iterator[NoteDraft]:
+        def parse2(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
             notes: list[NoteDraft] = []
             yield from notes
 
@@ -116,7 +117,7 @@ def test_detect_source_first_hit(clean_registry: dict[str, Any]) -> None:
 
     # aaa_plugin (sorted first): matches *Takeout/*.json
     @source(name="aaa_plugin", detect=Glob("*Takeout/*.json"), kinds=(ItemKind.NOTE,))
-    def parse_aaa(archive: Archive) -> Iterator[NoteDraft]:
+    def parse_aaa(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 
@@ -124,7 +125,7 @@ def test_detect_source_first_hit(clean_registry: dict[str, Any]) -> None:
     # members that satisfy both globs (e.g. "Takeout/Keep/x.json") to exercise
     # lexicographic tie-breaking.
     @source(name="zzz_plugin", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,))
-    def parse_zzz(archive: Archive) -> Iterator[NoteDraft]:
+    def parse_zzz(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 
@@ -151,7 +152,7 @@ def test_detect_single_pass_early_exit(clean_registry: dict[str, Any]) -> None:
     from potluck.ingest.plugins import Glob, detect_source, source
 
     @source(name="early_exit_plugin", detect=Glob("match.txt"), kinds=(ItemKind.NOTE,))
-    def parse(archive: Archive) -> Iterator[NoteDraft]:
+    def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 

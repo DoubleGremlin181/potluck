@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import IO
 
 import potluck.ingest.sources as _sources_pkg
-from potluck.ingest.plugins import SourcePlugin, discover
+from potluck.ingest.plugins import ParseContext, SourcePlugin, discover
 from potluck.ingest.readers import Archive, Member
 
 # ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ TODO: Describe this source and its data format.
 
 from collections.abc import Iterator
 
-from potluck.ingest.plugins import Glob, source
+from potluck.ingest.plugins import Glob, ParseContext, source
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import NoteDraft  # TODO: replace with the appropriate draft type as more kinds land
 from potluck.models.items import ItemKind
@@ -38,7 +38,7 @@ from potluck.models.items import ItemKind
     kinds=(ItemKind.NOTE,),  # TODO: update kinds
     parser_version=1,
 )
-def parse(archive: Archive) -> Iterator[NoteDraft]:
+def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
     """Yield NoteDraft items from *archive*.
 
     TODO: implement parsing logic.
@@ -137,7 +137,7 @@ def check_source(name: str) -> list[str]:
     if is_gen:
         empty: Archive = _EmptyArchive()
         try:
-            gen = plugin.parse(empty)
+            gen = plugin.parse(empty, ParseContext())
             first = next(iter(gen), None)
             if first is not None:
                 problems.append(

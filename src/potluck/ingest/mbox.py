@@ -15,7 +15,7 @@ import email.parser
 import email.policy
 import email.utils
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import IO, Final
@@ -148,13 +148,16 @@ def _payload_bytes(part: email.message.Message) -> bytes:
     return b""
 
 
-def parse_email(raw: bytes) -> ParsedEmail:
+def parse_email(
+    raw: bytes, *, payload_sink: Callable[[str, bytes], None] | None = None
+) -> ParsedEmail:
     """Decode one raw message: headers, body text, attachment metadata.
 
     Body selection: first non-attachment text/plain part wins; else the first
     text/html part is reduced via html_to_text. Every non-text leaf part (or
     any part with an attachment disposition) is recorded as an attachment —
-    metadata only, payload bytes are hashed and discarded.
+    metadata only; payload bytes are hashed, offered to *payload_sink*
+    (``(sha256, payload)`` — the extraction hook, #124), then discarded.
     """
     msg = _PARSER.parsebytes(raw)
 
@@ -173,12 +176,15 @@ def parse_email(raw: bytes) -> ParsedEmail:
             html = _decode_bytes(_payload_bytes(part), part.get_content_charset())
         elif is_attachment or not content_type.startswith("text/"):
             payload = _payload_bytes(part)
+            sha256 = hashlib.sha256(payload).hexdigest()
+            if payload_sink is not None:
+                payload_sink(sha256, payload)
             attachments.append(
                 AttachmentInfo(
                     filename=part.get_filename(),
                     mime=content_type,
                     size_bytes=len(payload),
-                    sha256=hashlib.sha256(payload).hexdigest(),
+                    sha256=sha256,
                 )
             )
 

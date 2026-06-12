@@ -352,3 +352,13 @@ def test_round_trip_synthetic_corpus() -> None:
     assert all(p.from_addr for p in parsed)
     assert any(p.references for p in parsed)
     assert any(p.attachments for p in parsed)
+
+
+def test_payload_sink_receives_attachment_bytes() -> None:
+    """#124: extraction happens during parse — the sink gets (sha256, payload)."""
+    received: list[tuple[str, bytes]] = []
+    parsed = parse_email(
+        WITH_ATTACHMENT, payload_sink=lambda sha, data: received.append((sha, data))
+    )
+    assert received == [(hashlib.sha256(ATTACHMENT_PAYLOAD).hexdigest(), ATTACHMENT_PAYLOAD)]
+    assert parsed.attachments[0].sha256 == received[0][0]

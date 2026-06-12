@@ -10,7 +10,7 @@ from pathlib import Path
 from potluck.core.errors import UnknownSourceError, UnsupportedArchiveError
 from potluck.ingest.engine import run_import
 from potluck.ingest.hashing import file_hash as _file_hash
-from potluck.ingest.plugins import detect_source, discover
+from potluck.ingest.plugins import ParseContext, detect_source, discover
 from potluck.ingest.readers import open_archive
 from potluck.models.imports import ImportRun
 from potluck.services.context import AppContext
@@ -50,11 +50,17 @@ def import_path(ctx: AppContext, path: Path) -> ImportRun:
 
         fhash: str | None = _file_hash(path) if path.is_file() else None
 
+        parse_ctx = ParseContext(
+            attachments_dir=(
+                ctx.settings.attachments_dir if ctx.settings.extract_attachments else None
+            )
+        )
+
         import_id = run_import(
             ctx.db,
             source_name=plugin.name,
             parser_version=plugin.parser_version,
-            drafts=plugin.parse(archive),
+            drafts=plugin.parse(archive, parse_ctx),
             path=str(path),
             file_hash=fhash,
         )

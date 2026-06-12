@@ -24,3 +24,8 @@ def config_dir() -> Path:
 def default_db_path() -> Path:
     """Default location of the Potluck database."""
     return data_dir() / "potluck.db"
+
+
+def default_attachments_dir() -> Path:
+    """Default managed directory for extracted attachment blobs (#124)."""
+    return data_dir() / "attachments"

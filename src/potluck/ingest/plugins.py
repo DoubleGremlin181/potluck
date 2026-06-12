@@ -11,6 +11,7 @@ import pkgutil
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import potluck.ingest.sources as sources_pkg
 from potluck.core.errors import DuplicateSourceError
@@ -24,7 +25,19 @@ _logger = logging.getLogger(__name__)
 # Public types
 # ---------------------------------------------------------------------------
 
-type ParseFn = Callable[[Archive], Iterator[ItemDraft]]
+
+@dataclass(frozen=True)
+class ParseContext:
+    """Engine-provided context passed to every parse function.
+
+    attachments_dir: managed root for content-addressed blob extraction, or
+    None when extraction is disabled (the default — metadata only).
+    """
+
+    attachments_dir: Path | None = None
+
+
+type ParseFn = Callable[[Archive, ParseContext], Iterator[ItemDraft]]
 
 
 @dataclass(frozen=True)

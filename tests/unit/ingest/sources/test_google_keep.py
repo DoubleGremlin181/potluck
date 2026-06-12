@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from potluck.ingest.plugins import detect_source, discover
+from potluck.ingest.plugins import ParseContext, detect_source, discover
 from potluck.ingest.readers import open_archive
 from potluck.ingest.sources.google_keep import _to_draft, parse
 from potluck.services.context import AppContext
@@ -401,7 +401,7 @@ def test_malformed_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     assert any(
@@ -429,7 +429,7 @@ def test_non_dict_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     assert any(
@@ -458,7 +458,7 @@ def test_bad_timestamp_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     skipped = [r.message for r in caplog.records if "skipping" in r.message.lower()]
@@ -480,7 +480,7 @@ def test_nan_literal_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     skipped = [r.message for r in caplog.records if "skipping" in r.message.lower()]
@@ -520,7 +520,7 @@ def test_multipart_tgz_detection_and_full_parse(tmp_path: Path) -> None:
     )
 
     archive2 = open_archive(part1)
-    drafts = list(plugin.parse(archive2))
+    drafts = list(plugin.parse(archive2, ParseContext()))
     assert len(drafts) == non_skipped
 
 

@@ -52,3 +52,12 @@ def test_db_path_isolated_even_when_platformdirs_ignores_xdg(
         platformdirs, "user_data_dir", lambda *a, **k: "/real/windows/userdata"
     )  # simulate XDG being ignored
     assert Settings().db_path.is_relative_to(isolated_dirs)
+
+
+def test_attachment_settings_defaults() -> None:
+    """#124: extraction is opt-in; the managed dir lives under the data dir."""
+    from potluck.core.paths import data_dir
+
+    settings = Settings()
+    assert settings.extract_attachments is False
+    assert settings.attachments_dir == data_dir() / "attachments"

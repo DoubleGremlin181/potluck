@@ -14,6 +14,7 @@ from typing import Final
 from potluck.models.drafts import EmailDraft, ItemDraft
 from potluck.models.items import ItemKind
 from potluck.storage.emails import draft_to_email_row, insert_emails, resolve_email_parents
+from potluck.storage.files import FileRow, delete_files_for_items, insert_files
 
 
 @dataclass(frozen=True)
@@ -31,12 +32,25 @@ class SatelliteWriter:
 
 
 def _write_email_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDraft, int]]) -> None:
-    rows = [
-        draft_to_email_row(draft, item_id)
-        for draft, item_id in pairs
-        if isinstance(draft, EmailDraft)
+    emails = [(draft, item_id) for draft, item_id in pairs if isinstance(draft, EmailDraft)]
+    insert_emails(conn, [draft_to_email_row(draft, item_id) for draft, item_id in emails])
+
+    # Attachment metadata (#124): replace each item's file set wholesale —
+    # the DELETE is a no-op for fresh inserts. Unnamed parts get a stable
+    # positional member_path.
+    delete_files_for_items(conn, [item_id for _, item_id in emails])
+    file_rows = [
+        FileRow(
+            item_id=item_id,
+            member_path=att.filename or f"part-{position}",
+            mime=att.mime,
+            size_bytes=att.size_bytes,
+            sha256=att.sha256,
+        )
+        for draft, item_id in emails
+        for position, att in enumerate(draft.attachments, start=1)
     ]
-    insert_emails(conn, rows)
+    insert_files(conn, file_rows)
 
 
 def _finalize_emails(conn: sqlite3.Connection, source_id: int) -> None:

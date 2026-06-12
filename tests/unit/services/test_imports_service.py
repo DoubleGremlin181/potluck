@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from potluck.ingest.plugins import ParseContext
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import NoteDraft
 from potluck.models.items import ItemKind
@@ -17,7 +18,7 @@ from potluck.testing.archives import write_archive
 # ---------------------------------------------------------------------------
 
 
-def _toy_parse(archive: Archive) -> Iterator[NoteDraft]:
+def _toy_parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
     """Yields exactly 2 NoteDrafts from any *Toy/*.txt member."""
     for _member, stream in archive.iter_members("*Toy/*.txt"):
         content = stream.read().decode()
