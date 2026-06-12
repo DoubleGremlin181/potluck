@@ -86,7 +86,10 @@ def test_equal_score_pagination_deterministic(tmp_path: Path) -> None:
     conn.commit()
 
     pages = [
-        [int(row["id"]) for row in search_items(conn, '"pear"', kinds=None, limit=4, offset=off)]
+        [
+            int(row["id"])
+            for row in search_items(conn, match='"pear"', kinds=None, limit=4, offset=off)
+        ]
         for off in (0, 4, 8)
     ]
     collected = [item_id for page in pages for item_id in page]

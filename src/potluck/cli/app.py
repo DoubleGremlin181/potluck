@@ -105,7 +105,13 @@ def import_(
 
 @app.command()
 def search(
-    query: str = typer.Argument(help="Full-text search query."),
+    query: str = typer.Argument(
+        help=(
+            "Full-text search query. Inline operators combine with free text: "
+            "from:ADDR, source:NAME, kind:KIND, after:YYYY-MM-DD (inclusive), "
+            "before:YYYY-MM-DD (exclusive)."
+        )
+    ),
     kinds: list[ItemKind] | None = typer.Option(None, "--kind", help="Filter by item kind."),
     limit: int = typer.Option(20, help="Maximum results to return (1-100)."),
     offset: int = typer.Option(0, help="Results offset."),

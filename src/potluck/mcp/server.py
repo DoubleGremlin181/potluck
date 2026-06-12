@@ -50,12 +50,16 @@ def create_mcp(ctx: AppContext | None = None) -> FastMCP:
     ) -> SearchResponse:
         """Search the user's personal knowledge base by keywords.
 
-        Contains the user's own data ingested from their personal exports (currently
-        Google Keep notes; emails, chats and more sources arrive in later phases).
-        Multi-word queries match items containing ALL words (no phrase search).
-        Returns ranked hits (best first) with bracketed [match] snippets; follow up
-        with get_item using a hit's id to read the full content. Use this whenever
-        the user asks about anything they may have written down, saved or noted.
+        Contains the user's own data ingested from their personal exports
+        (currently Google Keep notes and Gmail; more sources arrive in later
+        phases). Multi-word queries match items containing ALL words (no phrase
+        search). The query string accepts inline operators, combinable with
+        free text: from:addr (or from:name prefix), source:name, kind:email,
+        after:YYYY-MM-DD (inclusive), before:YYYY-MM-DD (exclusive). Returns
+        ranked hits (best first) with bracketed [match] snippets; follow up
+        with get_item using a hit's id to read the full content. Use this
+        whenever the user asks about anything they may have written down,
+        saved, noted, or received by email.
         """
         return search_service.search(context, SearchRequest(query=query, kinds=kinds, limit=limit))
 

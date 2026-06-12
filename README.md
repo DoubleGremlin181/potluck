@@ -72,8 +72,9 @@ stdio (Claude Desktop, Claude Code, …):
 Streamable HTTP instead: `potluck mcp --http` (default `127.0.0.1:8766`).
 
 Toolset: `search` (keyword search with ranked, snippeted hits), `list_items`
-(browse/filter without a query), `get_item` (full content by id), `get_stats`
-(database overview). Richer MCP surface lands with P3.
+(browse/filter without a query), `get_item` (full content by id), `get_thread`
+(the whole email conversation around an item), `get_stats` (database
+overview). Richer MCP surface lands with P3.
 
 ## CLI
 
@@ -81,13 +82,21 @@ Toolset: `search` (keyword search with ranked, snippeted hits), `list_items`
 potluck import PATH  ingest an export (Google Takeout zip/tgz/dir; auto-detected)
 potluck search Q     full-text search (--kind, --limit, --json)
 potluck list         browse items without a query (--kind, --source, --since, --sort, --json)
-potluck show ID      full item content + metadata
+potluck show ID      full item content + metadata (--thread: the whole conversation)
 potluck status       database overview + per-import stats
 potluck serve        web app + API on one port (opens your browser)
 potluck mcp          MCP server (stdio; --http for streamable HTTP)
 potluck bench run    benchmark harness (smoke/full tiers)
 potluck dev          source-plugin scaffolding (new-source / check-source)
 ```
+
+Search queries can carry inline operators, combinable with each other and
+free text: `from:alice@example.com` (or a name prefix: `from:alice`),
+`source:gmail`, `kind:email`, `after:2024-01-01` (inclusive),
+`before:2025-06-30` (exclusive), with quoted values supported
+(`source:"google keep"`). Invalid operator values are ignored, never errors;
+unknown `key:value` pairs are searched as plain text. Operators alone (no
+free text) list the matching items newest-first.
 
 Configuration is optional: defaults work out of the box. Override via `POTLUCK_*` env vars
 or `~/.config/potluck/config.toml` (env > toml > defaults); the database lives at

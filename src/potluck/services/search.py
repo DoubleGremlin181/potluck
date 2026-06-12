@@ -1,39 +1,45 @@
-"""Search service: full-text BM25 search over the items table."""
+"""Search service: full-text BM25 search with inline query operators."""
 
 from potluck.models.search import SearchHit, SearchRequest, SearchResponse
 from potluck.search.fts import sanitize_query, search_items
+from potluck.search.query import parse_query
 from potluck.services.context import AppContext
-from potluck.storage.items import iso_to_dt
+from potluck.storage.items import dt_to_iso, iso_to_dt
 
 
 def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
     """Run a full-text search and return ranked hits.
 
     Workflow:
-    1. :func:`~potluck.search.fts.sanitize_query` converts *req.query* to a safe
-       FTS5 MATCH expression.  If the query contains no \\w+ tokens, an empty
-       :class:`~potluck.models.search.SearchResponse` is returned immediately.
-    2. :func:`~potluck.search.fts.search_items` executes the BM25-ranked query on
-       a read connection.
-    3. Rows are mapped to :class:`~potluck.models.search.SearchHit` DTOs, with
-       timestamps converted via :func:`~potluck.storage.items.iso_to_dt`.
-
-    Args:
-        ctx: Application context carrying the open database.
-        req: Search parameters (query, optional kind filter, limit, offset).
-
-    Returns:
-        A :class:`~potluck.models.search.SearchResponse` with the ranked hits.
+    1. ``parse_query`` splits inline operators (from:/source:/kind:/before:/
+       after:) out of *req.query*; invalid operator values are silently
+       dropped (never an error — search must not fail on user input).
+    2. Structured request fields win over inline operators for the same filter.
+    3. With free-text terms: BM25-ranked FTS5 MATCH, filters as predicates.
+       Filters alone (no terms): matching items newest-first with score 0.
+       Neither: empty response.
     """
-    match_expr = sanitize_query(req.query)
-    if match_expr is None:
+    parsed = parse_query(req.query)
+    kinds = req.kinds if req.kinds else (list(parsed.kinds) or None)
+    sources = req.sources if req.sources else (list(parsed.sources) or None)
+    from_addrs = req.from_addrs if req.from_addrs else (list(parsed.from_addrs) or None)
+    after = req.after if req.after is not None else parsed.after
+    before = req.before if req.before is not None else parsed.before
+
+    match_expr = sanitize_query(parsed.terms)
+    has_filters = any((kinds, sources, from_addrs, after, before))
+    if match_expr is None and not has_filters:
         return SearchResponse(query=req.query, hits=[])
 
     with ctx.db.read() as conn:
         rows = search_items(
             conn,
-            match_expr,
-            kinds=req.kinds,
+            match=match_expr,
+            kinds=kinds,
+            sources=sources,
+            from_addrs=from_addrs,
+            after_iso=dt_to_iso(after) if after is not None else None,
+            before_iso=dt_to_iso(before) if before is not None else None,
             limit=req.limit,
             offset=req.offset,
         )
