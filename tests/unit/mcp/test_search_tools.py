@@ -19,11 +19,11 @@ from tests.conftest import ingest_keep_corpus
 # ---------------------------------------------------------------------------
 
 
-async def test_mcp_lists_four_tools(ctx: AppContext) -> None:
-    """Server exposes exactly four tools: get_stats, search, list_items, get_item."""
+async def test_mcp_tool_inventory(ctx: AppContext) -> None:
+    """Server exposes exactly the expected toolset."""
     async with Client(create_mcp(ctx)) as client:
         tools = {tool.name for tool in await client.list_tools()}
-    assert tools == {"get_stats", "search", "list_items", "get_item"}
+    assert tools == {"get_stats", "search", "list_items", "get_item", "get_thread"}
 
 
 # ---------------------------------------------------------------------------

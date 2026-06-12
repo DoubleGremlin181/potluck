@@ -28,6 +28,7 @@ from potluck.services import imports as imports_service
 from potluck.services import items as items_service
 from potluck.services import search as search_service
 from potluck.services import stats as stats_service
+from potluck.services import threads as threads_service
 from potluck.services.context import create_context
 
 console = Console()
@@ -213,9 +214,16 @@ def list_(
 @app.command()
 def show(
     item_id: int = typer.Argument(help="Item ID to display."),
+    thread: bool = typer.Option(
+        False, "--thread", help="Show the whole email conversation containing the item."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Print JSON output."),
 ) -> None:
-    """Show full details for a single item."""
+    """Show full details for a single item (or its whole conversation)."""
+    if thread:
+        _show_thread(item_id, as_json)
+        return
+
     ctx = create_context()
     try:
         item = items_service.get_item(ctx, item_id)
@@ -242,6 +250,35 @@ def show(
     t.add_row("text", escape(item.text) if item.text is not None else "-")
     t.add_row("meta", escape(_json.dumps(item.meta, indent=2)))
     console.print(t)
+
+
+def _show_thread(item_id: int, as_json: bool) -> None:
+    """Print the conversation containing *item_id*, oldest message first."""
+    ctx = create_context()
+    try:
+        resp = threads_service.get_thread(ctx, item_id)
+    except ItemNotFoundError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        ctx.db.close()
+
+    if as_json:
+        print(resp.model_dump_json(indent=2))
+        return
+
+    t = Table("ID", "TS", "FROM", "TITLE", "PREVIEW")
+    for entry in resp.entries:
+        t.add_row(
+            str(entry.id),
+            entry.ts.date().isoformat() if entry.ts is not None else "-",
+            entry.from_addr or "-",
+            escape(entry.title) if entry.title is not None else "-",
+            escape(entry.text_preview) if entry.text_preview is not None else "-",
+        )
+    console.print(t)
+    key = resp.thread_key or "(not an email thread)"
+    console.print(f"{len(resp.entries)} message(s) in thread {key}")
 
 
 @app.command()

@@ -14,9 +14,11 @@ from potluck.core.errors import ItemNotFoundError
 from potluck.models.items import Item, ItemKind, ItemSort, ListItemsRequest, ListItemsResponse
 from potluck.models.search import SearchRequest, SearchResponse
 from potluck.models.stats import StatsResponse
+from potluck.models.threads import ThreadResponse
 from potluck.services import items as items_service
 from potluck.services import search as search_service
 from potluck.services import stats as stats_service
+from potluck.services import threads as threads_service
 from potluck.services.context import AppContext, create_context
 
 _INSTRUCTIONS = (
@@ -97,6 +99,22 @@ def create_mcp(ctx: AppContext | None = None) -> FastMCP:
         """
         try:
             return items_service.get_item(context, item_id)
+        except ItemNotFoundError as exc:
+            raise ToolError(str(exc)) from exc
+
+    @server.tool
+    def get_thread(item_id: int) -> ThreadResponse:
+        """Fetch the full email conversation containing one item.
+
+        Item IDs come from search or list_items hits. Returns every message in
+        the thread oldest-first (subject, sender, timestamp, text preview) with
+        parent_id links forming the reply tree; follow up with get_item for a
+        message's full body. For an item that is not an email the response
+        holds just that item. Use this when the user asks about an email
+        exchange or what was said in a conversation.
+        """
+        try:
+            return threads_service.get_thread(context, item_id)
         except ItemNotFoundError as exc:
             raise ToolError(str(exc)) from exc
 
