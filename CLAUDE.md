@@ -47,6 +47,8 @@ web/         Vite + React + TS + Tailwind + shadcn/ui (dist built in CI, served 
   commit body contains `Closes #N`.
 - Branch `v1/p<N>-<slug>` per phase; PR to `main` at phase end; merge with a **merge commit**
   (preserves per-issue commits so `Closes` fires on main).
+- **Never merge a PR yourself.** Open the PR and stop — Kavish reviews and merges. Tagging
+  and releasing happen only after his merge.
 - Phase end: bump `version` in `pyproject.toml`, tag (PEP 440 aware: version `1.0.0a1` ↔ tag
   `v1.0.0-alpha.1`), push tag → release workflow publishes the GitHub Release (wheel with
   embedded SPA) + GHCR image. `latest` Docker tag only on stable releases.
