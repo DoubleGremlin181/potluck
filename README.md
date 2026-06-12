@@ -80,7 +80,7 @@ overview). Richer MCP surface lands with P3.
 
 ```text
 potluck import PATH  ingest an export (Google Takeout zip/tgz/dir; auto-detected)
-potluck search Q     full-text search (--kind, --limit, --json)
+potluck search Q     full-text search (--kind, --prefix, --cursor, --limit, --json)
 potluck list         browse items without a query (--kind, --source, --since, --sort, --json)
 potluck show ID      full item content + metadata (--thread: the whole conversation)
 potluck status       database overview + per-import stats
@@ -97,6 +97,12 @@ free text: `from:alice@example.com` (or a name prefix: `from:alice`),
 (`source:"google keep"`). Invalid operator values are ignored, never errors;
 unknown `key:value` pairs are searched as plain text. Operators alone (no
 free text) list the matching items newest-first.
+
+Search-as-you-type: `--prefix` (CLI) / `prefix=true` (MCP) matches the last
+word as a prefix (`gar` finds garden/garlic/garnet). Pagination uses opaque
+keyset cursors — pass a response's `next_cursor` back as `cursor` for the
+next page; the result set is frozen at the first page, so items ingested
+mid-pagination never shift, repeat, or hide existing hits.
 
 Configuration is optional: defaults work out of the box. Override via `POTLUCK_*` env vars
 or `~/.config/potluck/config.toml` (env > toml > defaults); the database lives at

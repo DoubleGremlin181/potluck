@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from potluck.models.items import ItemKind
 
@@ -26,8 +26,25 @@ class SearchRequest(BaseModel):
     from_addrs: list[str] | None = None
     after: datetime | None = None
     before: datetime | None = None
+    prefix: bool = Field(
+        default=False,
+        description="Search-as-you-type: the last query token matches as a prefix.",
+    )
+    cursor: str | None = Field(
+        default=None,
+        description=(
+            "Opaque pagination cursor from a previous response's next_cursor. "
+            "Mutually exclusive with offset."
+        ),
+    )
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _cursor_xor_offset(self) -> "SearchRequest":
+        if self.cursor is not None and self.offset != 0:
+            raise ValueError("cursor and offset are mutually exclusive")
+        return self
 
 
 class SearchHit(BaseModel):
@@ -36,6 +53,13 @@ class SearchHit(BaseModel):
     id: int
     kind: ItemKind
     title: str | None
+    title_highlight: str | None = Field(
+        default=None,
+        description=(
+            "Title with [match] brackets around matched terms; None for "
+            "filter-only (no free text) searches."
+        ),
+    )
     snippet: str
     score: float = Field(
         description=(
@@ -48,7 +72,14 @@ class SearchHit(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Response from a full-text search."""
+    """Response from a full-text search.
+
+    next_cursor: pass back as SearchRequest.cursor for the next page; None
+    when the results are exhausted (or for filter-only searches, which page
+    by offset). Cursors freeze the result set at the first page, so items
+    ingested mid-pagination appear only in a fresh search.
+    """
 
     query: str
     hits: list[SearchHit]
+    next_cursor: str | None = None

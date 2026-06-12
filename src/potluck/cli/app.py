@@ -113,6 +113,12 @@ def search(
         )
     ),
     kinds: list[ItemKind] | None = typer.Option(None, "--kind", help="Filter by item kind."),
+    prefix: bool = typer.Option(
+        False, "--prefix", help="Search-as-you-type: the last token matches as a prefix."
+    ),
+    cursor: str | None = typer.Option(
+        None, "--cursor", help="Pagination cursor from a previous result (excludes --offset)."
+    ),
     limit: int = typer.Option(20, help="Maximum results to return (1-100)."),
     offset: int = typer.Option(0, help="Results offset."),
     as_json: bool = typer.Option(False, "--json", help="Print JSON output."),
@@ -120,9 +126,11 @@ def search(
     """Search items with full-text search."""
     ctx = create_context()
     try:
-        req = SearchRequest(query=query, kinds=kinds, limit=limit, offset=offset)
+        req = SearchRequest(
+            query=query, kinds=kinds, prefix=prefix, cursor=cursor, limit=limit, offset=offset
+        )
         resp = search_service.search(ctx, req)
-    except ValidationError as exc:
+    except (ValidationError, PotluckError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
@@ -150,6 +158,8 @@ def search(
         t.add_row(str(hit.id), hit.kind, ts_str, title_str, snippet_str)
 
     console.print(t)
+    if resp.next_cursor is not None:
+        console.print(f"more results: --cursor {resp.next_cursor}")
 
 
 @app.command("list")

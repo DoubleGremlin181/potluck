@@ -46,6 +46,8 @@ def create_mcp(ctx: AppContext | None = None) -> FastMCP:
     def search(
         query: str,
         kinds: list[ItemKind] | None = None,
+        prefix: bool = False,
+        cursor: str | None = None,
         limit: int = 20,
     ) -> SearchResponse:
         """Search the user's personal knowledge base by keywords.
@@ -57,11 +59,16 @@ def create_mcp(ctx: AppContext | None = None) -> FastMCP:
         free text: from:addr (or from:name prefix), source:name, kind:email,
         after:YYYY-MM-DD (inclusive), before:YYYY-MM-DD (exclusive). Returns
         ranked hits (best first) with bracketed [match] snippets; follow up
-        with get_item using a hit's id to read the full content. Use this
-        whenever the user asks about anything they may have written down,
-        saved, noted, or received by email.
+        with get_item using a hit's id to read the full content. Set
+        prefix=true to treat the last word as a prefix (partial words). When
+        next_cursor is non-null, pass it back as cursor for the next page.
+        Use this whenever the user asks about anything they may have written
+        down, saved, noted, or received by email.
         """
-        return search_service.search(context, SearchRequest(query=query, kinds=kinds, limit=limit))
+        return search_service.search(
+            context,
+            SearchRequest(query=query, kinds=kinds, prefix=prefix, cursor=cursor, limit=limit),
+        )
 
     @server.tool
     def list_items(
