@@ -1,1 +1,1 @@
-"""FTS5 query building, vector index protocol, hybrid RRF. Lands in P1."""
+"""Search layer: FTS5 query building, BM25 ranking, hybrid RRF (Phase 1+)."""

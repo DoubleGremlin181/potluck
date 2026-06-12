@@ -12,10 +12,10 @@ telemetry: nothing leaves your machine.
 | Phase | Shippable increment | Status |
 |---|---|---|
 | P0 Reset & Walking Skeleton | `potluck serve` zero-config: SPA shell; CLI/API/MCP answer stats from one service layer; bench rig + CI | ✅ `v1.0.0-alpha.1` |
-| P1 Storage Core & First Ingest | Google Keep from a Takeout zip; FTS search via CLI + MCP | — |
+| P1 Storage Core & First Ingest | Google Keep from a Takeout archive (zip/tgz/dir); FTS search via CLI + MCP | ✅ `v1.0.0-alpha.2` |
 | P2 Gmail at Scale & Search v1 | Multi-GB mbox ingested incrementally; filtered/snippeted search | — |
 | P3 MVP Interfaces | Real search/item/imports UI, MCP toolset v1 — **beta.1 = MVP** | — |
-| P4 Source Expansion & Automation | All v0 sources, watch-folder, scheduled GDrive pull | — |
+| P4 Source Expansion & Automation | Remaining planned sources, watch-folder, scheduled GDrive pull | — |
 | P5 Semantic Search | Unified embedding space, HNSW index, hybrid RRF | — |
 | P6 Vision & Media Enrichment | OCR, image embeddings, faces, media gallery | — |
 | P7 Linkers, People & Timeline | Related-items everywhere, people review, timeline | — |
@@ -71,15 +71,22 @@ stdio (Claude Desktop, Claude Code, …):
 
 Streamable HTTP instead: `potluck mcp --http` (default `127.0.0.1:8766`).
 
-P0 toolset: `get_stats`. Search and item tools land with P1.
+Toolset: `search` (keyword search with ranked, snippeted hits), `list_items`
+(browse/filter without a query), `get_item` (full content by id), `get_stats`
+(database overview). Richer MCP surface lands with P3.
 
 ## CLI
 
 ```text
-potluck status      database overview (counts, paths, versions)
-potluck serve       web app + API on one port (opens your browser)
-potluck mcp         MCP server (stdio; --http for streamable HTTP)
-potluck bench run   benchmark harness (smoke/full tiers)
+potluck import PATH  ingest an export (Google Takeout zip/tgz/dir; auto-detected)
+potluck search Q     full-text search (--kind, --limit, --json)
+potluck list         browse items without a query (--kind, --source, --since, --sort, --json)
+potluck show ID      full item content + metadata
+potluck status       database overview + per-import stats
+potluck serve        web app + API on one port (opens your browser)
+potluck mcp          MCP server (stdio; --http for streamable HTTP)
+potluck bench run    benchmark harness (smoke/full tiers)
+potluck dev          source-plugin scaffolding (new-source / check-source)
 ```
 
 Configuration is optional: defaults work out of the box. Override via `POTLUCK_*` env vars

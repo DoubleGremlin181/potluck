@@ -1,6 +1,6 @@
 [project]
 name = "potluck"
-version = "1.0.0a1"
+version = "1.0.0a2"
 description = "Privacy-first personal knowledge database for your AI — local-first, MCP-native"
 readme = "README.md"
 license = { text = "MIT" }
@@ -17,6 +17,7 @@ dependencies = [
     "fastmcp>=3",
     "platformdirs>=4.3",
     "httpx>=0.28",
+    "rich>=13",
 ]
 
 [project.scripts]
@@ -89,6 +90,7 @@ files = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [

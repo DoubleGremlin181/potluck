@@ -9,7 +9,7 @@ import random
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
-_WORDS = (
+WORDS = (
     "amber", "basil", "cedar", "dahlia", "ember", "fennel", "garnet", "hazel",
     "indigo", "juniper", "kelp", "lichen", "maple", "nutmeg", "ochre", "pepper",
     "quartz", "rowan", "saffron", "thyme", "umber", "violet", "walnut", "yarrow",
@@ -26,9 +26,9 @@ def synthetic_notes(count: int, seed: int = 42) -> Iterator[dict[str, str]]:
     rng = random.Random(seed)
     start = datetime(2020, 1, 1, tzinfo=UTC)
     for i in range(count):
-        title = " ".join(rng.choices(_WORDS, k=3)).title()
+        title = " ".join(rng.choices(WORDS, k=3)).title()
         sentences = [
-            " ".join(rng.choices(_WORDS, k=rng.randint(5, 12))).capitalize() + "."
+            " ".join(rng.choices(WORDS, k=rng.randint(5, 12))).capitalize() + "."
             for _ in range(rng.randint(1, 4))
         ]
         ts = (start + timedelta(minutes=i * 7 + rng.randint(0, 5))).isoformat()

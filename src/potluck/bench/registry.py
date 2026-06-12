@@ -16,12 +16,18 @@ class Scenario:
     ``run`` receives a private tmp directory and must be self-contained and
     deterministic in workload size. ``tier`` is the smallest tier that runs
     the scenario; smoke scenarios are included in full runs (smoke ⊆ full).
+
+    ``setup`` is optional untimed preparation that runs inside the temp-dir
+    block before the timer starts, once per repetition.  Use it for corpus
+    generation, pre-population, or any other work that should not be included
+    in the measured time.
     """
 
     name: str
     tier: Tier
     item_count: int
     run: Callable[[Path], None]
+    setup: Callable[[Path], None] | None = None
 
 
 def scenarios_for(tier: Tier, scenarios: list[Scenario]) -> list[Scenario]:

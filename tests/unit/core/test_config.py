@@ -38,3 +38,17 @@ def test_env_overrides_toml(isolated_dirs: Path, monkeypatch: pytest.MonkeyPatch
 def test_env_overrides_db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POTLUCK_DB_PATH", str(tmp_path / "custom.db"))
     assert Settings().db_path == tmp_path / "custom.db"
+
+
+def test_db_path_isolated_even_when_platformdirs_ignores_xdg(
+    isolated_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """platformdirs' Windows backend ignores XDG_DATA_HOME, so the test-suite
+    isolation must not rely on it — otherwise every ctx fixture on Windows
+    would resolve to the user's real %LOCALAPPDATA% database."""
+    import platformdirs
+
+    monkeypatch.setattr(
+        platformdirs, "user_data_dir", lambda *a, **k: "/real/windows/userdata"
+    )  # simulate XDG being ignored
+    assert Settings().db_path.is_relative_to(isolated_dirs)

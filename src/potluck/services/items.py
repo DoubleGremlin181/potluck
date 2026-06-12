@@ -1,0 +1,73 @@
+"""Items service: single-item retrieval and filtered listing."""
+
+from potluck.core.errors import ItemNotFoundError
+from potluck.models.items import (
+    Item,
+    ItemKind,
+    ItemSummary,
+    ListItemsRequest,
+    ListItemsResponse,
+)
+from potluck.services.context import AppContext
+from potluck.storage.items import dt_to_iso, get_item_row, iso_to_dt, list_item_rows, row_to_item
+
+
+def get_item(ctx: AppContext, item_id: int) -> Item:
+    """Fetch a single item by id.
+
+    Args:
+        ctx:     Application context carrying the open database.
+        item_id: Primary key of the item to retrieve.
+
+    Returns:
+        A fully-hydrated :class:`~potluck.models.items.Item` DTO.
+
+    Raises:
+        ItemNotFoundError: If no item with *item_id* exists.
+    """
+    with ctx.db.read() as conn:
+        result = get_item_row(conn, item_id)
+
+    if result is None:
+        raise ItemNotFoundError(f"item {item_id} not found")
+
+    row, source_name = result
+    return row_to_item(row, source_name)
+
+
+def list_items(ctx: AppContext, req: ListItemsRequest) -> ListItemsResponse:
+    """Browse items without a search query: filters, sorting, pagination.
+
+    Args:
+        ctx: Application context carrying the open database.
+        req: Filters (kinds, source names, ts range), sort order and page.
+             Unknown source names simply match nothing.
+
+    Returns:
+        One page of :class:`~potluck.models.items.ItemSummary` rows plus the
+        unpaginated total under the same filters.
+    """
+    with ctx.db.read() as conn:
+        rows, total = list_item_rows(
+            conn,
+            kinds=req.kinds,
+            sources=req.sources,
+            since_iso=dt_to_iso(req.since) if req.since is not None else None,
+            until_iso=dt_to_iso(req.until) if req.until is not None else None,
+            sort=req.sort,
+            limit=req.limit,
+            offset=req.offset,
+        )
+
+    items = [
+        ItemSummary(
+            id=int(row["id"]),
+            source=str(row["source_name"]),
+            kind=ItemKind(row["kind"]),
+            ts=iso_to_dt(row["ts"]) if row["ts"] is not None else None,
+            title=row["title"],
+            text_preview=row["text_preview"],
+        )
+        for row in rows
+    ]
+    return ListItemsResponse(items=items, total=total, limit=req.limit, offset=req.offset)

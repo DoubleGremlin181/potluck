@@ -25,5 +25,8 @@ Default run = unit tier only; `bench`, `e2e`, `browser` markers are excluded via
   `pytest -n auto` must always pass.
 - Reuse implementation code (services, `create_app`, `create_mcp`) — never
   reimplement behavior in tests.
-- `tests/fixtures/` may only contain synthetic generator output (see its README
-  once the PII guard lands with #110).
+- `tests/fixtures/` may only contain synthetic generator output; the PII guard
+  (`scripts/check_fixtures.py`) enforces this in pre-commit and CI.
+- Shared helpers in `tests/conftest.py`: `insert_source`/`insert_import` (raw
+  ledger rows for storage-level tests) and `ingest_keep_corpus` (imports a
+  synthetic Keep archive through the real service path).

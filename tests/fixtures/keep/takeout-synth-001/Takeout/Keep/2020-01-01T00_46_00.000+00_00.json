@@ -1,0 +1,36 @@
+{
+  "color": "DEFAULT",
+  "isTrashed": false,
+  "isPinned": false,
+  "isArchived": false,
+  "createdTimestampUsec": 1577839560000000,
+  "userEditedTimestampUsec": 0,
+  "title": "",
+  "listContent": [
+    {
+      "text": "ochre walnut valley dune umber zinnia",
+      "textHtml": "<p>ochre walnut valley dune umber zinnia</p>",
+      "isChecked": false
+    },
+    {
+      "text": "saffron prairie",
+      "textHtml": "<p>saffron prairie</p>",
+      "isChecked": false
+    },
+    {
+      "text": "pepper pepper ember brook cedar cedar",
+      "textHtml": "<p>pepper pepper ember brook cedar cedar</p>",
+      "isChecked": true
+    },
+    {
+      "text": "ember zinnia ember",
+      "textHtml": "<p>ember zinnia ember</p>",
+      "isChecked": false
+    },
+    {
+      "text": "ember ochre basil prairie zinnia fennel",
+      "textHtml": "<p>ember ochre basil prairie zinnia fennel</p>",
+      "isChecked": true
+    }
+  ]
+}

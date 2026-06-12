@@ -1,19 +1,59 @@
 {
   "tier": "full",
   "fingerprint": {
-    "platform": "Linux-6.17.0-1015-azure-x86_64-with-glibc2.39",
+    "platform": "Linux-6.17.0-1018-azure-x86_64-with-glibc2.39",
     "machine": "x86_64",
-    "python": "3.13.13",
+    "python": "3.13.14",
     "cpu_count": "4"
   },
   "results": [
     {
       "name": "meta_roundtrip_5k",
       "reps": 5,
-      "median_s": 0.1646,
-      "p95_s": 0.1727,
-      "throughput_items_s": 30379.0,
-      "peak_rss_kb": 92160
+      "median_s": 0.15947,
+      "p95_s": 0.167766,
+      "throughput_items_s": 31353.84,
+      "peak_rss_kb": 95540
+    },
+    {
+      "name": "ingest_keep_2k",
+      "reps": 5,
+      "median_s": 0.23383,
+      "p95_s": 0.237522,
+      "throughput_items_s": 8553.21,
+      "peak_rss_kb": 102420
+    },
+    {
+      "name": "ingest_keep_8k",
+      "reps": 5,
+      "median_s": 0.954564,
+      "p95_s": 1.004808,
+      "throughput_items_s": 8380.79,
+      "peak_rss_kb": 113516
+    },
+    {
+      "name": "ingest_keep_10k",
+      "reps": 5,
+      "median_s": 1.215378,
+      "p95_s": 1.220708,
+      "throughput_items_s": 8227.9,
+      "peak_rss_kb": 118896
+    },
+    {
+      "name": "reimport_noop_10k",
+      "reps": 5,
+      "median_s": 0.576028,
+      "p95_s": 0.577185,
+      "throughput_items_s": 17360.27,
+      "peak_rss_kb": 118940
+    },
+    {
+      "name": "search_fts_10k",
+      "reps": 5,
+      "median_s": 0.333577,
+      "p95_s": 0.338664,
+      "throughput_items_s": 299.78,
+      "peak_rss_kb": 119148
     }
   ]
 }

@@ -1,0 +1,19 @@
+{
+  "color": "DEFAULT",
+  "isTrashed": false,
+  "isPinned": false,
+  "isArchived": false,
+  "createdTimestampUsec": 1577843700000000,
+  "userEditedTimestampUsec": 1577847060000000,
+  "title": "Orchard Garnet Rowan",
+  "textContent": "Quartz quartz ochre dahlia ochre nutmeg saffron fjord pepper umber lichen valley ember summit.",
+  "textContentHtml": "<p>Quartz quartz ochre dahlia ochre nutmeg saffron fjord pepper umber lichen valley ember summit.</p>",
+  "annotations": [
+    {
+      "source": "WEBLINK",
+      "url": "https://example.com/kelp-summit",
+      "title": "Kelp Fennel",
+      "description": "Kelp fennel quartz summit meadow."
+    }
+  ]
+}
