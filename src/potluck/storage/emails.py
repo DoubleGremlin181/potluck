@@ -63,29 +63,36 @@ def resolve_email_parents(conn: sqlite3.Connection, source_id: int) -> int:
     id; self-replies and cross-source Message-ID collisions never link.
     Returns the number of rows linked.
     """
+    # Drive from the REPLIES, never per item. Two pathologies guarded here
+    # (both hit on a real 126k-email mbox; the plan is pinned by a test):
+    # 1. A correlated-subquery formulation probed every item per item — O(n²),
+    #    >10 minutes.
+    # 2. Even as one grouped join, without ANALYZE stats the planner drove
+    #    from items via idx_items_source_hash and probed the whole source per
+    #    reply (~9 minutes). CROSS JOIN is SQLite's documented join-order pin:
+    #    child (partial index on in_reply_to, O(replies)) → parent_sat by
+    #    message_id index → pi/ci by PK.
     cursor = conn.execute(
         """
         UPDATE items
-        SET parent_id = (
-            SELECT MIN(pi.id)
+        SET parent_id = links.parent_item_id
+        FROM (
+            SELECT child.item_id AS child_id, MIN(pi.id) AS parent_item_id
             FROM emails AS child
-            JOIN emails AS parent_sat ON parent_sat.message_id = child.in_reply_to
-            JOIN items  AS pi ON pi.id = parent_sat.item_id
-            WHERE child.item_id = items.id
-              AND pi.source_id = items.source_id
-              AND pi.id != items.id
-        )
-        WHERE items.source_id = ?
-          AND items.parent_id IS NULL
-          AND EXISTS (
-            SELECT 1
-            FROM emails AS child
-            JOIN emails AS parent_sat ON parent_sat.message_id = child.in_reply_to
-            JOIN items  AS pi ON pi.id = parent_sat.item_id
-            WHERE child.item_id = items.id
-              AND pi.source_id = items.source_id
-              AND pi.id != items.id
-          )
+            CROSS JOIN emails AS parent_sat
+            CROSS JOIN items AS pi
+            CROSS JOIN items AS ci
+            WHERE child.in_reply_to IS NOT NULL
+              AND parent_sat.message_id = child.in_reply_to
+              AND pi.id = parent_sat.item_id
+              AND ci.id = child.item_id
+              AND ci.source_id = ?
+              AND ci.parent_id IS NULL
+              AND pi.source_id = ci.source_id
+              AND pi.id != child.item_id
+            GROUP BY child.item_id
+        ) AS links
+        WHERE items.id = links.child_id
         """,
         (source_id,),
     )

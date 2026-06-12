@@ -205,3 +205,86 @@ def test_list_thread_rows_ordered_by_ts(ctx: AppContext) -> None:
         return [late, early, undated]
 
     ctx.db.write(_go)
+
+
+def test_resolve_parents_scales_with_replies_not_items(ctx: AppContext) -> None:
+    """Real-data regression (126k-email mbox): the reconciliation must drive
+    from the replies (partial index on in_reply_to), never correlate per item.
+    The O(n^2) plan this guards against took >10 minutes at 126k; the fixed
+    set-based pass is sub-second at this test's 20k."""
+    import time
+
+    def _seed(conn: sqlite3.Connection) -> None:
+        sid = insert_source(conn)
+        iid = insert_import(conn, sid)
+        conn.executemany(
+            """INSERT INTO items (source_id, import_id, kind, external_id, content_hash)
+               VALUES (?, ?, 'email', ?, ?)""",
+            [(sid, iid, f"e{n}", f"h{n}") for n in range(20_000)],
+        )
+        # satellite rows: every 100th message is a reply to the previous one
+        conn.executemany(
+            """INSERT INTO emails (item_id, message_id, in_reply_to, thread_key,
+                                   to_json, cc_json, labels_json)
+               VALUES (?, ?, ?, ?, '[]', '[]', '[]')""",
+            [
+                (
+                    n + 1,
+                    f"m{n}",
+                    f"m{n - 1}" if n % 100 == 99 else None,
+                    f"m{n - (n % 100)}",
+                )
+                for n in range(20_000)
+            ],
+        )
+
+    ctx.db.write(_seed)
+
+    def _resolve(conn: sqlite3.Connection) -> tuple[int, float]:
+        started = time.perf_counter()
+        resolved = resolve_email_parents(conn, 1)
+        return resolved, time.perf_counter() - started
+
+    resolved, elapsed = ctx.db.write(_resolve)
+    assert resolved == 200
+    assert elapsed < 5.0, f"parent resolution took {elapsed:.1f}s at 20k items — O(n^2) plan?"
+
+
+def test_resolve_parents_plan_is_reply_driven(ctx: AppContext) -> None:
+    """Pin the join order: the link subquery must start from the replies
+    (partial in_reply_to index) and reach every other table by PK or the
+    message_id index — NEVER a per-reply scan of items via the source index.
+    (The planner chose exactly that without ANALYZE stats on a real 126k DB.)"""
+
+    def _plan(conn: sqlite3.Connection) -> list[str]:
+        insert_source(conn)
+        rows = conn.execute(
+            """
+            EXPLAIN QUERY PLAN
+            SELECT child.item_id AS child_id, MIN(pi.id) AS parent_item_id
+            FROM emails AS child
+            CROSS JOIN emails AS parent_sat
+            CROSS JOIN items AS pi
+            CROSS JOIN items AS ci
+            WHERE child.in_reply_to IS NOT NULL
+              AND parent_sat.message_id = child.in_reply_to
+              AND pi.id = parent_sat.item_id
+              AND ci.id = child.item_id
+              AND ci.source_id = 1
+              AND ci.parent_id IS NULL
+              AND pi.source_id = ci.source_id
+              AND pi.id != child.item_id
+            GROUP BY child.item_id
+            """
+        ).fetchall()
+        return [str(r[3]) for r in rows]
+
+    plan = ctx.db.write(_plan)
+    text = "\n".join(plan)
+    # The driver is one linear pass over emails (SCAN child or the partial
+    # in_reply_to index — both O(n) ONCE); everything downstream must be an
+    # indexed lookup. "SCAN pi/ci/parent_sat" would mean per-reply table scans.
+    assert plan[0].startswith(("SCAN child", "SEARCH child")), text
+    assert "SEARCH parent_sat USING COVERING INDEX idx_emails_message_id" in text, text
+    assert "SEARCH pi USING INTEGER PRIMARY KEY" in text, text
+    assert "SEARCH ci USING INTEGER PRIMARY KEY" in text, text
