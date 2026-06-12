@@ -75,3 +75,12 @@ def test_golden_reimport_is_noop(ctx: AppContext) -> None:
     assert run2.items_new == 0
     assert run2.items_duplicate == GOLDEN_COUNT
     assert run2.items_updated == 0
+
+
+def test_golden_from_names_persisted(ctx: AppContext) -> None:
+    """#199: the generator emits 'Name <addr>' on From — names must land."""
+    import_path(ctx, FIXTURE)
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT from_name, from_addr FROM emails").fetchall()
+    assert all(r["from_addr"] for r in rows)
+    assert any(r["from_name"] for r in rows), "expected display names from the fixture"

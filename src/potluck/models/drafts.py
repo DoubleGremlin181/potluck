@@ -64,8 +64,12 @@ class EmailDraft(BaseDraft):
     in_reply_to: str | None = None
     thread_key: str
     from_addr: str | None = None
+    from_name: str | None = None
     to_addrs: tuple[str, ...] = ()
+    to_names: tuple[str, ...] = ()  # positionally aligned with to_addrs; "" = no name
     cc_addrs: tuple[str, ...] = ()
+    cc_names: tuple[str, ...] = ()
+    bcc_addrs: tuple[str, ...] = ()
     labels: tuple[str, ...] = ()
     attachments: tuple[EmailAttachment, ...] = ()
 
@@ -77,8 +81,12 @@ class EmailDraft(BaseDraft):
             self.in_reply_to or "",
             self.thread_key,
             self.from_addr or "",
+            self.from_name or "",
             "\x1f".join(self.to_addrs),
+            "\x1f".join(self.to_names),
             "\x1f".join(self.cc_addrs),
+            "\x1f".join(self.cc_names),
+            "\x1f".join(self.bcc_addrs),
             "\x1f".join(self.labels),
             "\x1f".join(a.sha256 for a in self.attachments),
         )

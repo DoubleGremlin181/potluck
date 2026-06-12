@@ -29,7 +29,8 @@ def sanitize_query(raw: str, *, prefix: bool = False) -> str | None:
     input can never produce an FTS syntax error.
 
     ``prefix=True`` is search-as-you-type mode: the LAST token matches as a
-    prefix (``"tok"*`` — served by the table's ``prefix='2 3'`` indexes);
+    prefix (``"tok"*`` — served by FTS5 term-range scans; dedicated prefix
+    indexes were dropped in migration 007 for write speed and index size);
     earlier tokens stay exact.
 
     Phrase search is NOT supported (v1 semantics): quoted input such as

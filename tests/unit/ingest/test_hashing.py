@@ -141,3 +141,27 @@ def test_email_thread_key_changes_hash() -> None:
     d1 = EmailDraft(thread_key="a", title="s")
     d2 = EmailDraft(thread_key="b", title="s")
     assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_from_name_change_changes_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    d1 = EmailDraft(thread_key="tk", from_addr="a@potluck.test", from_name="Alice")
+    d2 = EmailDraft(thread_key="tk", from_addr="a@potluck.test", from_name="Alicia")
+    assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_bcc_change_changes_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    d1 = EmailDraft(thread_key="tk", bcc_addrs=("x@potluck.test",))
+    d2 = EmailDraft(thread_key="tk", bcc_addrs=())
+    assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_to_names_vs_cc_names_distinct_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    d1 = EmailDraft(thread_key="tk", to_addrs=("x@potluck.test",), to_names=("X",))
+    d2 = EmailDraft(thread_key="tk", to_addrs=("x@potluck.test",), cc_names=("X",))
+    assert content_hash(d1) != content_hash(d2)

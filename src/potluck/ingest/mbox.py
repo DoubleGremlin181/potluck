@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import IO, Final
 
 from potluck.ingest.htmltext import html_to_text
+from potluck.ingest.textclean import clean_text
 
 _PARSER: Final = email.parser.BytesParser(policy=email.policy.default)
 
@@ -71,8 +72,12 @@ class ParsedEmail:
     in_reply_to: str | None
     references: tuple[str, ...]
     from_addr: str | None
+    from_name: str | None
     to_addrs: tuple[str, ...]
+    to_names: tuple[str, ...]  # positionally aligned with to_addrs; "" = no display name
     cc_addrs: tuple[str, ...]
+    cc_names: tuple[str, ...]
+    bcc_addrs: tuple[str, ...]
     subject: str | None
     date: datetime | None
     text: str
@@ -97,13 +102,14 @@ def _msgid_list(raw: str | None) -> tuple[str, ...]:
     return tuple(i for i in ids if i is not None)
 
 
-def _addresses(msg: email.message.Message, name: str) -> tuple[str, ...]:
+def _address_pairs(msg: email.message.Message, name: str) -> tuple[tuple[str, str], ...]:
+    """(display_name, lowercased_addr) per mailbox; name is "" when absent."""
     try:
         values = [str(v) for v in msg.get_all(name, [])]
     except Exception:  # noqa: BLE001 — see _header
         return ()
     pairs = email.utils.getaddresses(values)
-    return tuple(addr.lower() for _, addr in pairs if addr)
+    return tuple((display, addr.lower()) for display, addr in pairs if addr)
 
 
 def _date(msg: email.message.Message) -> datetime | None:
@@ -196,16 +202,26 @@ def parse_email(
         text = html_to_text(html)
     else:
         text = plain or ""
+    # Cleanup before ParsedEmail construction: fingerprints, content hashes,
+    # and the stored/indexed text all see the same cleaned body (#199).
+    text = clean_text(text)
 
     in_reply_to = _msgid_list(_header(msg, "In-Reply-To"))
+    sender = next(iter(_address_pairs(msg, "From")), None)
+    to_pairs = _address_pairs(msg, "To")
+    cc_pairs = _address_pairs(msg, "Cc")
 
     return ParsedEmail(
         message_id=normalize_msgid(_header(msg, "Message-ID")),
         in_reply_to=in_reply_to[0] if in_reply_to else None,
         references=_msgid_list(_header(msg, "References")),
-        from_addr=next(iter(_addresses(msg, "From")), None),
-        to_addrs=_addresses(msg, "To"),
-        cc_addrs=_addresses(msg, "Cc"),
+        from_addr=sender[1] if sender else None,
+        from_name=(sender[0] or None) if sender else None,
+        to_addrs=tuple(addr for _, addr in to_pairs),
+        to_names=tuple(display for display, _ in to_pairs),
+        cc_addrs=tuple(addr for _, addr in cc_pairs),
+        cc_names=tuple(display for display, _ in cc_pairs),
+        bcc_addrs=tuple(addr for _, addr in _address_pairs(msg, "Bcc")),
         subject=_header(msg, "Subject"),
         date=_date(msg),
         text=text,

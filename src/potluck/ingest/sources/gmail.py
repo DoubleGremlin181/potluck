@@ -80,8 +80,12 @@ def _to_draft(parsed: ParsedEmail, seen_msgids: dict[str, int]) -> EmailDraft:
         in_reply_to=parsed.in_reply_to,
         thread_key=thread_key,
         from_addr=parsed.from_addr,
+        from_name=parsed.from_name,
         to_addrs=parsed.to_addrs,
+        to_names=parsed.to_names,
         cc_addrs=parsed.cc_addrs,
+        cc_names=parsed.cc_names,
+        bcc_addrs=parsed.bcc_addrs,
         labels=parsed.labels,
         attachments=tuple(
             EmailAttachment(
@@ -99,7 +103,9 @@ def _to_draft(parsed: ParsedEmail, seen_msgids: dict[str, int]) -> EmailDraft:
     name="gmail",
     detect=Glob("*Mail/*.mbox"),
     kinds=(ItemKind.EMAIL,),
-    parser_version=1,
+    # v2 (#199): body text cleanup + from_name/to_names/cc_names/bcc fields —
+    # content hashes changed, so existing archives re-ingest (updates in place).
+    parser_version=2,
 )
 def parse(archive: Archive, ctx: ParseContext) -> Iterator[EmailDraft]:
     """Yield EmailDrafts from every Mail mbox member, streaming.

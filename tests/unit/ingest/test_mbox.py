@@ -362,3 +362,47 @@ def test_payload_sink_receives_attachment_bytes() -> None:
     )
     assert received == [(hashlib.sha256(ATTACHMENT_PAYLOAD).hexdigest(), ATTACHMENT_PAYLOAD)]
     assert parsed.attachments[0].sha256 == received[0][0]
+
+
+# ---------------------------------------------------------------------------
+# parse_email — body cleanup (#199) and name/bcc fields
+# ---------------------------------------------------------------------------
+
+
+def test_parse_body_junk_run_truncated() -> None:
+    parsed = parse_email(
+        _msg(b"Subject: x", b"Content-Type: text/plain", b"", b"intro " + b"x" * 200 + b" outro")
+    )
+    assert "x" * 80 in parsed.text
+    assert "x" * 81 not in parsed.text
+    assert "outro" in parsed.text
+
+
+def test_parse_body_zero_width_stripped() -> None:
+    parsed = parse_email(_msg(b"Content-Type: text/plain; charset=UTF-8", b"", "he​llo".encode()))
+    assert parsed.text.strip() == "hello"
+
+
+def test_parse_display_names() -> None:
+    parsed = parse_email(BASIC)
+    assert parsed.from_name == "Alice Example"
+    assert parsed.to_names == ("Bob", "")
+    assert parsed.cc_names == ("",)
+
+
+def test_parse_rfc2047_display_name_decoded() -> None:
+    parsed = parse_email(_msg(b"From: =?utf-8?q?Caf=C3=A9_Crew?= <crew@potluck.test>", b"", b"x"))
+    assert parsed.from_name == "Café Crew"
+    assert parsed.from_addr == "crew@potluck.test"
+
+
+def test_parse_bcc_addresses() -> None:
+    parsed = parse_email(_msg(b"Bcc: Eve <EVE@potluck.test>, frank@example.com", b"", b"x"))
+    assert parsed.bcc_addrs == ("eve@potluck.test", "frank@example.com")
+
+
+def test_parse_missing_names_and_bcc() -> None:
+    parsed = parse_email(_msg(b"From: nameless@potluck.test", b"", b"x"))
+    assert parsed.from_name is None
+    assert parsed.bcc_addrs == ()
+    assert parsed.to_names == ()

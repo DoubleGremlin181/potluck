@@ -26,7 +26,7 @@ def _parsed(*lines: bytes) -> EmailDraft:
 def test_plugin_registered() -> None:
     plugin = discover()["gmail"]
     assert plugin.kinds == (ItemKind.EMAIL,)
-    assert plugin.parser_version == 1
+    assert plugin.parser_version == 2  # 199: text cleanup + name/bcc fields changed content hashes
 
 
 def test_detects_gmail_takeout(tmp_path: Path) -> None:
@@ -160,3 +160,19 @@ def test_corrupt_message_logged_and_skipped(tmp_path: Path, caplog: object) -> N
     with caplog.at_level(logging.WARNING):
         drafts = list(parse(open_archive(archive_path), ParseContext()))
     assert len(drafts) == 3
+
+
+def test_draft_carries_names_and_bcc() -> None:
+    draft = _parsed(
+        b"Message-ID: <names@potluck.test>",
+        b"From: Alice A <a@potluck.test>",
+        b"To: Bob B <b@potluck.test>, c@potluck.test",
+        b"Cc: Dee <d@potluck.test>",
+        b"Bcc: e@potluck.test",
+        b"",
+        b"body",
+    )
+    assert draft.from_name == "Alice A"
+    assert draft.to_names == ("Bob B", "")
+    assert draft.cc_names == ("Dee",)
+    assert draft.bcc_addrs == ("e@potluck.test",)

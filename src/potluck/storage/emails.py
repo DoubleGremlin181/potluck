@@ -23,6 +23,11 @@ class EmailRow(NamedTuple):
     to_json: str
     cc_json: str
     labels_json: str
+    # #199 additions default for older call sites; column order matches INSERT.
+    from_name: str | None = None
+    to_names_json: str = "[]"
+    cc_names_json: str = "[]"
+    bcc_json: str = "[]"
 
 
 def draft_to_email_row(draft: EmailDraft, item_id: int) -> EmailRow:
@@ -36,6 +41,10 @@ def draft_to_email_row(draft: EmailDraft, item_id: int) -> EmailRow:
         to_json=json.dumps(list(draft.to_addrs)),
         cc_json=json.dumps(list(draft.cc_addrs)),
         labels_json=json.dumps(list(draft.labels)),
+        from_name=draft.from_name,
+        to_names_json=json.dumps(list(draft.to_names)),
+        cc_names_json=json.dumps(list(draft.cc_names)),
+        bcc_json=json.dumps(list(draft.bcc_addrs)),
     )
 
 
@@ -48,8 +57,9 @@ def insert_emails(conn: sqlite3.Connection, rows: Sequence[EmailRow]) -> None:
     conn.executemany(
         """INSERT OR REPLACE INTO emails
                (item_id, message_id, in_reply_to, thread_key, from_addr,
-                to_json, cc_json, labels_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                to_json, cc_json, labels_json,
+                from_name, to_names_json, cc_names_json, bcc_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
 

@@ -288,3 +288,33 @@ def test_resolve_parents_plan_is_reply_driven(ctx: AppContext) -> None:
     assert "SEARCH parent_sat USING COVERING INDEX idx_emails_message_id" in text, text
     assert "SEARCH pi USING INTEGER PRIMARY KEY" in text, text
     assert "SEARCH ci USING INTEGER PRIMARY KEY" in text, text
+
+
+def test_email_row_round_trips_names_and_bcc(ctx: AppContext) -> None:
+    """#199: display names and bcc persist alongside the existing addr lists."""
+    draft = EmailDraft(
+        thread_key="tk",
+        from_addr="alice@potluck.test",
+        from_name="Alice A",
+        to_addrs=("bob@potluck.test", "carol@example.com"),
+        to_names=("Bob B", ""),
+        cc_addrs=("dave@potluck.test",),
+        cc_names=("Dee",),
+        bcc_addrs=("eve@potluck.test",),
+    )
+
+    def _go(conn: sqlite3.Connection) -> sqlite3.Row:
+        sid = insert_source(conn)
+        iid = insert_import(conn, sid)
+        item_id = insert_item(conn, sid, iid, content_hash="h1", kind="email")
+        insert_emails(conn, [draft_to_email_row(draft, item_id)])
+        row: sqlite3.Row = conn.execute(
+            "SELECT from_name, to_names_json, cc_names_json, bcc_json FROM emails"
+        ).fetchone()
+        return row
+
+    row = ctx.db.write(_go)
+    assert row["from_name"] == "Alice A"
+    assert json.loads(row["to_names_json"]) == ["Bob B", ""]
+    assert json.loads(row["cc_names_json"]) == ["Dee"]
+    assert json.loads(row["bcc_json"]) == ["eve@potluck.test"]
