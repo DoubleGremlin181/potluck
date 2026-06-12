@@ -1,4 +1,4 @@
-"""Tests for potluck.ingest.plugins: Glob, SourcePlugin, source, discover, detect_source."""
+"""Tests for potluck.ingest.plugins: Glob, SourcePlugin, source, discover, detect_sources."""
 
 from collections.abc import Iterator
 from typing import IO, Any
@@ -16,7 +16,7 @@ from potluck.models.items import ItemKind
 
 
 class FakeArchive:
-    """Minimal Archive stub for testing detect_source."""
+    """Minimal Archive stub for testing detect_sources."""
 
     def __init__(self, names: list[str]) -> None:
         self._names = names
@@ -112,56 +112,48 @@ def test_duplicate_name_raises(clean_registry: dict[str, Any]) -> None:
             yield from notes
 
 
-def test_detect_source_first_hit(clean_registry: dict[str, Any]) -> None:
-    from potluck.ingest.plugins import Glob, detect_source, source
+def test_detect_sources_collects_all_matches(clean_registry: dict[str, Any]) -> None:
+    """#195: combined archives (Keep+Mail) must surface EVERY matching plugin."""
+    from potluck.ingest.plugins import Glob, detect_sources, source
 
-    # aaa_plugin (sorted first): matches *Takeout/*.json
-    @source(name="aaa_plugin", detect=Glob("*Takeout/*.json"), kinds=(ItemKind.NOTE,))
-    def parse_aaa(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+    @source(name="zzz_mail", detect=Glob("*Mail/*.mbox"), kinds=(ItemKind.EMAIL,))
+    def parse_mail(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 
-    # zzz_plugin (sorted last): matches *Keep/*.json — overlaps with aaa_plugin on
-    # members that satisfy both globs (e.g. "Takeout/Keep/x.json") to exercise
-    # lexicographic tie-breaking.
-    @source(name="zzz_plugin", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,))
-    def parse_zzz(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+    @source(name="aaa_keep", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,))
+    def parse_keep(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 
-    # Archive with a name matching aaa_plugin only; aaa_plugin wins (only match)
-    archive = FakeArchive(["a.txt", "Takeout/Keep/x.json"])
-    result = detect_source(archive)
-    assert result is not None
-    assert result.name == "aaa_plugin"
-
-    # Tie-breaking: "Takeout/Keep/x.json" matches BOTH plugins; the
-    # lexicographically smaller name (aaa_plugin < zzz_plugin) must win.
-    tie_archive = FakeArchive(["Takeout/Keep/x.json"])
-    tie_result = detect_source(tie_archive)
-    assert tie_result is not None
-    assert tie_result.name == "aaa_plugin", (
-        f"Expected aaa_plugin (lex-first) but got '{tie_result.name}'"
+    combined = FakeArchive(
+        ["Takeout/Mail/All mail.mbox", "Takeout/Keep/x.json", "Takeout/Other/y.txt"]
     )
+    result = detect_sources(combined)
+    # deterministic run order: sorted by plugin name
+    assert [p.name for p in result] == ["aaa_keep", "zzz_mail"]
 
-    # Archive with no matching names → None
-    assert detect_source(FakeArchive(["README.md", "data.csv"])) is None
+    single = FakeArchive(["Takeout/Keep/x.json"])
+    assert [p.name for p in detect_sources(single)] == ["aaa_keep"]
+
+    # Archive with no matching names -> empty list
+    assert detect_sources(FakeArchive(["README.md", "data.csv"])) == []
 
 
-def test_detect_single_pass_early_exit(clean_registry: dict[str, Any]) -> None:
-    from potluck.ingest.plugins import Glob, detect_source, source
+def test_detect_sources_single_pass_early_exit(clean_registry: dict[str, Any]) -> None:
+    """Iteration stops as soon as every registered plugin has matched."""
+    from potluck.ingest.plugins import Glob, detect_sources, source
 
     @source(name="early_exit_plugin", detect=Glob("match.txt"), kinds=(ItemKind.NOTE,))
     def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
         notes: list[NoteDraft] = []
         yield from notes
 
-    # Matching name is first — iteration should stop after serving exactly 1 name
+    # The only registered plugin matches the first name — stop after 1 name.
     counting = CountingArchive(["match.txt", "second.txt", "third.txt"])
-    result = detect_source(counting)
+    result = detect_sources(counting)
 
-    assert result is not None
-    assert result.name == "early_exit_plugin"
+    assert [p.name for p in result] == ["early_exit_plugin"]
     assert counting.served == 1, (
         f"Expected early exit after 1 archive name, got {counting.served} served"
     )

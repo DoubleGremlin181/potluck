@@ -22,7 +22,7 @@ def test_fixture_exists() -> None:
 
 
 def test_golden_import_counts(ctx: AppContext) -> None:
-    run = import_path(ctx, FIXTURE)
+    [run] = import_path(ctx, FIXTURE)
     assert run.source == "gmail"
     assert run.status == "completed"
     assert run.items_new == GOLDEN_COUNT
@@ -71,7 +71,7 @@ def test_golden_identities_stable(ctx: AppContext) -> None:
 
 def test_golden_reimport_is_noop(ctx: AppContext) -> None:
     import_path(ctx, FIXTURE)
-    run2 = import_path(ctx, FIXTURE)
+    [run2] = import_path(ctx, FIXTURE)
     assert run2.items_new == 0
     assert run2.items_duplicate == GOLDEN_COUNT
     assert run2.items_updated == 0

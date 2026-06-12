@@ -70,10 +70,10 @@ def import_(
     path: Path = typer.Argument(help="Path to the archive or directory to import."),
     as_json: bool = typer.Option(False, "--json", help="Print JSON output."),
 ) -> None:
-    """Import data from an archive or directory."""
+    """Import data from an archive or directory (every detected source)."""
     ctx = create_context()
     try:
-        run = imports_service.import_path(ctx, path)
+        runs = imports_service.import_path(ctx, path)
     except PotluckError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -81,25 +81,26 @@ def import_(
         ctx.db.close()
 
     if as_json:
-        print(run.model_dump_json(indent=2))
+        print(_json.dumps([_json.loads(run.model_dump_json()) for run in runs], indent=2))
         return
 
-    duration_s: float | None = None
-    if run.finished_at is not None:
-        duration_s = (run.finished_at - run.started_at).total_seconds()
+    for run in runs:
+        duration_s: float | None = None
+        if run.finished_at is not None:
+            duration_s = (run.finished_at - run.started_at).total_seconds()
 
-    t = Table(show_header=True, header_style="bold")
-    t.add_column("Field")
-    t.add_column("Value")
-    t.add_row("source", run.source)
-    t.add_row("status", run.status)
-    t.add_row("items_new", str(run.items_new))
-    t.add_row("items_duplicate", str(run.items_duplicate))
-    t.add_row("items_updated", str(run.items_updated))
-    t.add_row("items_skipped", str(run.items_skipped))
-    t.add_row("duration", f"{duration_s:.2f}s" if duration_s is not None else "-")
-    t.add_row("path", run.path)
-    console.print(t)
+        t = Table(show_header=True, header_style="bold")
+        t.add_column("Field")
+        t.add_column("Value")
+        t.add_row("source", run.source)
+        t.add_row("status", run.status)
+        t.add_row("items_new", str(run.items_new))
+        t.add_row("items_duplicate", str(run.items_duplicate))
+        t.add_row("items_updated", str(run.items_updated))
+        t.add_row("items_skipped", str(run.items_skipped))
+        t.add_row("duration", f"{duration_s:.2f}s" if duration_s is not None else "-")
+        t.add_row("path", run.path)
+        console.print(t)
 
 
 @app.command()

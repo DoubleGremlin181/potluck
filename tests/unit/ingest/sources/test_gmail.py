@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from potluck.ingest.mbox import parse_email
-from potluck.ingest.plugins import ParseContext, detect_source, discover
+from potluck.ingest.plugins import ParseContext, detect_sources, discover
 from potluck.ingest.readers import open_archive
 from potluck.ingest.sources.gmail import _to_draft, parse
 from potluck.models.drafts import EmailDraft
@@ -31,8 +31,8 @@ def test_plugin_registered() -> None:
 
 def test_detects_gmail_takeout(tmp_path: Path) -> None:
     archive_path = write_gmail_takeout(tmp_path / "takeout", 5, seed=7)
-    plugin = detect_source(open_archive(archive_path))
-    assert plugin is not None and plugin.name == "gmail"
+    plugins = detect_sources(open_archive(archive_path))
+    assert [p.name for p in plugins] == ["gmail"]
 
 
 # ---------------------------------------------------------------------------

@@ -47,7 +47,7 @@ def test_import_path_end_to_end(
         fmt="zip",
     )
 
-    run = import_path(ctx, zip_path)
+    [run] = import_path(ctx, zip_path)
 
     assert run.status == "completed"
     assert run.source == "toy_src"
@@ -149,3 +149,53 @@ def test_list_imports(ctx: AppContext, tmp_path: Path, clean_registry: dict[str,
     limited = list_imports(ctx, limit=1)
     assert len(limited) == 1
     assert limited[0].source == "list_src_b"
+
+
+# ---------------------------------------------------------------------------
+# #195: combined archives import every matching source
+# ---------------------------------------------------------------------------
+
+
+def test_combined_takeout_imports_all_products(ctx: AppContext, tmp_path: Path) -> None:
+    """One zip holding Keep AND Mail yields one ImportRun per source, with
+    per-source ledger rows and both item sets present (real plugins)."""
+    import json as _json
+
+    from potluck.services.imports import import_path
+    from potluck.testing.keep import synthetic_keep_notes
+    from potluck.testing.mbox import MBOX_MEMBER, synthetic_mbox_messages
+
+    note = next(iter(synthetic_keep_notes(1, seed=5)))
+    members = {
+        "Takeout/Keep/note1.json": _json.dumps(note).encode(),
+        MBOX_MEMBER: b"".join(synthetic_mbox_messages(3, seed=5)),
+    }
+    zip_path = write_archive(tmp_path / "combined.zip", members, fmt="zip")
+
+    runs = import_path(ctx, zip_path)
+
+    assert [r.source for r in runs] == ["gmail", "google_keep"]
+    assert all(r.status == "completed" for r in runs)
+    by_source = {r.source: r for r in runs}
+    assert by_source["gmail"].items_new == 3
+    assert by_source["google_keep"].items_new == 1
+
+    with ctx.db.read() as conn:
+        kinds = {
+            str(r[0]): int(r[1])
+            for r in conn.execute("SELECT kind, COUNT(*) FROM items GROUP BY kind").fetchall()
+        }
+        ledger = conn.execute("SELECT COUNT(*) FROM imports").fetchone()[0]
+    assert kinds == {"email": 3, "note": 1}
+    assert ledger == 2
+
+
+def test_single_source_archive_returns_one_run(ctx: AppContext, tmp_path: Path) -> None:
+    from potluck.services.imports import import_path
+    from potluck.testing.mbox import write_gmail_takeout
+
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 4, seed=5)
+    runs = import_path(ctx, archive_path)
+    assert len(runs) == 1
+    assert runs[0].source == "gmail"
+    assert runs[0].items_new == 4

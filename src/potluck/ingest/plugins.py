@@ -146,23 +146,27 @@ def discover() -> dict[str, SourcePlugin]:
 # ---------------------------------------------------------------------------
 
 
-def detect_source(archive: Archive) -> SourcePlugin | None:
-    """Single sequential pass over archive names; return the first matching plugin.
+def detect_sources(archive: Archive) -> list[SourcePlugin]:
+    """Single sequential pass over archive names; return EVERY matching plugin.
 
-    Precedence rules:
-    - The first archive member (in archive order) to match any plugin wins.
-    - If one member matches multiple plugins, the lexicographically smallest
-      plugin name is returned.
+    A combined Takeout (Keep + Mail in one archive) surfaces every product it
+    contains — the import layer runs one import per matched plugin (#195).
+    Returned sorted by plugin name for a deterministic run order; empty list
+    when nothing matches.
 
-    Returns None when no plugin recognises the archive.
-    Tar-friendly: a single sequential walk with early exit.
+    Tar-friendly: one sequential walk, exiting early once every registered
+    plugin has matched.
     """
     plugins = discover()
-    sorted_names = sorted(plugins.keys())
+    remaining = dict(sorted(plugins.items()))
+    matched: list[SourcePlugin] = []
 
     for archive_name in archive.iter_names():
-        for plugin_name in sorted_names:
-            if plugins[plugin_name].detect.matches(archive_name):
-                return plugins[plugin_name]
+        for name in list(remaining):
+            if remaining[name].detect.matches(archive_name):
+                matched.append(remaining.pop(name))
+        if not remaining:
+            break
 
-    return None
+    matched.sort(key=lambda plugin: plugin.name)
+    return matched
