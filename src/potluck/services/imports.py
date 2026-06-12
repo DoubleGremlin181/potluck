@@ -14,11 +14,12 @@ from pathlib import Path
 from potluck.core.errors import UnknownSourceError, UnsupportedArchiveError
 from potluck.ingest.engine import run_import
 from potluck.ingest.hashing import file_hash as _file_hash
-from potluck.ingest.plugins import ParseContext, detect_sources, discover
+from potluck.ingest.plugins import ParseContext, detect_sources, discover, registry_fingerprint
 from potluck.ingest.readers import MultiPartArchive, open_archive
 from potluck.models.imports import ImportRun
 from potluck.services.context import AppContext
 from potluck.storage import imports as _storage_imports
+from potluck.storage import scans as _storage_scans
 
 _logger = logging.getLogger(__name__)
 
@@ -46,23 +47,46 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
     try:
         archive = open_archive(path)
 
+        # Hash FIRST (raw read, no decompression — ~3 s for a 3.8 GB file):
+        # it keys both the detection cache and the per-source ledger
+        # short-circuit. Detection itself costs a full decompression pass for
+        # tgz (~73 s measured on a real Takeout), and is a pure function of
+        # (archive bytes, registered globs) — so a cached outcome for this
+        # exact (file_hash, registry fingerprint) skips the scan entirely.
         started = time.perf_counter()
-        plugins = detect_sources(archive)
-        detect_s = time.perf_counter() - started
+        fhash: str | None = _file_hash(path) if path.is_file() else None
+        hash_s = time.perf_counter() - started
+
+        registry = discover()
+        registry_fp = registry_fingerprint(registry)
+        cached_names: list[str] | None = None
+        if fhash is not None:
+            with ctx.db.read() as conn:
+                cached_names = _storage_scans.get_scan(conn, fhash, registry_fp)
+
+        started = time.perf_counter()
+        if cached_names is not None:
+            plugins = [registry[name] for name in cached_names]
+            detect_note = "cached"
+        else:
+            plugins = detect_sources(archive)
+            detect_note = f"{time.perf_counter() - started:.2f}s"
+            if fhash is not None:
+                matched_names = [p.name for p in plugins]
+                ctx.db.write(
+                    lambda conn: _storage_scans.record_scan(conn, fhash, registry_fp, matched_names)
+                )
         if not plugins:
-            registered = ", ".join(sorted(discover())) or "(none)"
+            registered = ", ".join(sorted(registry)) or "(none)"
             raise UnknownSourceError(
                 f"no source plugin recognises '{path}'; registered sources: {registered}"
             )
 
-        started = time.perf_counter()
-        fhash: str | None = _file_hash(path) if path.is_file() else None
-        hash_s = time.perf_counter() - started
         _logger.info(
-            "import %s: detected %s (detect %.2fs, file-hash %.2fs)",
+            "import %s: detected %s (detect %s, file-hash %.2fs)",
             path,
             ", ".join(p.name for p in plugins),
-            detect_s,
+            detect_note,
             hash_s,
         )
 

@@ -170,3 +170,18 @@ def detect_sources(archive: Archive) -> list[SourcePlugin]:
 
     matched.sort(key=lambda plugin: plugin.name)
     return matched
+
+
+def registry_fingerprint(plugins: dict[str, SourcePlugin]) -> str:
+    """Identity of the detection configuration: sorted plugin names + globs.
+
+    detect_sources is a pure function of (archive names, this fingerprint) —
+    the key that lets archive scans be cached (#196). parser_version is
+    deliberately excluded: it changes what parse produces, not what matches.
+    """
+    import hashlib
+
+    canonical = "\n".join(
+        f"{name}:{plugin.detect.pattern}" for name, plugin in sorted(plugins.items())
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

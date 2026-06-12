@@ -79,7 +79,7 @@ def test_005_applies_on_populated_p1_database(tmp_path: Path) -> None:
         iid = insert_import(conn, sid)
         insert_item(conn, sid, iid, content_hash="h1", title="kept")
 
-        assert apply_migrations(conn) == 5
+        assert apply_migrations(conn) >= 5  # 005 + whatever later migrations exist
         assert _table_sql(conn, "emails")
         count = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
         assert count == 1
