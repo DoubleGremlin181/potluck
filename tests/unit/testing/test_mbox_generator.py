@@ -154,3 +154,51 @@ def test_gmail_takeout_deterministic(tmp_path: Path) -> None:
     a = write_gmail_takeout(tmp_path / "a", 6, seed=9)
     b = write_gmail_takeout(tmp_path / "b", 6, seed=9)
     assert a.read_bytes() == b.read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# synthetic_email_drafts (#130): draft-level corpus for search benches
+# ---------------------------------------------------------------------------
+
+
+def test_email_drafts_deterministic_and_typed() -> None:
+    from potluck.models.items import ItemKind
+    from potluck.testing.mbox import synthetic_email_drafts
+
+    a = list(synthetic_email_drafts(50, seed=9))
+    b = list(synthetic_email_drafts(50, seed=9))
+    assert a == b
+    assert len(a) == 50
+    assert all(d.kind is ItemKind.EMAIL for d in a)
+    assert len({d.external_id for d in a}) == 50
+    assert all(d.thread_key for d in a)
+    assert any(d.in_reply_to for d in a)
+
+
+def test_email_drafts_ingest_through_engine(tmp_path: Path) -> None:
+    """The bench setup path: drafts feed run_import directly (no MIME round
+    trip) and land in FTS like any other import."""
+    from potluck.core.config import Settings
+    from potluck.ingest.engine import run_import
+    from potluck.services.context import create_context
+    from potluck.testing.mbox import synthetic_email_drafts
+
+    ctx = create_context(Settings(db_path=tmp_path / "t.db"))
+    try:
+        run_import(
+            ctx.db,
+            source_name="gmail-bench",
+            parser_version=1,
+            drafts=iter(synthetic_email_drafts(300, seed=9)),
+            path="/tmp/drafts",
+            file_hash=None,
+        )
+        with ctx.db.read() as conn:
+            items = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+            fts = conn.execute(
+                "SELECT COUNT(*) FROM items_fts WHERE items_fts MATCH 'amber'"
+            ).fetchone()[0]
+        assert items == 300
+        assert fts > 0
+    finally:
+        ctx.db.close()

@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Literal
 
+from potluck.models.drafts import EmailDraft
 from potluck.testing.archives import write_archive
 from potluck.testing.generators import WORDS
 
@@ -326,3 +327,50 @@ seed=7, fmt='dir')"
     ext = "zip" if fmt == "zip" else "tgz"
     dest_dir.mkdir(parents=True, exist_ok=True)
     return write_archive(dest_dir / f"takeout-synth-001.{ext}", members, fmt=fmt)
+
+
+# Long-tail vocabulary for draft corpora: 1,560 compound tokens. The base
+# 40-word WORDS vocabulary makes EVERY term match ~40% of a large corpus
+# (each doc draws ~6-50 words from 40) — pathological stop-word density that
+# no real corpus has. Tail tokens appear in ~0.4% of docs, giving bench
+# corpora a realistic selectivity split: common terms (WORDS) and rare terms
+# (TAIL_WORDS). The mbox BYTE generator is deliberately untouched — the
+# committed golden fixture and relevance corpus must stay stable.
+TAIL_WORDS: tuple[str, ...] = tuple(f"{a}{b}" for a in WORDS for b in WORDS if a != b)
+
+
+def synthetic_email_drafts(count: int, seed: int = 42) -> Iterator[EmailDraft]:
+    """Yield ``count`` EmailDrafts directly — no MIME round trip (#130).
+
+    The bench-corpus path: feeding these straight into the ingest engine
+    populates a 250k-item FTS corpus in tens of seconds while exercising the
+    real write/index path. Bodies carry the WORDS sentences plus ~6 TAIL_WORDS
+    tokens, so bench queries can span realistic selectivities.
+    """
+    for i in range(count):
+        rng = _rng(seed, i, "shape")
+        sender = rng.choice(_SENDERS)
+        to = rng.sample(_SENDERS, k=rng.randint(1, 2))
+        labels = rng.choice(_LABEL_SETS)
+
+        parent = _parent(seed, i)
+        subject = _subject(seed, parent if parent is not None else i)
+        if parent is not None:
+            subject = f"Re: {subject}"
+        message_id = _msgid(seed, i).strip("<>")
+        chain = _ancestors(seed, i)
+        thread_key = _msgid(seed, chain[0]).strip("<>") if chain else message_id
+
+        tail = " ".join(rng.choices(TAIL_WORDS, k=6))
+        yield EmailDraft(
+            external_id=f"mid:{message_id}",
+            message_id=message_id,
+            in_reply_to=_msgid(seed, parent).strip("<>") if parent is not None else None,
+            thread_key=thread_key,
+            from_addr=sender,
+            to_addrs=tuple(to),
+            labels=labels,
+            title=subject,
+            text=_body_text(seed, i, 0) + "\n\n" + tail,
+            ts=_timestamp(i),
+        )
