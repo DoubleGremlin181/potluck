@@ -20,8 +20,9 @@ import random
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import IO
+from typing import IO, Literal
 
+from potluck.testing.archives import write_archive
 from potluck.testing.generators import WORDS
 
 _DOMAIN_PRIMARY = "potluck.test"
@@ -278,3 +279,50 @@ def write_mbox(
         for entry in synthetic_mbox_messages(count, seed, body_kb=body_kb):
             out.write(entry)
     return dest
+
+
+# ---------------------------------------------------------------------------
+# Gmail Takeout layout (#125)
+# ---------------------------------------------------------------------------
+
+MBOX_MEMBER = "Takeout/Mail/All mail Including Spam and Trash.mbox"
+
+_TAKEOUT_DECOYS = {
+    "Takeout/Mail/User Settings/Filters.json": b"[]\n",
+    "Takeout/Other/ignored.txt": b"decoy member outside Mail/\n",
+}
+
+
+def write_gmail_takeout(
+    dest_dir: Path,
+    count: int,
+    seed: int = 42,
+    *,
+    fmt: Literal["zip", "tgz", "dir"] = "zip",
+    body_kb: int = 0,
+) -> Path:
+    """Materialize a synthetic Gmail Takeout (real member layout) in *dest_dir*.
+
+    Returns the archive path (``takeout-synth-001.<ext>`` or the directory).
+    ``fmt="dir"`` is the large-corpus mode: the mbox streams straight to disk
+    and is never held in memory — the 50k/5 GB bench path. The committed
+    golden fixture is regenerated with:
+
+        python -c "from pathlib import Path; from potluck.testing.mbox import \
+write_gmail_takeout; write_gmail_takeout(Path('tests/fixtures/gmail'), 25, \
+seed=7, fmt='dir')"
+    """
+    if fmt == "dir":
+        root = dest_dir / "takeout-synth-001"
+        write_mbox(root / MBOX_MEMBER, count, seed, body_kb=body_kb)
+        for member, payload in _TAKEOUT_DECOYS.items():
+            target = root / member
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+        return root
+
+    members = dict(_TAKEOUT_DECOYS)
+    members[MBOX_MEMBER] = b"".join(synthetic_mbox_messages(count, seed, body_kb=body_kb))
+    ext = "zip" if fmt == "zip" else "tgz"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    return write_archive(dest_dir / f"takeout-synth-001.{ext}", members, fmt=fmt)

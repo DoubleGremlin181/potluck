@@ -149,7 +149,7 @@ def _payload_bytes(part: email.message.Message) -> bytes:
 
 
 def parse_email(
-    raw: bytes, *, payload_sink: Callable[[str, bytes], None] | None = None
+    raw: bytes, *, payload_sink: Callable[[str, bytes], object] | None = None
 ) -> ParsedEmail:
     """Decode one raw message: headers, body text, attachment metadata.
 

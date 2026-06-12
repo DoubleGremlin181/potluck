@@ -120,3 +120,37 @@ def test_round_trips_through_stdlib_mbox_split() -> None:
 
     raw = b"".join(synthetic_mbox_messages(30, seed=9))
     assert len(list(iter_mbox_messages(BytesIO(raw)))) == 30
+
+
+# ---------------------------------------------------------------------------
+# write_gmail_takeout (#125)
+# ---------------------------------------------------------------------------
+
+
+def test_gmail_takeout_zip_layout(tmp_path: Path) -> None:
+    from potluck.ingest.readers import open_archive
+    from potluck.testing.mbox import write_gmail_takeout
+
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 8, seed=9)
+    names = list(open_archive(archive_path).iter_names())
+    assert "Takeout/Mail/All mail Including Spam and Trash.mbox" in names
+    # decoy non-Mail member exercises detection precedence
+    assert any(not n.startswith("Takeout/Mail/") for n in names)
+
+
+def test_gmail_takeout_dir_streams_mbox(tmp_path: Path) -> None:
+    """fmt='dir' is the large-corpus path: mbox bytes go straight to disk."""
+    from potluck.testing.mbox import synthetic_mbox_messages, write_gmail_takeout
+
+    root = write_gmail_takeout(tmp_path / "takeout", 12, seed=9, fmt="dir")
+    mbox = root / "Takeout" / "Mail" / "All mail Including Spam and Trash.mbox"
+    assert mbox.is_file()
+    assert mbox.read_bytes() == b"".join(synthetic_mbox_messages(12, seed=9))
+
+
+def test_gmail_takeout_deterministic(tmp_path: Path) -> None:
+    from potluck.testing.mbox import write_gmail_takeout
+
+    a = write_gmail_takeout(tmp_path / "a", 6, seed=9)
+    b = write_gmail_takeout(tmp_path / "b", 6, seed=9)
+    assert a.read_bytes() == b.read_bytes()
