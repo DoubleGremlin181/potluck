@@ -266,7 +266,43 @@ def show(
     t.add_row("title", escape(item.title) if item.title is not None else "-")
     t.add_row("text", escape(item.text) if item.text is not None else "-")
     t.add_row("meta", escape(_json.dumps(item.meta, indent=2)))
+    if item.email is not None:
+        e = item.email
+        t.add_row("from", escape(_mailbox(e.from_addr, e.from_name)) or "-")
+        t.add_row("to", escape(_mailboxes(e.to_addrs, e.to_names)) or "-")
+        if e.cc_addrs:
+            t.add_row("cc", escape(_mailboxes(e.cc_addrs, e.cc_names)))
+        if e.bcc_addrs:
+            t.add_row("bcc", escape(", ".join(e.bcc_addrs)))
+        if e.labels:
+            t.add_row("labels", escape(", ".join(e.labels)))
+        t.add_row("message_id", escape(e.message_id) if e.message_id else "-")
+        t.add_row("thread_key", escape(e.thread_key))
+        if e.attachments:
+            t.add_row(
+                "attachments",
+                escape(
+                    "\n".join(
+                        f"{a.filename} ({a.mime or 'unknown'}, {a.size_bytes or 0} bytes)"
+                        for a in e.attachments
+                    )
+                ),
+            )
     console.print(t)
+
+
+def _mailbox(addr: str | None, name: str | None) -> str:
+    """'Name <addr>' when a display name exists, else the bare addr."""
+    if addr is None:
+        return ""
+    return f"{name} <{addr}>" if name else addr
+
+
+def _mailboxes(addrs: list[str], names: list[str]) -> str:
+    """Render parallel addr/name lists; rows from before the #199 re-ingest
+    may have fewer (or no) names than addrs."""
+    padded = names + [""] * (len(addrs) - len(names))
+    return ", ".join(_mailbox(addr, name) for addr, name in zip(addrs, padded, strict=False))
 
 
 def _show_thread(item_id: int, as_json: bool) -> None:

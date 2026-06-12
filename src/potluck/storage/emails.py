@@ -109,6 +109,17 @@ def resolve_email_parents(conn: sqlite3.Connection, source_id: int) -> int:
     return cursor.rowcount
 
 
+def get_email_row(conn: sqlite3.Connection, item_id: int) -> sqlite3.Row | None:
+    """One item's full emails-satellite row, or None for non-email items (#200)."""
+    row: sqlite3.Row | None = conn.execute(
+        """SELECT message_id, in_reply_to, thread_key, from_addr, from_name,
+                  to_json, to_names_json, cc_json, cc_names_json, bcc_json, labels_json
+           FROM emails WHERE item_id = ?""",
+        (item_id,),
+    ).fetchone()
+    return row
+
+
 def get_email_anchor(conn: sqlite3.Connection, item_id: int) -> sqlite3.Row | None:
     """Return (thread_key, source_id) for an email item, or None if the item
     has no emails satellite row."""

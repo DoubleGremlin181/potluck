@@ -10,29 +10,34 @@ from potluck.models.items import (
 )
 from potluck.services.context import AppContext
 from potluck.storage.items import dt_to_iso, get_item_row, iso_to_dt, list_item_rows, row_to_item
+from potluck.storage.satellites import SATELLITE_READERS
 
 
 def get_item(ctx: AppContext, item_id: int) -> Item:
-    """Fetch a single item by id.
+    """Fetch a single item by id, hydrating kind-specific satellite detail.
 
     Args:
         ctx:     Application context carrying the open database.
         item_id: Primary key of the item to retrieve.
 
     Returns:
-        A fully-hydrated :class:`~potluck.models.items.Item` DTO.
+        A fully-hydrated :class:`~potluck.models.items.Item` DTO. Kinds with
+        a satellite reader (#200) carry their detail block (e.g. ``email``);
+        all other kinds leave it None.
 
     Raises:
         ItemNotFoundError: If no item with *item_id* exists.
     """
     with ctx.db.read() as conn:
         result = get_item_row(conn, item_id)
-
-    if result is None:
-        raise ItemNotFoundError(f"item {item_id} not found")
-
-    row, source_name = result
-    return row_to_item(row, source_name)
+        if result is None:
+            raise ItemNotFoundError(f"item {item_id} not found")
+        row, source_name = result
+        item = row_to_item(row, source_name)
+        reader = SATELLITE_READERS.get(item.kind)
+        if reader is not None:
+            item.email = reader(conn, item.id)
+    return item
 
 
 def list_items(ctx: AppContext, req: ListItemsRequest) -> ListItemsResponse:

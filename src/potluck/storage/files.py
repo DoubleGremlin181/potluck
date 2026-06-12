@@ -36,3 +36,11 @@ def insert_files(conn: sqlite3.Connection, rows: Sequence[FileRow]) -> None:
            VALUES (?, ?, ?, ?, ?)""",
         rows,
     )
+
+
+def list_files_for_item(conn: sqlite3.Connection, item_id: int) -> list[sqlite3.Row]:
+    """One item's attachment rows in insertion (MIME part) order (#200)."""
+    return conn.execute(
+        "SELECT member_path, mime, size_bytes, sha256 FROM files WHERE item_id = ? ORDER BY id",
+        (item_id,),
+    ).fetchall()
