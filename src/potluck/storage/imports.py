@@ -114,3 +114,27 @@ def list_imports(conn: sqlite3.Connection, limit: int = 50) -> list[ImportRun]:
         (limit,),
     ).fetchall()
     return [_row_to_import_run(row) for row in rows]
+
+
+def find_completed_import(
+    conn: sqlite3.Connection,
+    *,
+    source_name: str,
+    file_hash: str,
+    parser_version: int,
+) -> ImportRun | None:
+    """Latest COMPLETED run of *source_name* over this exact archive content.
+
+    The (file_hash, parser_version) key drives the no-op short-circuit (#126):
+    same bytes + same parser means re-parsing cannot change anything; a parser
+    bump misses the key and re-ingests naturally. Failed/running rows never
+    match.
+    """
+    row = conn.execute(
+        f"""{_BASE_QUERY}
+            WHERE s.name = ? AND i.file_hash = ? AND i.parser_version = ?
+              AND i.status = 'completed'
+            ORDER BY i.id DESC LIMIT 1""",
+        (source_name, file_hash, parser_version),
+    ).fetchone()
+    return _row_to_import_run(row) if row is not None else None

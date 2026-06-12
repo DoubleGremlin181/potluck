@@ -15,7 +15,7 @@ from potluck.core.errors import UnknownSourceError, UnsupportedArchiveError
 from potluck.ingest.engine import run_import
 from potluck.ingest.hashing import file_hash as _file_hash
 from potluck.ingest.plugins import ParseContext, detect_sources, discover
-from potluck.ingest.readers import open_archive
+from potluck.ingest.readers import MultiPartArchive, open_archive
 from potluck.models.imports import ImportRun
 from potluck.services.context import AppContext
 from potluck.storage import imports as _storage_imports
@@ -72,8 +72,33 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
             )
         )
 
+        # Ledger short-circuit (#126): same file bytes + same parser version
+        # for a source means re-parsing cannot change anything — return the
+        # prior completed run instead of re-reading a multi-GB archive.
+        # Disabled for multi-part sets: fhash covers only the passed part.
+        can_short_circuit = fhash is not None and not isinstance(archive, MultiPartArchive)
+
         import_ids: list[int] = []
         for plugin in plugins:
+            if can_short_circuit:
+                assert fhash is not None
+                with ctx.db.read() as conn:
+                    prior = _storage_imports.find_completed_import(
+                        conn,
+                        source_name=plugin.name,
+                        file_hash=fhash,
+                        parser_version=plugin.parser_version,
+                    )
+                if prior is not None:
+                    _logger.info(
+                        "import %s: source %s unchanged — already imported as #%d",
+                        path,
+                        plugin.name,
+                        prior.id,
+                    )
+                    import_ids.append(prior.id)
+                    continue
+
             started = time.perf_counter()
             import_ids.append(
                 run_import(
