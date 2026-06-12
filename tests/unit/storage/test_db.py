@@ -82,3 +82,24 @@ def test_concurrent_reads_while_writing(db: Database) -> None:
     assert errors == []
     count = db.write(lambda c: c.execute("SELECT count(*) FROM meta").fetchone()[0])
     assert count == 200 * 50
+
+
+def test_write_async_runs_on_writer_thread(tmp_path: Path) -> None:
+    """#199: write_async submits without blocking; the closure still runs on
+    the single writer thread with the sole write connection."""
+    import threading
+
+    db = Database.open(tmp_path / "async.db")
+    try:
+
+        def probe(conn: sqlite3.Connection) -> str:
+            conn.execute("INSERT INTO meta (key, value) VALUES ('k', 'v')")
+            return threading.current_thread().name
+
+        future = db.write_async(probe)
+        thread_name = future.result()
+        assert thread_name.startswith("potluck-writer")
+        value = db.write(lambda c: c.execute("SELECT value FROM meta WHERE key='k'").fetchone()[0])
+        assert value == "v"
+    finally:
+        db.close()

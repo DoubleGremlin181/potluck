@@ -32,9 +32,12 @@ class ParseContext:
 
     attachments_dir: managed root for content-addressed blob extraction, or
     None when extraction is disabled (the default — metadata only).
+    workers: parse worker processes for sources that parallelize decoding
+    (#199); 0 = auto, 1 = sequential. Plugins may ignore it.
     """
 
     attachments_dir: Path | None = None
+    workers: int = 0
 
 
 type ParseFn = Callable[[Archive, ParseContext], Iterator[ItemDraft]]

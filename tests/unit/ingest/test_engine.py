@@ -456,3 +456,84 @@ def test_constant_queries_per_batch_with_external_ids(
     assert calls["existing_eid"] == 2 * expected_batches
     assert calls["update_content"] == 2 * expected_batches
     assert calls["update_meta"] == 2 * expected_batches
+
+
+def test_parse_overlaps_inflight_write(ctx: AppContext, monkeypatch: pytest.MonkeyPatch) -> None:
+    """#199 pipelining: the engine pulls (parses) batch N+1 while batch N's
+    write is still executing on the writer thread — deterministically proven
+    by blocking the first write until the generator reaches batch 2."""
+    import threading
+
+    write_started = threading.Event()
+    release_write = threading.Event()
+    write_calls: list[int] = []
+    real_write_batch = engine_mod._write_batch
+
+    def gated_write(conn: sqlite3.Connection, **kwargs: object) -> list[str]:
+        write_calls.append(1)
+        if len(write_calls) == 1:
+            write_started.set()
+            assert release_write.wait(timeout=10), "batch 2 was never pulled during write 1"
+        return real_write_batch(conn, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_mod, "_write_batch", gated_write)
+
+    def drafts() -> Iterator[NoteDraft]:
+        for i in range(4):
+            if i == 3:  # inside batch 2's pull (batch_size=2)
+                assert write_started.wait(timeout=10)
+                release_write.set()
+            yield NoteDraft(title=f"t{i}", text=f"unique body {i}")
+
+    import_id = run_import(
+        ctx.db,
+        source_name="test-src",
+        parser_version=1,
+        drafts=drafts(),
+        path="/tmp/test.zip",
+        file_hash=None,
+        batch_size=2,
+    )
+
+    with ctx.db.read() as conn:
+        count = int(conn.execute("SELECT COUNT(*) FROM items").fetchone()[0])
+        status = conn.execute("SELECT status FROM imports WHERE id = ?", (import_id,)).fetchone()[
+            "status"
+        ]
+    assert count == 4
+    assert status == "completed"
+
+
+def test_bulk_pragmas_active_during_import_and_restored(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#199 rider: batch writes run under synchronous=OFF; the standard
+    NORMAL durability comes back as soon as the import finishes."""
+    observed: list[int] = []
+    real_write_batch = engine_mod._write_batch
+
+    def spying_write(conn: sqlite3.Connection, **kwargs: object) -> list[str]:
+        observed.append(int(conn.execute("PRAGMA synchronous").fetchone()[0]))
+        return real_write_batch(conn, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_mod, "_write_batch", spying_write)
+    _run(ctx, _make_drafts(5))
+
+    assert observed, "no batches written"
+    assert all(v == 0 for v in observed), f"expected synchronous=OFF during import: {observed}"
+    after = ctx.db.write(lambda c: int(c.execute("PRAGMA synchronous").fetchone()[0]))
+    assert after == 1, "synchronous=NORMAL must be restored after the import"
+
+
+def test_bulk_pragmas_restored_after_failed_import(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def exploding_write(conn: sqlite3.Connection, **kwargs: object) -> list[str]:
+        raise sqlite3.OperationalError("disk I/O error (synthetic)")
+
+    monkeypatch.setattr(engine_mod, "_write_batch", exploding_write)
+    with pytest.raises(sqlite3.OperationalError):
+        _run(ctx, _make_drafts(5))
+
+    after = ctx.db.write(lambda c: int(c.execute("PRAGMA synchronous").fetchone()[0]))
+    assert after == 1, "synchronous=NORMAL must be restored after a failed import"

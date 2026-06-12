@@ -93,7 +93,8 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
         parse_ctx = ParseContext(
             attachments_dir=(
                 ctx.settings.attachments_dir if ctx.settings.extract_attachments else None
-            )
+            ),
+            workers=ctx.settings.ingest_workers,
         )
 
         # Ledger short-circuit (#126): same file bytes + same parser version

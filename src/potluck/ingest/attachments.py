@@ -5,6 +5,7 @@ existence check — the second message carrying the same file writes nothing.
 Blobs never enter the database (metadata lives in the files table).
 """
 
+import os
 from pathlib import Path
 
 
@@ -22,7 +23,9 @@ class AttachmentStore:
         path = self.path_for(sha256)
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
+            # pid-unique temp name: parse workers (#199) may save the same
+            # blob concurrently; same content + atomic replace = last wins.
+            tmp = path.with_suffix(f".tmp-{os.getpid()}")
             tmp.write_bytes(payload)
             tmp.replace(path)  # atomic: readers never see partial blobs
         return path

@@ -10,6 +10,7 @@ import contextlib
 import itertools
 import sqlite3
 from collections.abc import Iterator
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Final
@@ -255,26 +256,37 @@ def run_import(
 
     seen: set[str] = set()
     touched_kinds: set[ItemKind] = set()
+    # Pipelining (#199): at most ONE write in flight. Batch N+1 is pulled and
+    # hashed (the expensive parse work lives in the drafts generator) while
+    # batch N commits on the writer thread; the future is then resolved BEFORE
+    # batch N+1's dedup, so displaced hashes leave `seen` in time (the revert
+    # ordering test pins this). Errors surface one batch later, still inside
+    # the ledger-failure handler below.
+    pending: Future[list[str]] | None = None
 
     try:
-        for chunk in itertools.batched(drafts, batch_size, strict=False):
-            # Hashing is pure computation — happens outside db.write.
-            hashed = [(draft, content_hash(draft)) for draft in chunk]
-            new_pairs, in_run_dups = _dedup_in_run(hashed, seen)
-            touched_kinds.update(draft.kind for draft, _ in new_pairs)
+        with db.bulk_import_mode():
+            for chunk in itertools.batched(drafts, batch_size, strict=False):
+                # Hashing is pure computation — happens outside db.write.
+                hashed = [(draft, content_hash(draft)) for draft in chunk]
+                if pending is not None:
+                    seen.difference_update(pending.result())
+                new_pairs, in_run_dups = _dedup_in_run(hashed, seen)
+                touched_kinds.update(draft.kind for draft, _ in new_pairs)
 
-            displaced = db.write(
-                partial(
-                    _write_batch,
-                    source_id=source_id,
-                    import_id=import_id,
-                    new_pairs=new_pairs,
-                    in_run_dups=in_run_dups,
+                pending = db.write_async(
+                    partial(
+                        _write_batch,
+                        source_id=source_id,
+                        import_id=import_id,
+                        new_pairs=new_pairs,
+                        in_run_dups=in_run_dups,
+                    )
                 )
-            )
-            seen.difference_update(displaced)
+            if pending is not None:
+                pending.result()
 
-        db.write(partial(_finalize_satellites, source_id=source_id, kinds=touched_kinds))
+            db.write(partial(_finalize_satellites, source_id=source_id, kinds=touched_kinds))
 
     except BaseException as exc:
         # BaseException: Ctrl-C / SystemExit must not leave the ledger row

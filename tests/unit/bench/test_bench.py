@@ -155,3 +155,11 @@ def test_peak_rss_normalized_to_kb_per_platform(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(sys, "platform", "darwin")
     assert runner_mod._peak_rss_kb() == 4  # bytes → KB
+
+
+def test_registry_has_sequential_gmail_ab_variant() -> None:
+    """#199 rule-3 evidence: the pool speedup is demonstrated by an A/B pair
+    in the registry — same corpus, workers=1 vs auto."""
+    full = {s.name for s in scenarios_for("full", ALL_SCENARIOS)}
+    assert "ingest_gmail_8k" in full
+    assert "ingest_gmail_8k_seq" in full

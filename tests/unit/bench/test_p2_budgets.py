@@ -44,8 +44,11 @@ print(f"{run.id} {run.items_new} {run.items_duplicate} {elapsed:.2f} {rss_kb}")
 """
 
 
-def _import_subprocess(archive: Path, data_home: Path) -> tuple[int, int, int, float, int]:
+def _import_subprocess(
+    archive: Path, data_home: Path, extra_env: dict[str, str] | None = None
+) -> tuple[int, int, int, float, int]:
     env = dict(os.environ, XDG_DATA_HOME=str(data_home), XDG_CONFIG_HOME=str(data_home / "cfg"))
+    env.update(extra_env or {})
     proc = subprocess.run(
         [sys.executable, "-c", _DRIVER, str(archive)],
         capture_output=True,
@@ -242,4 +245,26 @@ def test_scaling_gmail_ingest_near_linear(tmp_path: Path) -> None:
     t_8k = _timed_import(8_000, "g8k")
     assert t_8k < 4 * 1.5 * t_2k, (
         f"8k ingest {t_8k:.2f}s vs 2k {t_2k:.2f}s — worse than 1.5x linear; O(n^2) path?"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pool A/B gate (#199): rule-3 evidence that parallel parsing earns its keep
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.bench
+def test_budget_pooled_parse_beats_sequential(tmp_path: Path) -> None:
+    """Pooled MIME parsing (workers=auto) must beat sequential (workers=1)
+    by a conservative margin on the 4-core CI class. Measured locally:
+    ~2.9x at 2k messages including pool startup."""
+    archive = write_gmail_takeout(tmp_path / "corpus", 8_000, seed=42)
+
+    _, n_seq, _, t_seq, _ = _import_subprocess(
+        archive, tmp_path / "data-seq", extra_env={"POTLUCK_INGEST_WORKERS": "1"}
+    )
+    _, n_pool, _, t_pool, _ = _import_subprocess(archive, tmp_path / "data-pool")
+    assert n_seq == n_pool == 8_000
+    assert t_pool < 0.8 * t_seq, (
+        f"pooled import {t_pool:.1f}s vs sequential {t_seq:.1f}s — expected >=1.25x"
     )

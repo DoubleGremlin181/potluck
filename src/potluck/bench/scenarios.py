@@ -160,14 +160,18 @@ def _search_fts_10k_run(workdir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _gmail_ingest_scenario(name: str, tier: Tier, count: int) -> Scenario:
-    """Factory for Gmail mbox-Takeout ingest scenarios (zip; real MIME parse)."""
+def _gmail_ingest_scenario(name: str, tier: Tier, count: int, *, workers: int = 0) -> Scenario:
+    """Factory for Gmail mbox-Takeout ingest scenarios (zip; real MIME parse).
+
+    *workers* feeds Settings.ingest_workers: the default 0 (auto pool) and an
+    explicit 1 (sequential) form the #199 rule-3 A/B pair.
+    """
 
     def setup(workdir: Path) -> None:
         write_gmail_takeout(workdir / "archives", count, seed=42)
 
     def run(workdir: Path) -> None:
-        ctx = _make_ctx(workdir)
+        ctx = create_context(Settings(db_path=workdir / "bench.db", ingest_workers=workers))
         try:
             import_path(ctx, _archive_path(workdir))
         finally:
@@ -289,6 +293,9 @@ ALL_SCENARIOS = [
     _gmail_ingest_scenario("ingest_gmail_2k", "smoke", 2_000),
     _gmail_ingest_scenario("ingest_gmail_8k", "smoke", 8_000),
     _gmail_ingest_scenario("ingest_gmail_50k", "full", 50_000),
+    # #199 rule-3 evidence: sequential twin of ingest_gmail_8k — the pooled
+    # default must beat this (gated in test_p2_budgets.py).
+    _gmail_ingest_scenario("ingest_gmail_8k_seq", "full", 8_000, workers=1),
     # No-op gmail re-import: exercises file-hash + ledger short-circuit
     Scenario(
         name="reimport_noop_gmail_10k",
