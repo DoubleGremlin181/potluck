@@ -13,7 +13,7 @@ telemetry: nothing leaves your machine.
 |---|---|---|
 | P0 Reset & Walking Skeleton | `potluck serve` zero-config: SPA shell; CLI/API/MCP answer stats from one service layer; bench rig + CI | ✅ `v1.0.0-alpha.1` |
 | P1 Storage Core & First Ingest | Google Keep from a Takeout archive (zip/tgz/dir); FTS search via CLI + MCP | ✅ `v1.0.0-alpha.2` |
-| P2 Gmail at Scale & Search v1 | Multi-GB mbox ingested incrementally; filtered/snippeted search | — |
+| P2 Gmail at Scale & Search v1 | Multi-GB mbox ingested incrementally; filtered/snippeted search | ✅ `v1.0.0-alpha.3` |
 | P3 MVP Interfaces | Real search/item/imports UI, MCP toolset v1 — **beta.1 = MVP** | — |
 | P4 Source Expansion & Automation | Remaining planned sources, watch-folder, scheduled GDrive pull | — |
 | P5 Semantic Search | Unified embedding space, HNSW index, hybrid RRF | — |

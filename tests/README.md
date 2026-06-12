@@ -18,6 +18,11 @@ Patterns every phase reuses. All fixtures live in [`conftest.py`](conftest.py).
 
 Default run = unit tier only; `bench`, `e2e`, `browser` markers are excluded via
 `addopts` in `pyproject.toml`. Select explicitly, e.g. `pytest -m browser`.
+`tests/relevance/` (the golden-query ranking eval, see its README) runs in the
+default tier off a session-scoped synthetic corpus — fast and xdist-safe.
+Hard perf budgets live in `tests/unit/bench/test_p*_budgets.py` (`bench`
+marker, nightly): the P2 set generates multi-GB corpora in tmp and measures
+imports in subprocesses for honest RSS numbers.
 
 ## Rules
 
