@@ -406,3 +406,114 @@ def test_parse_missing_names_and_bcc() -> None:
     assert parsed.from_name is None
     assert parsed.bcc_addrs == ()
     assert parsed.to_names == ()
+
+
+# ---------------------------------------------------------------------------
+# message/rfc822 + extra inline text parts (#198 review 1/2)
+# ---------------------------------------------------------------------------
+
+INNER_EMAIL = _msg(
+    b"Message-ID: <inner@potluck.test>",
+    b"Subject: inner subject",
+    b"Content-Type: text/plain; charset=UTF-8",
+    b"",
+    b"the inner body",
+)
+
+WITH_RFC822 = (
+    _msg(
+        b"Message-ID: <outer@potluck.test>",
+        b'Content-Type: multipart/mixed; boundary="B"',
+        b"",
+        b"--B",
+        b"Content-Type: text/html; charset=UTF-8",
+        b"",
+        b"<p>the outer body</p>",
+        b"--B",
+        b"Content-Type: message/rfc822",
+        b'Content-Disposition: attachment; filename="fwd.eml"',
+        b"",
+    )
+    + INNER_EMAIL
+    + _msg(b"", b"--B--")
+)
+
+
+def test_parse_rfc822_attachment_keeps_outer_body() -> None:
+    """An attached email is one attachment; its body never becomes the outer
+    message's body (walk() must not descend into message/rfc822)."""
+    parsed = parse_email(WITH_RFC822)
+    assert "the outer body" in parsed.text
+    assert "the inner body" not in parsed.text
+    assert len(parsed.attachments) == 1
+    att = parsed.attachments[0]
+    assert att.mime == "message/rfc822"
+    assert att.filename == "fwd.eml"
+    assert att.size_bytes > 0
+    assert len(att.sha256) == 64
+
+
+def test_parse_rfc822_attachment_offered_to_sink() -> None:
+    captured: list[tuple[str, bytes]] = []
+    parse_email(WITH_RFC822, payload_sink=lambda sha, data: captured.append((sha, data)))
+    assert len(captured) == 1
+    assert b"the inner body" in captured[0][1]
+
+
+def test_parse_inline_calendar_recorded_as_attachment() -> None:
+    """A text/calendar alternative (meeting invite) must not vanish."""
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: multipart/alternative; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"meeting body",
+            b"--B",
+            b"Content-Type: text/calendar; charset=UTF-8; method=REQUEST",
+            b"",
+            b"BEGIN:VCALENDAR",
+            b"END:VCALENDAR",
+            b"--B--",
+        )
+    )
+    assert "meeting body" in parsed.text
+    assert [a.mime for a in parsed.attachments] == ["text/calendar"]
+
+
+def test_parse_second_inline_plain_recorded_as_attachment() -> None:
+    """A second inline text/plain (e.g. an inline notes.txt) must not vanish."""
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: multipart/mixed; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"the real body",
+            b"--B",
+            b'Content-Type: text/plain; charset=UTF-8; name="notes.txt"',
+            b'Content-Disposition: inline; filename="notes.txt"',
+            b"",
+            b"inline notes file",
+            b"--B--",
+        )
+    )
+    assert "the real body" in parsed.text
+    assert "inline notes file" not in parsed.text
+    assert [a.filename for a in parsed.attachments] == ["notes.txt"]
+    assert parsed.attachments[0].mime == "text/plain"
+
+
+def test_parse_nul_charset_falls_back() -> None:
+    """A charset with an embedded NUL raises ValueError from str.decode —
+    it must hit the fallback chain, not abort the message (#198 review 4)."""
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: text/plain; charset="utf-8\x00junk"',
+            b"",
+            b"resilient body",
+        )
+    )
+    assert "resilient body" in parsed.text

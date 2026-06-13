@@ -88,7 +88,13 @@ class EmailDraft(BaseDraft):
             "\x1f".join(self.cc_names),
             "\x1f".join(self.bcc_addrs),
             "\x1f".join(self.labels),
-            "\x1f".join(a.sha256 for a in self.attachments),
+            # filename and mime are persisted to the files satellite, so they
+            # must be hash-covered like every other satellite field; \x1d
+            # separates fields within one attachment (sha256 is fixed-length
+            # hex, so the encoding stays injective).
+            "\x1f".join(
+                f"{a.sha256}\x1d{a.filename or ''}\x1d{a.mime or ''}" for a in self.attachments
+            ),
         )
 
 

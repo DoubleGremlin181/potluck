@@ -1,5 +1,6 @@
 """Gmail Takeout source plugin (#125): detection, draft mapping, containment."""
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -12,10 +13,12 @@ from potluck.models.items import ItemKind
 from potluck.testing.mbox import write_gmail_takeout
 
 
+def _draft(raw: bytes, seen: dict[str, dict[str, int]]) -> EmailDraft:
+    return _to_draft(parse_email(raw), hashlib.sha256(raw).hexdigest(), seen)
+
+
 def _parsed(*lines: bytes) -> EmailDraft:
-    draft = _to_draft(parse_email(b"\n".join(lines)), {})
-    assert draft is not None
-    return draft
+    return _draft(b"\n".join(lines), {})
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +29,7 @@ def _parsed(*lines: bytes) -> EmailDraft:
 def test_plugin_registered() -> None:
     plugin = discover()["gmail"]
     assert plugin.kinds == (ItemKind.EMAIL,)
-    assert plugin.parser_version == 2  # 199: text cleanup + name/bcc fields changed content hashes
+    assert plugin.parser_version == 3  # 198 review: walk/identity fixes changed content hashes
 
 
 def test_detects_gmail_takeout(tmp_path: Path) -> None:
@@ -46,16 +49,38 @@ def test_external_id_from_message_id() -> None:
     assert draft.message_id == "one@potluck.test"
 
 
-def test_duplicate_message_id_gets_suffix() -> None:
-    seen: dict[str, int] = {}
-    raw = b"Message-ID: <dup@potluck.test>\nSubject: s\n\nx"
-    first = _to_draft(parse_email(raw), seen)
-    second = _to_draft(parse_email(raw), seen)
-    assert first is not None and second is not None
+def test_duplicate_message_id_distinct_content_gets_suffix() -> None:
+    """Two DIFFERENT messages sharing a Message-ID stay distinct items."""
+    seen: dict[str, dict[str, int]] = {}
+    first = _draft(b"Message-ID: <dup@potluck.test>\nSubject: s\n\nx", seen)
+    second = _draft(b"Message-ID: <dup@potluck.test>\nSubject: s\n\nanother body", seen)
     assert first.external_id == "mid:dup@potluck.test"
     assert second.external_id == "mid:dup@potluck.test#2"
     # both stay in the same conversation
     assert first.thread_key == second.thread_key
+
+
+def test_byte_identical_duplicate_reuses_external_id() -> None:
+    """Label-selected Takeout duplicates one message byte-for-byte across mbox
+    members; identical copies must share an external_id so content-hash dedup
+    collapses them (#198 review 5) — including a third copy."""
+    seen: dict[str, dict[str, int]] = {}
+    raw = b"Message-ID: <dup@potluck.test>\nSubject: s\n\nx"
+    drafts = [_draft(raw, seen) for _ in range(3)]
+    assert {d.external_id for d in drafts} == {"mid:dup@potluck.test"}
+
+
+def test_identical_copy_of_suffixed_message_reuses_suffix() -> None:
+    """Repeats interleave: A, B, A again — the second A reuses A's id, B keeps #2."""
+    seen: dict[str, dict[str, int]] = {}
+    raw_a = b"Message-ID: <dup@potluck.test>\nSubject: s\n\nx"
+    raw_b = b"Message-ID: <dup@potluck.test>\nSubject: s\n\ny"
+    a1 = _draft(raw_a, seen)
+    b1 = _draft(raw_b, seen)
+    a2 = _draft(raw_a, seen)
+    b2 = _draft(raw_b, seen)
+    assert a1.external_id == a2.external_id == "mid:dup@potluck.test"
+    assert b1.external_id == b2.external_id == "mid:dup@potluck.test#2"
 
 
 def test_missing_message_id_gets_content_fingerprint() -> None:
@@ -78,6 +103,28 @@ def test_missing_message_id_gets_content_fingerprint() -> None:
         b"body",
     )
     assert again.external_id == draft.external_id
+
+
+def test_noid_fingerprint_is_textclean_independent(monkeypatch: object) -> None:
+    """The noid fingerprint hashes raw inputs, not cleaned text, so parser
+    text-cleanup changes can never re-mint identities (#198 review 6)."""
+    import pytest
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    raw = b"From: a@potluck.test\nSubject: no msgid\n\nsome body text"
+    before = _draft(raw, {})
+
+    monkeypatch.setattr("potluck.ingest.mbox.clean_text", lambda text: str(text).upper())
+    after = _draft(raw, {})
+
+    assert after.text != before.text  # the simulated cleanup change took effect
+    assert after.external_id == before.external_id
+
+
+def test_noid_fingerprint_differs_for_different_bodies() -> None:
+    d1 = _draft(b"From: a@potluck.test\nSubject: s\n\nbody one", {})
+    d2 = _draft(b"From: a@potluck.test\nSubject: s\n\nbody two", {})
+    assert d1.external_id != d2.external_id
 
 
 # ---------------------------------------------------------------------------

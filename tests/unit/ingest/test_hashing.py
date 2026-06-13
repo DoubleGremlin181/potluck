@@ -165,3 +165,19 @@ def test_email_to_names_vs_cc_names_distinct_hash() -> None:
     d1 = EmailDraft(thread_key="tk", to_addrs=("x@potluck.test",), to_names=("X",))
     d2 = EmailDraft(thread_key="tk", to_addrs=("x@potluck.test",), cc_names=("X",))
     assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_attachment_filename_and_mime_in_hash() -> None:
+    """filename and mime are persisted to the files satellite, so they must
+    live inside the hash like every other satellite field (#198 review 11)."""
+    from potluck.models.drafts import EmailAttachment, EmailDraft
+
+    def _draft(filename: str | None, mime: str | None) -> EmailDraft:
+        att = EmailAttachment(filename=filename, mime=mime, size_bytes=1, sha256="aa" * 32)
+        return EmailDraft(thread_key="tk", attachments=(att,))
+
+    base = content_hash(_draft("a.pdf", "application/pdf"))
+    assert content_hash(_draft("b.pdf", "application/pdf")) != base
+    assert content_hash(_draft("a.pdf", "application/octet-stream")) != base
+    # injectivity across the filename/mime boundary
+    assert content_hash(_draft("ab", "")) != content_hash(_draft("a", "b"))

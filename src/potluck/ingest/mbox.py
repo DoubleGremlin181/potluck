@@ -103,13 +103,21 @@ def _msgid_list(raw: str | None) -> tuple[str, ...]:
 
 
 def _address_pairs(msg: email.message.Message, name: str) -> tuple[tuple[str, str], ...]:
-    """(display_name, lowercased_addr) per mailbox; name is "" when absent."""
+    """(display_name, lowercased_addr) per mailbox; name is "" when absent.
+
+    policy.default already parsed the header into structured Address objects
+    — read them directly instead of re-serializing and re-running the RFC
+    5322 parse through getaddresses (~77% of import time is MIME decoding).
+    """
     try:
-        values = [str(v) for v in msg.get_all(name, [])]
-    except Exception:  # noqa: BLE001 — see _header
+        return tuple(
+            (a.display_name, a.addr_spec.lower())
+            for v in msg.get_all(name, [])
+            for a in getattr(v, "addresses", ())
+            if a.addr_spec
+        )
+    except Exception:  # noqa: BLE001 — see _header (defective headers raise on access)
         return ()
-    pairs = email.utils.getaddresses(values)
-    return tuple((display, addr.lower()) for display, addr in pairs if addr)
 
 
 def _date(msg: email.message.Message) -> datetime | None:
@@ -134,7 +142,10 @@ def _decode_bytes(data: bytes, declared: str | None) -> str:
     for encoding in dict.fromkeys(filter(None, (declared, "utf-8"))):
         try:
             return data.decode(encoding)
-        except (LookupError, UnicodeDecodeError):
+        # ValueError covers UnicodeDecodeError AND the plain ValueError that
+        # str.decode raises for charset names with embedded NULs (seen in
+        # malformed mail) — junk charsets must fall through, never abort.
+        except (LookupError, ValueError):
             continue
     return data.decode("latin-1", errors="replace")
 
@@ -154,51 +165,94 @@ def _payload_bytes(part: email.message.Message) -> bytes:
     return b""
 
 
+def _message_bytes(part: email.message.Message) -> bytes:
+    """Serialized bytes of an attached message/* part (the whole inner email)."""
+    sub = part.get_payload()
+    if isinstance(sub, list) and sub and isinstance(sub[0], email.message.Message):
+        try:
+            return sub[0].as_bytes()
+        except Exception:  # noqa: BLE001 — defective nested message; fall through
+            pass
+    return _payload_bytes(part)
+
+
+# Defensive bound on MIME nesting; real mail is a handful of levels deep.
+_MAX_MIME_DEPTH: Final = 100
+
+
 def parse_email(
     raw: bytes, *, payload_sink: Callable[[str, bytes], object] | None = None
 ) -> ParsedEmail:
     """Decode one raw message: headers, body text, attachment metadata.
 
     Body selection: first non-attachment text/plain part wins; else the first
-    text/html part is reduced via html_to_text. Every non-text leaf part (or
-    any part with an attachment disposition) is recorded as an attachment —
-    metadata only; payload bytes are hashed, offered to *payload_sink*
-    (``(sha256, payload)`` — the extraction hook, #124), then discarded.
+    text/html part is reduced via html_to_text. EVERY other leaf part — an
+    attachment disposition, a non-text type, an extra inline text part (e.g.
+    text/calendar), or an attached message/rfc822 (recorded whole, never
+    descended into) — is recorded as an attachment: metadata only; payload
+    bytes are hashed, offered to *payload_sink* (``(sha256, payload)`` — the
+    extraction hook, #124), then discarded.
     """
     msg = _PARSER.parsebytes(raw)
 
-    plain: str | None = None
-    html: str | None = None
+    plain_part: email.message.Message | None = None
+    html_part: email.message.Message | None = None
     attachments: list[AttachmentInfo] = []
 
-    for part in msg.walk():
+    def _record_attachment(part: email.message.Message, payload: bytes) -> None:
+        sha256 = hashlib.sha256(payload).hexdigest()
+        if payload_sink is not None:
+            payload_sink(sha256, payload)
+        attachments.append(
+            AttachmentInfo(
+                filename=part.get_filename(),
+                mime=part.get_content_type(),
+                size_bytes=len(payload),
+                sha256=sha256,
+            )
+        )
+
+    def _walk(part: email.message.Message, depth: int) -> None:
+        nonlocal plain_part, html_part
+        if depth > _MAX_MIME_DEPTH:
+            return
+        if depth > 0 and part.get_content_maintype() == "message":
+            # An attached email is ONE attachment (the whole subtree); its
+            # inner body must never be mis-attributed to the outer message.
+            _record_attachment(part, _message_bytes(part))
+            return
         if part.is_multipart():
-            continue
+            payload = part.get_payload()
+            if isinstance(payload, list):
+                for sub in payload:
+                    if isinstance(sub, email.message.Message):
+                        _walk(sub, depth + 1)
+            return
         content_type = part.get_content_type()
         is_attachment = part.get_content_disposition() == "attachment"
-        if not is_attachment and content_type == "text/plain" and plain is None:
-            plain = _decode_bytes(_payload_bytes(part), part.get_content_charset())
-        elif not is_attachment and content_type == "text/html" and html is None:
-            html = _decode_bytes(_payload_bytes(part), part.get_content_charset())
-        elif is_attachment or not content_type.startswith("text/"):
-            payload = _payload_bytes(part)
-            sha256 = hashlib.sha256(payload).hexdigest()
-            if payload_sink is not None:
-                payload_sink(sha256, payload)
-            attachments.append(
-                AttachmentInfo(
-                    filename=part.get_filename(),
-                    mime=content_type,
-                    size_bytes=len(payload),
-                    sha256=sha256,
-                )
-            )
+        if not is_attachment and content_type == "text/plain" and plain_part is None:
+            plain_part = part
+        elif not is_attachment and content_type == "text/html" and html_part is None:
+            html_part = part
+        else:
+            _record_attachment(part, _payload_bytes(part))
 
+    _walk(msg, 0)
+
+    # Body parts are decoded AFTER the walk: in the common multipart/alternative
+    # case the plain part wins and the (usually larger) html part is never
+    # CTE+charset-decoded at all.
+    plain = (
+        _decode_bytes(_payload_bytes(plain_part), plain_part.get_content_charset())
+        if plain_part is not None
+        else None
+    )
     # Real Gmail exports sometimes carry an EMPTY text/plain alternative next
     # to a populated text/html — whitespace-only plain falls through to html.
     if plain is not None and plain.strip():
         text = plain
-    elif html is not None:
+    elif html_part is not None:
+        html = _decode_bytes(_payload_bytes(html_part), html_part.get_content_charset())
         text = html_to_text(html)
     else:
         text = plain or ""

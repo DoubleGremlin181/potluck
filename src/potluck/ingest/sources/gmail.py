@@ -1,11 +1,16 @@
 """Gmail Takeout source plugin: streams the Mail mbox into EmailDrafts.
 
 Identity policy:
-- ``mid:<Message-ID>`` when the header is present; an in-mbox duplicate gets
-  a ``#2``/``#3`` suffix so two different messages sharing a Message-ID never
-  collapse into one logical item (suffix order follows mbox order — stable
+- ``mid:<Message-ID>`` when the header is present. Repeats of one Message-ID
+  with IDENTICAL raw body bytes (label-selected Takeout duplicates a
+  multi-label message across mbox members) reuse the same external_id so
+  content-hash dedup collapses them; only genuinely different content gets a
+  ``#2``/``#3`` suffix (suffix order follows first-seen mbox order — stable
   for Gmail's append-ordered exports).
-- ``noid:<sha256 of from/to/date/subject/first-1KB-of-body>`` when absent.
+- ``noid:<sha256 of from/to/date/subject + raw-body sha>`` when absent. The
+  fingerprint hashes raw-derived inputs only — never cleaned body text — so
+  parser/textclean evolution can never re-mint identities and re-insert the
+  whole no-Message-ID class as duplicates.
 
 thread_key (deterministic, per-message): References root, else In-Reply-To,
 else Message-ID, else the noid fingerprint. A deep reply carrying only
@@ -31,21 +36,40 @@ from potluck.models.items import ItemKind
 
 _logger = logging.getLogger(__name__)
 
-_FINGERPRINT_BODY_CHARS = 1024
-
 # Pool.imap chunk: large enough to amortize IPC per message, small enough to
 # keep all workers busy on a multi-mbox archive (#199).
 _POOL_CHUNKSIZE = 64
 
 
-def _fingerprint(parsed: ParsedEmail) -> str:
-    """Content identity for messages without a Message-ID."""
+def _raw_body_sha(raw: bytes) -> str:
+    """sha256 of the raw body bytes (everything after the header block).
+
+    THE stable identity input: unaffected by parser/textclean evolution AND
+    by header-only differences (e.g. X-Gmail-Labels varying across exports),
+    so it can anchor both noid fingerprints and duplicate-Message-ID
+    bookkeeping across re-imports.
+    """
+    found = [(idx, len(sep)) for sep in (b"\r\n\r\n", b"\n\n") if (idx := raw.find(sep)) != -1]
+    if not found:
+        return hashlib.sha256(b"").hexdigest()
+    idx, sep_len = min(found)
+    return hashlib.sha256(raw[idx + sep_len :]).hexdigest()
+
+
+def _fingerprint(parsed: ParsedEmail, body_sha: str) -> str:
+    """Content identity for messages without a Message-ID.
+
+    Header fields keep label-only re-exports stable (labels are NOT hashed
+    here, so a label change updates the item in place); the raw-body sha —
+    never the cleaned text — makes the fingerprint immune to text-cleanup
+    changes (#198 review).
+    """
     parts = (
         parsed.from_addr or "",
         "\x1f".join(parsed.to_addrs),
         parsed.date.isoformat() if parsed.date is not None else "",
         parsed.subject or "",
-        parsed.text[:_FINGERPRINT_BODY_CHARS],
+        body_sha,
     )
     raw = "\x1e".join(parts).encode("utf-8", errors="replace")
     return "noid:" + hashlib.sha256(raw).hexdigest()
@@ -58,19 +82,22 @@ def _aware_ts(date: datetime | None) -> datetime | None:
     return date.replace(tzinfo=UTC)
 
 
-def _to_draft(parsed: ParsedEmail, seen_msgids: dict[str, int]) -> EmailDraft:
+def _to_draft(
+    parsed: ParsedEmail, body_sha: str, seen_msgids: dict[str, dict[str, int]]
+) -> EmailDraft:
     """Map one decoded message to a draft, applying the identity policy.
 
-    *seen_msgids* tracks Message-ID occurrences across the whole run (a few
-    MB at 50k messages) to suffix in-mbox duplicates.
+    *seen_msgids* maps Message-ID -> {body sha -> suffix number} across the
+    whole run (a few MB at 50k messages): byte-identical repeats reuse their
+    external_id and dedup away; only differing content gets a ``#N`` suffix.
     """
     if parsed.message_id is not None:
-        count = seen_msgids.get(parsed.message_id, 0) + 1
-        seen_msgids[parsed.message_id] = count
-        suffix = "" if count == 1 else f"#{count}"
+        per_msg = seen_msgids.setdefault(parsed.message_id, {})
+        number = per_msg.setdefault(body_sha, len(per_msg) + 1)
+        suffix = "" if number == 1 else f"#{number}"
         external_id = f"mid:{parsed.message_id}{suffix}"
     else:
-        external_id = _fingerprint(parsed)
+        external_id = _fingerprint(parsed, body_sha)
 
     thread_key = (
         (parsed.references[0] if parsed.references else None)
@@ -132,11 +159,19 @@ class _ParseFailure:
     error: str
 
 
-def _parse_worker(raw: bytes) -> ParsedEmail | _ParseFailure:
-    """Top-level (spawn-safe) worker: raw message bytes -> ParsedEmail."""
+@dataclass(frozen=True)
+class _ParsedMessage:
+    """A decoded message plus its raw-body sha (the stable identity input)."""
+
+    parsed: ParsedEmail
+    body_sha: str
+
+
+def _parse_worker(raw: bytes) -> _ParsedMessage | _ParseFailure:
+    """Top-level (spawn-safe) worker: raw message bytes -> parsed + body sha."""
     try:
         sink = _WORKER_STORE.save if _WORKER_STORE is not None else None
-        return parse_email(raw, payload_sink=sink)
+        return _ParsedMessage(parse_email(raw, payload_sink=sink), _raw_body_sha(raw))
     except Exception as exc:  # noqa: BLE001 — see _ParseFailure
         return _ParseFailure(f"{type(exc).__name__}: {exc}")
 
@@ -145,9 +180,11 @@ def _parse_worker(raw: bytes) -> ParsedEmail | _ParseFailure:
     name="gmail",
     detect=Glob("*Mail/*.mbox"),
     kinds=(ItemKind.EMAIL,),
-    # v2 (#199): body text cleanup + from_name/to_names/cc_names/bcc fields —
-    # content hashes changed, so existing archives re-ingest (updates in place).
-    parser_version=2,
+    # v3 (#198 review): rfc822/inline-text parts become attachments, stable
+    # noid fingerprints (raw-body sha), content-aware #N suffixes, attachment
+    # filename+mime in the hash, head-skip HTML fix — content hashes and some
+    # external_ids changed, so existing archives re-ingest (updates in place).
+    parser_version=3,
 )
 def parse(archive: Archive, ctx: ParseContext) -> Iterator[EmailDraft]:
     """Yield EmailDrafts from every Mail mbox member, streaming.
@@ -163,7 +200,7 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[EmailDraft]:
     when ctx.attachments_dir is set (metadata is recorded either way).
     """
     workers = _effective_workers(ctx.workers)
-    seen_msgids: dict[str, int] = {}
+    seen_msgids: dict[str, dict[str, int]] = {}
 
     if workers == 1:
         sink = (
@@ -172,7 +209,8 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[EmailDraft]:
         for member, stream in archive.iter_members("*Mail/*.mbox"):
             for raw in iter_mbox_messages(stream):
                 try:
-                    yield _to_draft(parse_email(raw, payload_sink=sink), seen_msgids)
+                    parsed = parse_email(raw, payload_sink=sink)
+                    yield _to_draft(parsed, _raw_body_sha(raw), seen_msgids)
                 except Exception as exc:  # noqa: BLE001 — containment: skip, never abort
                     _logger.warning("skipping unparseable message in %s: %s", member.name, exc)
         return
@@ -191,6 +229,6 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[EmailDraft]:
                     )
                     continue
                 try:
-                    yield _to_draft(result, seen_msgids)
+                    yield _to_draft(result.parsed, result.body_sha, seen_msgids)
                 except Exception as exc:  # noqa: BLE001 — containment: skip, never abort
                     _logger.warning("skipping unparseable message in %s: %s", member.name, exc)
