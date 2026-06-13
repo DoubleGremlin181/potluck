@@ -57,28 +57,33 @@ class _BatchPlan:
 def _dedup_in_run(
     hashed: list[tuple[ItemDraft, str]], seen: set[str]
 ) -> tuple[list[tuple[ItemDraft, str]], int]:
-    """Drop hashes already seen this run, then apply in-batch identity
-    last-wins (same external_id twice in one batch displaces the earlier
-    draft). Returns the surviving (draft, hash) pairs and the dup count."""
+    """Drop hashes already seen this run and apply in-batch identity last-wins
+    (same external_id twice in one batch displaces the earlier draft) in ONE
+    in-order pass. Returns the surviving (draft, hash) pairs and the dup count.
+
+    When a draft displaces an earlier one, the shadowed draft's hash leaves
+    the seen set immediately — it never reaches the DB, so a later draft
+    reverting to that exact content must classify as a fresh write, not an
+    in-run duplicate, regardless of where batch boundaries fall.
+    """
     in_run_dups = 0
-    fresh: list[tuple[ItemDraft, str]] = []
+    slot_by_eid: dict[str, int] = {}
+    slots: list[tuple[ItemDraft, str] | None] = []
     for draft, h in hashed:
         if h in seen:
             in_run_dups += 1
-        else:
-            seen.add(h)
-            fresh.append((draft, h))
-
-    slot_by_eid: dict[str, int] = {}
-    slots: list[tuple[ItemDraft, str] | None] = []
-    for pair in fresh:
-        eid = pair[0].external_id
+            continue
+        eid = draft.external_id
+        if eid is not None and eid in slot_by_eid:
+            displaced = slots[slot_by_eid[eid]]
+            if displaced is not None:
+                seen.discard(displaced[1])
+            slots[slot_by_eid[eid]] = None
+            in_run_dups += 1
+        seen.add(h)
         if eid is not None:
-            if eid in slot_by_eid:
-                slots[slot_by_eid[eid]] = None
-                in_run_dups += 1
             slot_by_eid[eid] = len(slots)
-        slots.append(pair)
+        slots.append((draft, h))
     return [pair for pair in slots if pair is not None], in_run_dups
 
 

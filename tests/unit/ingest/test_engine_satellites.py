@@ -135,3 +135,51 @@ def test_batch_first_satellite_writes(ctx: AppContext, monkeypatch: object) -> N
             "SELECT COUNT(*) FROM emails e JOIN items i ON i.id = e.item_id"
         ).fetchone()[0]
     assert pairs == 50
+
+
+def test_reingest_without_in_reply_to_clears_stale_parent(ctx: AppContext) -> None:
+    """A content update that drops In-Reply-To must clear parent_id — the
+    finalize pass only fills NULLs, so a stale link would live forever
+    (#198 review 8)."""
+    _run(ctx, [_email(1), _email(2, in_reply_to="m1@potluck.test")])
+
+    # re-ingest the reply with the In-Reply-To removed and changed content
+    changed = email_draft(
+        2,
+        thread_key="root@potluck.test",
+        to_addrs=("to@potluck.test",),
+        text="edited body",
+    )
+    _run(ctx, [changed])
+
+    with ctx.db.read() as conn:
+        parent = conn.execute(
+            """SELECT i.parent_id FROM emails e JOIN items i ON i.id = e.item_id
+               WHERE e.message_id = 'm2@potluck.test'"""
+        ).fetchone()[0]
+    assert parent is None
+
+
+def test_reingest_with_repointed_in_reply_to_relinks(ctx: AppContext) -> None:
+    """A content update that re-points In-Reply-To must re-link to the new
+    parent in the same run's finalize pass."""
+    _run(ctx, [_email(1), _email(3), _email(2, in_reply_to="m1@potluck.test")])
+
+    repointed = email_draft(
+        2,
+        thread_key="root@potluck.test",
+        in_reply_to="m3@potluck.test",
+        to_addrs=("to@potluck.test",),
+        text="edited body",
+    )
+    _run(ctx, [repointed])
+
+    with ctx.db.read() as conn:
+        parent = conn.execute(
+            """SELECT i.parent_id FROM emails e JOIN items i ON i.id = e.item_id
+               WHERE e.message_id = 'm2@potluck.test'"""
+        ).fetchone()[0]
+        new_parent_item = conn.execute(
+            "SELECT item_id FROM emails WHERE message_id = 'm3@potluck.test'"
+        ).fetchone()[0]
+    assert parent == new_parent_item

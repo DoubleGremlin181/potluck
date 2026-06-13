@@ -537,3 +537,37 @@ def test_bulk_pragmas_restored_after_failed_import(
 
     after = ctx.db.write(lambda c: int(c.execute("PRAGMA synchronous").fetchone()[0]))
     assert after == 1, "synchronous=NORMAL must be restored after a failed import"
+
+
+def test_in_batch_displacement_then_revert_across_batches(ctx: AppContext) -> None:
+    """batch 1 = [x/C1, x/C2] (C2 displaces C1 in-batch), batch 2 = [x/C1]:
+    the displaced draft's hash must leave the seen set when it is shadowed,
+    or the revert is misclassified as an in-run duplicate and the row stays
+    at C2 (#198 review 17). The outcome must not depend on batch boundaries."""
+    drafts = [
+        _eid_draft("Keep/r.json", text="version-one"),
+        _eid_draft("Keep/r.json", text="version-two"),
+        _eid_draft("Keep/r.json", text="version-one"),
+    ]
+    import_id = _run(ctx, drafts, batch_size=2)
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT text FROM items").fetchall()
+
+    assert [r["text"] for r in rows] == ["version-one"]
+    assert _import_counters(ctx, import_id) == (1, 1, 1)
+
+
+def test_in_batch_displacement_then_revert_same_batch(ctx: AppContext) -> None:
+    """All three drafts in ONE batch: last-wins must also hold there."""
+    drafts = [
+        _eid_draft("Keep/r.json", text="version-one"),
+        _eid_draft("Keep/r.json", text="version-two"),
+        _eid_draft("Keep/r.json", text="version-one"),
+    ]
+    _run(ctx, drafts, batch_size=1000)
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT text FROM items").fetchall()
+
+    assert [r["text"] for r in rows] == ["version-one"]

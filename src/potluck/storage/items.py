@@ -254,11 +254,17 @@ def update_items_content(conn: sqlite3.Connection, rows: Sequence[ContentUpdate]
 
     title/text in the SET list make the items_fts AFTER UPDATE trigger rewrite
     the index entries — correct here, since content actually changed.
+
+    parent_id resets to NULL: the link was derived from satellite fields that
+    may have changed with the content (e.g. an email's In-Reply-To), and the
+    end-of-run satellite finalize pass re-resolves NULLs — keeping a stale
+    link would outlive the header that justified it. A no-op for kinds that
+    never set parent_id.
     """
     conn.executemany(
         """UPDATE items
            SET import_id = ?, kind = ?, ts = ?, title = ?, text = ?,
-               lat = ?, lon = ?, content_hash = ?, meta = ?
+               lat = ?, lon = ?, content_hash = ?, meta = ?, parent_id = NULL
            WHERE id = ?""",
         rows,
     )
