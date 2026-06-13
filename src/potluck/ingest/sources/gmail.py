@@ -19,13 +19,17 @@ Gmail exports carry full References.
 """
 
 import hashlib
+import itertools
 import logging
 import multiprocessing
 import os
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from multiprocessing.pool import AsyncResult
 from pathlib import Path
+from typing import Final
 
 from potluck.ingest.attachments import AttachmentStore
 from potluck.ingest.mbox import ParsedEmail, iter_mbox_messages, parse_email
@@ -36,9 +40,14 @@ from potluck.models.items import ItemKind
 
 _logger = logging.getLogger(__name__)
 
-# Pool.imap chunk: large enough to amortize IPC per message, small enough to
+# Worker chunk: large enough to amortize IPC per message, small enough to
 # keep all workers busy on a multi-mbox archive (#199).
 _POOL_CHUNKSIZE = 64
+
+# Cap on chunk results outstanding in the parent (pool.imap buffers results
+# unboundedly when the consumer is slower than the workers): RSS stays at
+# roughly (window + 1) x _POOL_CHUNKSIZE parsed messages.
+_MAX_INFLIGHT_CHUNKS: Final = 8
 
 
 def _raw_body_sha(raw: bytes) -> str:
@@ -167,13 +176,39 @@ class _ParsedMessage:
     body_sha: str
 
 
-def _parse_worker(raw: bytes) -> _ParsedMessage | _ParseFailure:
-    """Top-level (spawn-safe) worker: raw message bytes -> parsed + body sha."""
-    try:
-        sink = _WORKER_STORE.save if _WORKER_STORE is not None else None
-        return _ParsedMessage(parse_email(raw, payload_sink=sink), _raw_body_sha(raw))
-    except Exception as exc:  # noqa: BLE001 — see _ParseFailure
-        return _ParseFailure(f"{type(exc).__name__}: {exc}")
+def _parse_chunk(raws: Sequence[bytes]) -> list[_ParsedMessage | _ParseFailure]:
+    """Top-level (spawn-safe) worker: one fixed chunk of raw messages.
+
+    OSError — the attachment store hitting ENOSPC/EACCES — propagates and
+    fails the run (a 'completed' ledger row must never hide lost mail);
+    parse errors travel back as _ParseFailure data.
+    """
+    sink = _WORKER_STORE.save if _WORKER_STORE is not None else None
+    out: list[_ParsedMessage | _ParseFailure] = []
+    for raw in raws:
+        try:
+            out.append(_ParsedMessage(parse_email(raw, payload_sink=sink), _raw_body_sha(raw)))
+        except OSError:
+            raise  # re-raised in the parent by AsyncResult.get()
+        except Exception as exc:  # noqa: BLE001 — see _ParseFailure
+            out.append(_ParseFailure(f"{type(exc).__name__}: {exc}"))
+    return out
+
+
+def _drain(
+    results: list[_ParsedMessage | _ParseFailure],
+    member_name: str,
+    seen_msgids: dict[str, dict[str, int]],
+) -> Iterator[EmailDraft]:
+    """Convert one chunk's results to drafts, containing per-message errors."""
+    for result in results:
+        if isinstance(result, _ParseFailure):
+            _logger.warning("skipping unparseable message in %s: %s", member_name, result.error)
+            continue
+        try:
+            yield _to_draft(result.parsed, result.body_sha, seen_msgids)
+        except Exception as exc:  # noqa: BLE001 — containment: skip, never abort
+            _logger.warning("skipping unparseable message in %s: %s", member_name, exc)
 
 
 @source(
@@ -190,14 +225,17 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[EmailDraft]:
     """Yield EmailDrafts from every Mail mbox member, streaming.
 
     MIME decoding (77% of a measured real import) fans out to ctx.workers
-    processes via order-preserving ``imap`` (#199); ``_to_draft`` stays
-    sequential in the parent, so msgid ``#N`` suffixes — and therefore the
-    resulting database — are identical to a sequential run. workers == 1
-    skips the pool entirely.
+    processes in fixed chunks (#199), with at most _MAX_INFLIGHT_CHUNKS chunk
+    results outstanding — input read-ahead AND buffered results stay bounded
+    even when the serial parent is the bottleneck. Chunks are drained FIFO,
+    and ``_to_draft`` stays sequential in the parent, so msgid ``#N`` suffixes
+    — and therefore the resulting database — are identical to a sequential
+    run. workers == 1 skips the pool entirely.
 
     One corrupt message logs a WARNING and is skipped — it must never abort
     a multi-GB import. Attachment blobs are extracted content-addressed only
-    when ctx.attachments_dir is set (metadata is recorded either way).
+    when ctx.attachments_dir is set (metadata is recorded either way); a
+    blob-store I/O failure (ENOSPC, permissions) raises and fails the run.
     """
     workers = _effective_workers(ctx.workers)
     seen_msgids: dict[str, dict[str, int]] = {}
@@ -211,24 +249,22 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[EmailDraft]:
                 try:
                     parsed = parse_email(raw, payload_sink=sink)
                     yield _to_draft(parsed, _raw_body_sha(raw), seen_msgids)
+                except OSError:
+                    raise  # blob-store failure: fail the run, never skip mail
                 except Exception as exc:  # noqa: BLE001 — containment: skip, never abort
                     _logger.warning("skipping unparseable message in %s: %s", member.name, exc)
         return
 
     # spawn, never fork: the parent holds live threads (the DB writer); fork
-    # would clone their locks mid-flight. Workers are fed from the streaming
-    # splitter and consumed in order, so memory stays bounded by chunk size.
+    # would clone their locks mid-flight.
     mp = multiprocessing.get_context("spawn")
     with mp.Pool(workers, initializer=_pool_init, initargs=(ctx.attachments_dir,)) as pool:
         for member, stream in archive.iter_members("*Mail/*.mbox"):
-            results = pool.imap(_parse_worker, iter_mbox_messages(stream), _POOL_CHUNKSIZE)
-            for result in results:
-                if isinstance(result, _ParseFailure):
-                    _logger.warning(
-                        "skipping unparseable message in %s: %s", member.name, result.error
-                    )
-                    continue
-                try:
-                    yield _to_draft(result.parsed, result.body_sha, seen_msgids)
-                except Exception as exc:  # noqa: BLE001 — containment: skip, never abort
-                    _logger.warning("skipping unparseable message in %s: %s", member.name, exc)
+            inflight: deque[AsyncResult[list[_ParsedMessage | _ParseFailure]]] = deque()
+            chunks = itertools.batched(iter_mbox_messages(stream), _POOL_CHUNKSIZE, strict=False)
+            for chunk in chunks:
+                if len(inflight) >= _MAX_INFLIGHT_CHUNKS:
+                    yield from _drain(inflight.popleft().get(), member.name, seen_msgids)
+                inflight.append(pool.apply_async(_parse_chunk, (chunk,)))
+            while inflight:
+                yield from _drain(inflight.popleft().get(), member.name, seen_msgids)

@@ -91,3 +91,158 @@ def test_pooled_attachment_extraction(tmp_path: Path) -> None:
         blob_sets.append({p.name for p in attachments_dir.rglob("*") if p.is_file()})
     assert blob_sets[0] == blob_sets[1]
     assert blob_sets[0], "expected extracted attachment blobs"
+
+
+# ---------------------------------------------------------------------------
+# attachment-store I/O failures fail the run (#198 review 3)
+# ---------------------------------------------------------------------------
+
+
+def test_sequential_store_failure_propagates(tmp_path: Path, monkeypatch: object) -> None:
+    """ENOSPC while writing a blob must abort parse(), not skip the email."""
+    import errno
+
+    import pytest
+
+    from potluck.ingest.attachments import AttachmentStore
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 20, seed=7)
+
+    def exploding_save(self: AttachmentStore, sha256: str, payload: bytes) -> Path:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(AttachmentStore, "save", exploding_save)
+    with pytest.raises(OSError, match="No space left"):
+        list(
+            parse(
+                open_archive(archive_path),
+                ParseContext(attachments_dir=tmp_path / "blobs", workers=1),
+            )
+        )
+
+
+def test_pooled_store_failure_propagates(tmp_path: Path) -> None:
+    """Worker-side blob-write failures must surface in the parent, not be
+    swallowed as 'unparseable message'. The attachments dir's parent is an
+    existing FILE, so mkdir raises inside real spawn workers."""
+    import pytest
+
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 20, seed=7)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+
+    with pytest.raises(OSError):
+        list(
+            parse(
+                open_archive(archive_path),
+                ParseContext(attachments_dir=blocker / "blobs", workers=2),
+            )
+        )
+
+
+def test_import_failure_marks_run_failed(tmp_path: Path, monkeypatch: object) -> None:
+    """End-to-end: a blob-write failure leaves the ledger row 'failed', so a
+    re-import after fixing the disk re-parses instead of short-circuiting."""
+    import errno
+
+    import pytest
+
+    from potluck.ingest.attachments import AttachmentStore
+    from potluck.services.imports import list_imports
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 20, seed=7)
+
+    def exploding_save(self: AttachmentStore, sha256: str, payload: bytes) -> Path:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(AttachmentStore, "save", exploding_save)
+    ctx = create_context(
+        Settings(db_path=tmp_path / "t.db", extract_attachments=True, ingest_workers=1)
+    )
+    try:
+        with pytest.raises(OSError):
+            import_path(ctx, archive_path)
+        runs = list_imports(ctx)
+        assert runs and runs[0].status == "failed"
+    finally:
+        ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
+# bounded in-flight window (#198 review 13)
+# ---------------------------------------------------------------------------
+
+
+def test_pool_inflight_window_bounded(tmp_path: Path, monkeypatch: object) -> None:
+    """The parent never holds more than _MAX_INFLIGHT_CHUNKS results pending,
+    so RSS stays bounded even when the consumer is slower than the workers."""
+    import pytest
+
+    from potluck.ingest.sources import gmail as gmail_mod
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 100, seed=7)
+
+    class FakePool:
+        """In-process pool double that records outstanding-result pressure."""
+
+        def __init__(self) -> None:
+            self.outstanding = 0
+            self.max_outstanding = 0
+
+        def apply_async(self, fn: object, args: tuple[object, ...]) -> object:
+            assert callable(fn)
+            self.outstanding += 1
+            self.max_outstanding = max(self.max_outstanding, self.outstanding)
+            value = fn(*args)
+            pool = self
+
+            class Result:
+                def get(self) -> object:
+                    pool.outstanding -= 1
+                    return value
+
+            return Result()
+
+        def __enter__(self) -> "FakePool":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    fake_pool = FakePool()
+
+    class FakeContext:
+        def Pool(  # noqa: N802 — mirrors multiprocessing.context.BaseContext.Pool
+            self, workers: int, initializer: object = None, initargs: tuple[object, ...] = ()
+        ) -> FakePool:
+            if callable(initializer):
+                initializer(*initargs)
+            return fake_pool
+
+    monkeypatch.setattr(gmail_mod, "_POOL_CHUNKSIZE", 4)
+    monkeypatch.setattr(gmail_mod, "_MAX_INFLIGHT_CHUNKS", 3)
+    import types
+
+    monkeypatch.setattr(
+        gmail_mod,
+        "multiprocessing",
+        types.SimpleNamespace(get_context=lambda method: FakeContext()),
+    )
+
+    pooled = list(parse(open_archive(archive_path), ParseContext(workers=2)))
+    sequential = list(parse(open_archive(archive_path), ParseContext(workers=1)))
+    assert pooled == sequential
+    assert fake_pool.max_outstanding <= 3
+
+
+def test_pooled_window_cycling_preserves_order(tmp_path: Path) -> None:
+    """More chunks than the in-flight window: every draft still arrives, in
+    sequential order (real spawn pool)."""
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 600, seed=7)
+    sequential = list(parse(open_archive(archive_path), ParseContext(workers=1)))
+    pooled = list(parse(open_archive(archive_path), ParseContext(workers=2)))
+    assert pooled == sequential
+    assert len(pooled) == 600
