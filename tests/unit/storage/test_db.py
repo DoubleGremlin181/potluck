@@ -103,3 +103,31 @@ def test_write_async_runs_on_writer_thread(tmp_path: Path) -> None:
         assert value == "v"
     finally:
         db.close()
+
+
+def test_bulk_import_mode_keeps_synchronous_normal(db: Database) -> None:
+    """synchronous=OFF with checkpoints running risks corrupting the WHOLE
+    database on power loss, not just losing recent commits — bulk mode must
+    stay at NORMAL (#198 review 12). Pinned so OFF can't sneak back."""
+    with db.bulk_import_mode():
+        sync, cache, autockpt = db.write(
+            lambda conn: (
+                conn.execute("PRAGMA synchronous").fetchone()[0],
+                conn.execute("PRAGMA cache_size").fetchone()[0],
+                conn.execute("PRAGMA wal_autocheckpoint").fetchone()[0],
+            )
+        )
+    assert sync == 1  # NORMAL
+    assert cache == -262144
+    assert autockpt == 10000
+
+    sync_after, cache_after, autockpt_after = db.write(
+        lambda conn: (
+            conn.execute("PRAGMA synchronous").fetchone()[0],
+            conn.execute("PRAGMA cache_size").fetchone()[0],
+            conn.execute("PRAGMA wal_autocheckpoint").fetchone()[0],
+        )
+    )
+    assert sync_after == 1
+    assert cache_after == -2000
+    assert autockpt_after == 1000

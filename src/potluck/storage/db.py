@@ -79,21 +79,21 @@ class Database:
     def bulk_import_mode(self) -> Iterator[None]:
         """Scoped import-speed pragmas on the write connection (#199 rider).
 
-        synchronous=OFF + a big page cache + lazier WAL checkpoints for the
-        duration of a bulk load (measured −14% of the write stage); restored
-        to the standard pragmas on exit, success or failure. Durability trade:
-        a power loss mid-import can lose recent commits — acceptable because
-        an interrupted import is re-run anyway (ledger + content-hash dedup
-        make re-imports idempotent).
+        A big page cache + lazier WAL checkpoints for the duration of a bulk
+        load; restored to the standard pragmas on exit, success or failure.
+        synchronous stays at NORMAL (#198 review): OFF skips the fsync that
+        checkpoints do before resetting the WAL, so with autocheckpoints
+        still running a power/OS loss could corrupt the WHOLE database — not
+        merely lose recent commits, which re-running the import cannot heal.
+        NORMAL in WAL mode is already cheap (one fsync per checkpoint, none
+        per commit).
         """
 
         def _enable(conn: sqlite3.Connection) -> None:
-            conn.execute("PRAGMA synchronous = OFF")
             conn.execute("PRAGMA cache_size = -262144")  # 256 MB
             conn.execute("PRAGMA wal_autocheckpoint = 10000")
 
         def _restore(conn: sqlite3.Connection) -> None:
-            conn.execute("PRAGMA synchronous = NORMAL")
             conn.execute("PRAGMA cache_size = -2000")  # SQLite default
             conn.execute("PRAGMA wal_autocheckpoint = 1000")  # SQLite default
 

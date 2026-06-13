@@ -507,22 +507,30 @@ def test_parse_overlaps_inflight_write(ctx: AppContext, monkeypatch: pytest.Monk
 def test_bulk_pragmas_active_during_import_and_restored(
     ctx: AppContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#199 rider: batch writes run under synchronous=OFF; the standard
-    NORMAL durability comes back as soon as the import finishes."""
-    observed: list[int] = []
+    """#199 rider: batch writes run under the bulk cache/checkpoint pragmas,
+    restored when the import finishes. synchronous stays NORMAL throughout —
+    OFF plus running checkpoints risks whole-DB corruption on power loss
+    (#198 review 12)."""
+    observed: list[tuple[int, int]] = []
     real_write_batch = engine_mod._write_batch
 
     def spying_write(conn: sqlite3.Connection, **kwargs: object) -> list[str]:
-        observed.append(int(conn.execute("PRAGMA synchronous").fetchone()[0]))
+        observed.append(
+            (
+                int(conn.execute("PRAGMA synchronous").fetchone()[0]),
+                int(conn.execute("PRAGMA wal_autocheckpoint").fetchone()[0]),
+            )
+        )
         return real_write_batch(conn, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(engine_mod, "_write_batch", spying_write)
     _run(ctx, _make_drafts(5))
 
     assert observed, "no batches written"
-    assert all(v == 0 for v in observed), f"expected synchronous=OFF during import: {observed}"
-    after = ctx.db.write(lambda c: int(c.execute("PRAGMA synchronous").fetchone()[0]))
-    assert after == 1, "synchronous=NORMAL must be restored after the import"
+    assert all(sync == 1 for sync, _ in observed), f"synchronous must stay NORMAL: {observed}"
+    assert all(ckpt == 10000 for _, ckpt in observed), f"bulk checkpoints expected: {observed}"
+    after = ctx.db.write(lambda c: int(c.execute("PRAGMA wal_autocheckpoint").fetchone()[0]))
+    assert after == 1000, "standard checkpoint cadence must be restored after the import"
 
 
 def test_bulk_pragmas_restored_after_failed_import(
