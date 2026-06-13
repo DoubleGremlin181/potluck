@@ -107,3 +107,64 @@ def test_failed_run_does_not_short_circuit(ctx: AppContext, tmp_path: Path) -> N
     [run2] = import_path(ctx, archive)
     assert run2.id != run1.id
     assert run2.items_duplicate == 10
+
+
+# ---------------------------------------------------------------------------
+# parse-affecting settings in the short-circuit (#198 review 9)
+# ---------------------------------------------------------------------------
+
+
+def test_enabling_extraction_defeats_short_circuit(tmp_path: Path) -> None:
+    """Import without extraction, enable extract_attachments, re-import: the
+    run must re-parse and write blobs — 'same bytes + same parser' is not
+    enough when settings change parse side effects."""
+    from potluck.core.config import Settings
+    from potluck.services.context import create_context
+
+    archive = write_gmail_takeout(tmp_path / "takeout", 20, seed=7)
+    db_path = tmp_path / "t.db"
+    blobs = tmp_path / "blobs"
+
+    ctx = create_context(Settings(db_path=db_path, extract_attachments=False))
+    try:
+        [run1] = import_path(ctx, archive)
+    finally:
+        ctx.db.close()
+
+    ctx = create_context(Settings(db_path=db_path, extract_attachments=True, attachments_dir=blobs))
+    try:
+        [run2] = import_path(ctx, archive)
+        assert run2.id != run1.id, "extraction toggle must defeat the short-circuit"
+        blobs_written = [p for p in blobs.rglob("*") if p.is_file()]
+        assert blobs_written, "expected extracted attachment blobs"
+
+        # Same settings again: short-circuits against the extraction run.
+        [run3] = import_path(ctx, archive)
+        assert run3.id == run2.id
+    finally:
+        ctx.db.close()
+
+
+def test_disabling_extraction_short_circuits_against_extraction_run(tmp_path: Path) -> None:
+    """A prior extraction run covers a non-extraction request (superset rule):
+    the blobs already exist, so nothing would change."""
+    from potluck.core.config import Settings
+    from potluck.services.context import create_context
+
+    archive = write_gmail_takeout(tmp_path / "takeout", 20, seed=7)
+    db_path = tmp_path / "t.db"
+
+    ctx = create_context(
+        Settings(db_path=db_path, extract_attachments=True, attachments_dir=tmp_path / "blobs")
+    )
+    try:
+        [run1] = import_path(ctx, archive)
+    finally:
+        ctx.db.close()
+
+    ctx = create_context(Settings(db_path=db_path, extract_attachments=False))
+    try:
+        [run2] = import_path(ctx, archive)
+        assert run2.id == run1.id
+    finally:
+        ctx.db.close()

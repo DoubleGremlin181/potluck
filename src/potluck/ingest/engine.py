@@ -228,6 +228,7 @@ def run_import(
     path: str,
     file_hash: str | None,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    extract_attachments: bool = False,
 ) -> int:
     """Drive a full import; returns import_id.
 
@@ -254,6 +255,7 @@ def run_import(
             path=path,
             file_hash=file_hash,
             parser_version=parser_version,
+            extract_attachments=extract_attachments,
         )
         return sid, iid
 

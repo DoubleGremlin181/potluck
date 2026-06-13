@@ -59,8 +59,13 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
 
         registry = discover()
         registry_fp = registry_fingerprint(registry)
+        # fhash covers only the PASSED part, but detection (and the ledger)
+        # see the whole logical set — both caches are disabled for multi-part
+        # sets, or a part-1 cache entry could mask sources living in parts
+        # that appeared after it was recorded.
+        single_part = not isinstance(archive, MultiPartArchive)
         cached_names: list[str] | None = None
-        if fhash is not None:
+        if fhash is not None and single_part:
             with ctx.db.read() as conn:
                 cached_names = _storage_scans.get_scan(conn, fhash, registry_fp)
 
@@ -71,7 +76,7 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
         else:
             plugins = detect_sources(archive)
             detect_note = f"{time.perf_counter() - started:.2f}s"
-            if fhash is not None:
+            if fhash is not None and single_part:
                 matched_names = [p.name for p in plugins]
                 ctx.db.write(
                     lambda conn: _storage_scans.record_scan(conn, fhash, registry_fp, matched_names)
@@ -101,7 +106,7 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
         # for a source means re-parsing cannot change anything — return the
         # prior completed run instead of re-reading a multi-GB archive.
         # Disabled for multi-part sets: fhash covers only the passed part.
-        can_short_circuit = fhash is not None and not isinstance(archive, MultiPartArchive)
+        can_short_circuit = fhash is not None and single_part
 
         import_ids: list[int] = []
         for plugin in plugins:
@@ -113,6 +118,7 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
                         source_name=plugin.name,
                         file_hash=fhash,
                         parser_version=plugin.parser_version,
+                        extract_attachments=ctx.settings.extract_attachments,
                     )
                 if prior is not None:
                     _logger.info(
@@ -133,6 +139,7 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
                     drafts=plugin.parse(archive, parse_ctx),
                     path=str(path),
                     file_hash=fhash,
+                    extract_attachments=ctx.settings.extract_attachments,
                 )
             )
             _logger.info(

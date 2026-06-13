@@ -137,3 +137,43 @@ def test_cached_detection_produces_identical_runs(ctx: AppContext, tmp_path: Pat
 
     with ctx.db.read() as conn:
         assert _scan_rows(conn) == 1
+
+
+# ---------------------------------------------------------------------------
+# multi-part sets bypass the detection cache (#198 review 10)
+# ---------------------------------------------------------------------------
+
+
+def test_multipart_set_redetects_when_sibling_parts_appear(
+    ctx: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """fhash covers only the passed part, but detection scans the whole set:
+    a cached scan must never mask sources living in parts that arrived later."""
+    from potluck.testing.archives import write_archive
+
+    calls = _detect_counter(monkeypatch)
+    mbox = (
+        b"From x@potluck.test Fri Dec 12 06:57:49 2025\n"
+        b"Message-ID: <a@potluck.test>\nSubject: s\n\nbody\n"
+    )
+    part1 = write_archive(
+        tmp_path / "takeout-x-001.zip",
+        {"Takeout/Mail/All mail Including Spam and Trash.mbox": mbox},
+        "zip",
+    )
+    [run1] = import_path(ctx, part1)
+    assert run1.source == "gmail"
+    assert len(calls) == 1
+
+    # The second part finishes downloading later, carrying Keep data.
+    write_archive(
+        tmp_path / "takeout-x-002.zip",
+        {"Takeout/Keep/note.json": b'{"title": "t", "textContent": "hello"}'},
+        "zip",
+    )
+
+    # Re-import via part 1 (same bytes, same fhash): the set is now
+    # multi-part, so the cache must be bypassed and Keep detected.
+    runs = import_path(ctx, part1)
+    assert len(calls) == 2
+    assert {r.source for r in runs} == {"gmail", "google_keep"}

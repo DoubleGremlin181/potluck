@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from potluck.api.app import create_app
 from potluck.core.config import Settings
-from potluck.ingest.engine import run_import
+from potluck.ingest.engine import DEFAULT_BATCH_SIZE, run_import
 from potluck.models.drafts import EmailAttachment, EmailDraft, ItemDraft
 from potluck.services.context import AppContext, create_context
 from potluck.services.imports import import_path
@@ -106,13 +106,12 @@ def ingest_email_drafts(
     source_name: str = "gmail-test",
     parser_version: int = 1,
     path: str = "/tmp/t.mbox",
-    batch_size: int | None = None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> int:
     """run_import wrapper for draft-level tests; returns the import id.
 
     Accepts any ItemDraft (mixed-kind corpora ingest notes alongside emails).
     """
-    kwargs: dict[str, int] = {} if batch_size is None else {"batch_size": batch_size}
     return run_import(
         ctx.db,
         source_name=source_name,
@@ -120,7 +119,7 @@ def ingest_email_drafts(
         drafts=iter(drafts),
         path=path,
         file_hash=None,
-        **kwargs,
+        batch_size=batch_size,
     )
 
 
