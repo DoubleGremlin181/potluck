@@ -1,53 +1,29 @@
 """MCP get_thread tool (#123): conversation retrieval parity with the service."""
 
-from datetime import UTC, datetime
-
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from potluck.ingest.engine import run_import
 from potluck.mcp.server import create_mcp
-from potluck.models.drafts import EmailDraft
 from potluck.services.context import AppContext
+from tests.conftest import email_draft, email_item_id, ingest_email_drafts
 
 
 def _ingest_thread(ctx: AppContext) -> int:
     """Ingest a two-message conversation; returns the reply's item id."""
-    drafts = [
-        EmailDraft(
-            external_id="mid:m1@potluck.test",
-            message_id="m1@potluck.test",
+    ingest_email_drafts(
+        ctx,
+        email_draft(1, title="garden plans", text="first message", from_addr="alice@potluck.test"),
+        email_draft(
+            2,
             thread_key="m1@potluck.test",
-            from_addr="alice@potluck.test",
-            title="garden plans",
-            text="first message",
-            ts=datetime(2024, 1, 1, tzinfo=UTC),
-        ),
-        EmailDraft(
-            external_id="mid:m2@potluck.test",
-            message_id="m2@potluck.test",
             in_reply_to="m1@potluck.test",
-            thread_key="m1@potluck.test",
-            from_addr="bob@potluck.test",
             title="Re: garden plans",
             text="the reply",
-            ts=datetime(2024, 1, 2, tzinfo=UTC),
+            from_addr="bob@potluck.test",
         ),
-    ]
-    run_import(
-        ctx.db,
-        source_name="gmail-test",
-        parser_version=1,
-        drafts=iter(drafts),
-        path="/tmp/t.mbox",
-        file_hash=None,
     )
-    with ctx.db.read() as conn:
-        row = conn.execute(
-            "SELECT item_id FROM emails WHERE message_id = 'm2@potluck.test'"
-        ).fetchone()
-    return int(row[0])
+    return email_item_id(ctx, "m2@potluck.test")
 
 
 async def test_get_thread_returns_conversation(ctx: AppContext) -> None:

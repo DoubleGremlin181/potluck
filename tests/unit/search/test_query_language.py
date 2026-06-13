@@ -91,46 +91,35 @@ def test_never_raises_on_garbage() -> None:
 
 
 def _ingest_mixed(ctx: object) -> None:
-    from potluck.ingest.engine import run_import
-    from potluck.models.drafts import EmailDraft, ItemDraft, NoteDraft
+    from potluck.models.drafts import NoteDraft
     from potluck.services.context import AppContext
+    from tests.conftest import email_draft, ingest_email_drafts
 
     assert isinstance(ctx, AppContext)
-    run_import(
-        ctx.db,
+    ingest_email_drafts(
+        ctx,
+        NoteDraft(title="garden notes", text="basil and fennel layout"),
         source_name="keep-test",
-        parser_version=1,
-        drafts=iter([NoteDraft(title="garden notes", text="basil and fennel layout")]),
         path="/tmp/t.zip",
-        file_hash=None,
     )
-    drafts: list[ItemDraft] = [
-        EmailDraft(
-            external_id="mid:e1@potluck.test",
+    ingest_email_drafts(
+        ctx,
+        email_draft(
+            1,
             message_id="e1@potluck.test",
-            thread_key="e1@potluck.test",
             from_addr="alice@potluck.test",
             title="garden budget",
             text="fennel seeds invoice",
             ts=datetime(2024, 3, 1, tzinfo=UTC),
         ),
-        EmailDraft(
-            external_id="mid:e2@potluck.test",
+        email_draft(
+            2,
             message_id="e2@potluck.test",
-            thread_key="e2@potluck.test",
             from_addr="bob@potluck.test",
             title="fennel recipe",
             text="roasted fennel with lemon",
             ts=datetime(2025, 3, 1, tzinfo=UTC),
         ),
-    ]
-    run_import(
-        ctx.db,
-        source_name="gmail-test",
-        parser_version=1,
-        drafts=iter(drafts),
-        path="/tmp/t.mbox",
-        file_hash=None,
     )
 
 

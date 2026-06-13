@@ -1,14 +1,12 @@
 """CLI `potluck show --thread` (#123)."""
 
 import json
-from datetime import UTC, datetime
 
 from typer.testing import CliRunner
 
 from potluck.cli.app import app
-from potluck.ingest.engine import run_import
-from potluck.models.drafts import EmailDraft
 from potluck.services.context import create_context
+from tests.conftest import email_draft, email_item_id, ingest_email_drafts
 
 runner = CliRunner()
 
@@ -17,33 +15,17 @@ def _ingest_thread() -> int:
     """Ingest a three-message conversation into the isolated env's database;
     returns the middle message's item id."""
     drafts = [
-        EmailDraft(
-            external_id=f"mid:m{n}@potluck.test",
-            message_id=f"m{n}@potluck.test",
-            in_reply_to=f"m{n - 1}@potluck.test" if n > 1 else None,
+        email_draft(
+            n,
             thread_key="m1@potluck.test",
-            from_addr=f"sender{n}@potluck.test",
-            title=f"subject {n}",
-            text=f"body {n}",
-            ts=datetime(2024, 1, n, tzinfo=UTC),
+            in_reply_to=f"m{n - 1}@potluck.test" if n > 1 else None,
         )
         for n in (1, 2, 3)
     ]
     ctx = create_context()
     try:
-        run_import(
-            ctx.db,
-            source_name="gmail-test",
-            parser_version=1,
-            drafts=iter(drafts),
-            path="/tmp/t.mbox",
-            file_hash=None,
-        )
-        with ctx.db.read() as conn:
-            row = conn.execute(
-                "SELECT item_id FROM emails WHERE message_id = 'm2@potluck.test'"
-            ).fetchone()
-        return int(row[0])
+        ingest_email_drafts(ctx, *drafts)
+        return email_item_id(ctx, "m2@potluck.test")
     finally:
         ctx.db.close()
 

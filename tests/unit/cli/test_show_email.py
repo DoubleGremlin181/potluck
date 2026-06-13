@@ -1,26 +1,22 @@
 """CLI `potluck show` surfaces email satellite detail (#200)."""
 
 import json
-from datetime import UTC, datetime
 
 from typer.testing import CliRunner
 
 from potluck.cli.app import app
-from potluck.ingest.engine import run_import
-from potluck.models.drafts import EmailAttachment, EmailDraft
+from potluck.models.drafts import EmailAttachment
 from potluck.services.context import create_context
+from tests.conftest import email_draft, email_item_id, ingest_email_drafts
 
 runner = CliRunner()
 
 
 def _ingest_email() -> int:
-    draft = EmailDraft(
-        external_id="mid:m1@potluck.test",
-        message_id="m1@potluck.test",
-        thread_key="m1@potluck.test",
+    draft = email_draft(
+        1,
         title="garden notes",
         text="body",
-        ts=datetime(2024, 1, 1, tzinfo=UTC),
         from_addr="alice@potluck.test",
         from_name="Alice A",
         to_addrs=("bob@potluck.test",),
@@ -33,16 +29,8 @@ def _ingest_email() -> int:
     )
     ctx = create_context()
     try:
-        run_import(
-            ctx.db,
-            source_name="gmail-test",
-            parser_version=1,
-            drafts=iter([draft]),
-            path="/tmp/t.mbox",
-            file_hash=None,
-        )
-        with ctx.db.read() as conn:
-            return int(conn.execute("SELECT id FROM items").fetchone()[0])
+        ingest_email_drafts(ctx, draft)
+        return email_item_id(ctx, "m1@potluck.test")
     finally:
         ctx.db.close()
 
@@ -74,13 +62,8 @@ def test_show_note_json_email_is_null() -> None:
 
     ctx = create_context()
     try:
-        run_import(
-            ctx.db,
-            source_name="keep-test",
-            parser_version=1,
-            drafts=iter([NoteDraft(title="t", text="x")]),
-            path="/tmp/t.zip",
-            file_hash=None,
+        ingest_email_drafts(
+            ctx, NoteDraft(title="t", text="x"), source_name="keep-test", path="/tmp/t.zip"
         )
         with ctx.db.read() as conn:
             item_id = int(conn.execute("SELECT id FROM items").fetchone()[0])

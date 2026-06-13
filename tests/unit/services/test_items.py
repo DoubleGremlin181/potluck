@@ -201,16 +201,16 @@ def test_list_items_empty_db(ctx: AppContext) -> None:
 
 def test_get_item_email_carries_satellite_detail(ctx: AppContext) -> None:
     """#200: email items hydrate the emails row + attachment list."""
-    from potluck.ingest.engine import run_import
-    from potluck.models.drafts import EmailAttachment, EmailDraft
+    from potluck.models.drafts import EmailAttachment
+    from tests.conftest import email_draft, email_item_id, ingest_email_drafts
 
-    draft = EmailDraft(
-        external_id="mid:m1@potluck.test",
-        message_id="m1@potluck.test",
+    draft = email_draft(
+        1,
         in_reply_to="m0@potluck.test",
         thread_key="m0@potluck.test",
         title="garden notes",
         text="body",
+        ts=None,
         from_addr="alice@potluck.test",
         from_name="Alice A",
         to_addrs=("bob@potluck.test",),
@@ -223,16 +223,8 @@ def test_get_item_email_carries_satellite_detail(ctx: AppContext) -> None:
             EmailAttachment(filename="map.png", mime="image/png", size_bytes=5, sha256="ab" * 32),
         ),
     )
-    run_import(
-        ctx.db,
-        source_name="gmail",
-        parser_version=2,
-        drafts=iter([draft]),
-        path="/tmp/t.mbox",
-        file_hash=None,
-    )
-    with ctx.db.read() as conn:
-        item_id = int(conn.execute("SELECT id FROM items").fetchone()[0])
+    ingest_email_drafts(ctx, draft, source_name="gmail", parser_version=2)
+    item_id = email_item_id(ctx, "m1@potluck.test")
 
     item = get_item(ctx, item_id)
     email = item.email
@@ -256,17 +248,10 @@ def test_get_item_email_carries_satellite_detail(ctx: AppContext) -> None:
 
 
 def test_get_item_non_email_has_no_email_detail(ctx: AppContext, tmp_path: Path) -> None:
-    from potluck.ingest.engine import run_import
     from potluck.models.drafts import NoteDraft
+    from tests.conftest import ingest_email_drafts
 
-    run_import(
-        ctx.db,
-        source_name="keep",
-        parser_version=1,
-        drafts=iter([NoteDraft(title="t", text="x")]),
-        path="/tmp/t.zip",
-        file_hash=None,
-    )
+    ingest_email_drafts(ctx, NoteDraft(title="t", text="x"), source_name="keep", path="/tmp/t.zip")
     with ctx.db.read() as conn:
         item_id = int(conn.execute("SELECT id FROM items").fetchone()[0])
     assert get_item(ctx, item_id).email is None

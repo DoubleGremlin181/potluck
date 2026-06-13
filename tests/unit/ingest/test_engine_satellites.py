@@ -2,39 +2,24 @@
 
 import json
 import sqlite3
-from datetime import UTC, datetime, timedelta
 
-from potluck.ingest.engine import run_import
 from potluck.models.drafts import EmailDraft, ItemDraft, NoteDraft
 from potluck.services.context import AppContext
+from tests.conftest import email_draft, ingest_email_drafts
 
 
 def _email(n: int, *, labels: tuple[str, ...] = (), in_reply_to: str | None = None) -> EmailDraft:
-    msgid = f"m{n}@potluck.test"
-    return EmailDraft(
-        external_id=f"mid:{msgid}",
-        message_id=msgid,
-        in_reply_to=in_reply_to,
+    return email_draft(
+        n,
         thread_key="root@potluck.test",
-        from_addr=f"sender{n}@potluck.test",
+        in_reply_to=in_reply_to,
         to_addrs=("to@potluck.test",),
         labels=labels,
-        title=f"subject {n}",
-        text=f"body {n}",
-        ts=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(hours=n),
     )
 
 
 def _run(ctx: AppContext, drafts: list[ItemDraft], *, batch_size: int = 1000) -> int:
-    return run_import(
-        ctx.db,
-        source_name="gmail-test",
-        parser_version=1,
-        drafts=iter(drafts),
-        path="/tmp/test.mbox",
-        file_hash=None,
-        batch_size=batch_size,
-    )
+    return ingest_email_drafts(ctx, *drafts, path="/tmp/test.mbox", batch_size=batch_size)
 
 
 def test_import_writes_emails_satellite(ctx: AppContext) -> None:
