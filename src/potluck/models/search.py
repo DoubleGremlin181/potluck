@@ -39,7 +39,8 @@ class SearchRequest(BaseModel):
         default=None,
         description=(
             "Opaque pagination cursor from a previous response's next_cursor. "
-            "Mutually exclusive with offset."
+            "Valid only for the exact query/prefix/filter set that produced it "
+            "(anything else raises InvalidCursorError). Mutually exclusive with offset."
         ),
     )
     limit: int = Field(default=20, ge=1, le=100)

@@ -1,7 +1,11 @@
 """Search service: full-text BM25 search with operators, prefix mode, cursors."""
 
+import hashlib
+import json
 from datetime import UTC, datetime
 
+from potluck.core.errors import InvalidCursorError
+from potluck.models.items import ItemKind
 from potluck.models.search import SearchHit, SearchRequest, SearchResponse
 from potluck.search.cursor import SearchCursor, decode_cursor, encode_cursor
 from potluck.search.fts import current_score, sanitize_query, search_items
@@ -29,9 +33,14 @@ def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
     Pagination: next_cursor freezes the candidate set at the first page's
     MAX(items.id) and resumes after the last delivered hit — re-anchored on
     that hit's CURRENT score, so corpus-statistics drift from concurrent
-    inserts cannot repeat or skip pre-existing hits.
+    inserts cannot repeat or skip pre-existing hits. Each cursor carries a
+    binding digest of the effective (match, prefix, filters) tuple; the
+    keyset anchor is meaningless under any other bm25 distribution, so a
+    cursor replayed with a different query/prefix/filter set is rejected
+    instead of silently skipping results.
 
-    Raises InvalidCursorError for a malformed req.cursor.
+    Raises InvalidCursorError for a malformed req.cursor, or one produced by
+    a different query/prefix/filter set.
     """
     parsed = parse_query(req.query)
     warnings = list(parsed.errors)
@@ -44,13 +53,25 @@ def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
     before = _as_utc(req.before) if req.before is not None else parsed.before
 
     match_expr = sanitize_query(parsed.terms, prefix=req.prefix)
+    binding = _cursor_binding(
+        match=match_expr,
+        prefix=req.prefix,
+        kinds=kinds,
+        sources=sources,
+        from_addrs=from_addrs,
+        after=after,
+        before=before,
+    )
+
+    cursor: SearchCursor | None = None
+    if req.cursor is not None:
+        cursor = decode_cursor(req.cursor)
+        if cursor.binding != binding:
+            raise InvalidCursorError("cursor does not match this query")
+
     has_filters = any((kinds, sources, from_addrs, after, before))
     if match_expr is None and not has_filters:
         return SearchResponse(query=req.query, hits=[], warnings=warnings)
-
-    cursor: SearchCursor | None = (
-        decode_cursor(req.cursor) if req.cursor is not None and match_expr is not None else None
-    )
 
     with ctx.db.read() as conn:
         max_id: int | None = None
@@ -98,9 +119,44 @@ def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
 
     next_cursor: str | None = None
     if match_expr is not None and max_id is not None and len(hits) == req.limit:
-        next_cursor = encode_cursor(max_id=max_id, last_score=hits[-1].score, last_id=hits[-1].id)
+        next_cursor = encode_cursor(
+            binding=binding, max_id=max_id, last_score=hits[-1].score, last_id=hits[-1].id
+        )
 
     return SearchResponse(query=req.query, hits=hits, next_cursor=next_cursor, warnings=warnings)
+
+
+def _cursor_binding(
+    *,
+    match: str | None,
+    prefix: bool,
+    kinds: list[ItemKind] | None,
+    sources: list[str] | None,
+    from_addrs: list[str] | None,
+    after: datetime | None,
+    before: datetime | None,
+) -> str:
+    """Digest of the EFFECTIVE search inputs that shape the result set.
+
+    Computed AFTER merging inline operators with structured request fields
+    (and after normalization), so logically-equal requests bind equally no
+    matter how the filters were spelled; list fields are sorted for the same
+    reason. Cursors carry this digest and search() rejects any cursor whose
+    binding differs from the current request's — see the search() docstring.
+    """
+    canonical = json.dumps(
+        [
+            match,
+            prefix,
+            sorted(k.value for k in kinds) if kinds else [],
+            sorted(sources) if sources else [],
+            sorted(from_addrs) if from_addrs else [],
+            dt_to_iso(after) if after is not None else None,
+            dt_to_iso(before) if before is not None else None,
+        ],
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def _as_utc(dt: datetime) -> datetime:
