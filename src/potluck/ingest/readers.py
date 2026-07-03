@@ -22,10 +22,38 @@ from typing import IO, Protocol
 
 from potluck.core.errors import UnsupportedArchiveError
 
-# Matches multi-part Takeout filenames, e.g. takeout-20251212T171747Z-16-001.tgz
+# Multi-part Takeout naming. Two generations exist (both seen on real exports):
+#   old: takeout-20240115T123456Z-001.zip        <stem>-<part>
+#   new: takeout-20251212T171747Z-14-001.tgz     <stem>-<file>-<part>
+# _MULTIPART_RE strips the zero-padded part index; its stem match is
+# intentionally loose (any stem) — that is the historical behaviour and what
+# the synthetic generator emits. _TAKEOUT_FILE_RE then strips the new-style
+# file number, but ONLY when the remaining stem still ends in a Takeout export
+# timestamp: the timestamp uniquely identifies one export, so the extra strip
+# cannot over-group. Without that anchor a second numeric strip would merge
+# unrelated sets (report-2023-001 vs report-2024-001). The file number is
+# capped at 3 digits so a year-like group directly after a timestamp is also
+# never treated as a file number.
 _MULTIPART_RE: re.Pattern[str] = re.compile(
-    r"^(?P<stem>.+)-(?P<idx>\d{3})\.(?P<ext>zip|tgz|tar\.gz)$"
+    r"^(?P<stem>.+)-(?P<part>\d{3})\.(?P<ext>zip|tgz|tar\.gz)$"
 )
+_TAKEOUT_FILE_RE: re.Pattern[str] = re.compile(r"^(?P<stem>.+-\d{8}T\d{6}Z)-(?P<file>\d{1,3})$")
+
+
+def _parse_part_name(name: str) -> tuple[str, str, tuple[int, int]] | None:
+    """Split an archive filename into (set stem, ext, numeric order) — or None.
+
+    Order is (file, part) so real sets sort numerically (9 < 12 < 16, and
+    2-001 < 2-002 < 10-001); old-style names have no file number and use 0.
+    """
+    m = _MULTIPART_RE.match(name)
+    if m is None:
+        return None
+    stem, part, ext = m.group("stem"), int(m.group("part")), m.group("ext")
+    fm = _TAKEOUT_FILE_RE.match(stem)
+    if fm is not None:
+        return fm.group("stem"), ext, (int(fm.group("file")), part)
+    return stem, ext, (0, part)
 
 
 @dataclass(frozen=True)
@@ -199,9 +227,12 @@ def _make_single_archive(path: Path) -> "ZipArchive | TarArchive":
 def open_archive(path: Path) -> Archive:
     """Detect and open a zip / .tgz / .tar.gz / directory archive.
 
-    Multi-part sets (e.g. ``takeout-20251212-001.tgz``, ``…-002.tgz``, …) are
+    Multi-part sets — old naming (``takeout-20240115T123456Z-001.tgz``,
+    ``…-002.tgz``, …) and real current Takeout naming
+    (``takeout-20251212T171747Z-9-001.tgz``, ``…-12-001.tgz``, …) — are
     detected by filename pattern and automatically combined into a
-    :class:`MultiPartArchive`. Opening any part of the set loads the whole set.
+    :class:`MultiPartArchive`, ordered numerically by (file, part). Opening
+    any part of the set loads the whole set.
 
     Raises :class:`~potluck.core.errors.UnsupportedArchiveError` for unrecognised
     extensions or paths that do not exist.
@@ -213,21 +244,23 @@ def open_archive(path: Path) -> Archive:
         raise UnsupportedArchiveError(f"Path does not exist: {path}")
 
     # Multi-part detection
-    m = _MULTIPART_RE.match(path.name)
-    if m:
-        stem = m.group("stem")
-        ext = m.group("ext")
+    parsed = _parse_part_name(path.name)
+    if parsed is not None:
+        stem, ext, _ = parsed
         parent = path.parent
-        siblings: list[Path] = sorted(
-            p
-            # glob.escape: the stem is user-controlled and may contain glob
-            # metacharacters ('[', ']', '*') — match it literally or siblings
-            # are silently missed.
-            for p in parent.glob(f"{glob.escape(stem)}-???.{ext}")
-            if (pm := _MULTIPART_RE.match(p.name)) is not None and pm.group("stem") == stem
+        # glob.escape: the stem is user-controlled and may contain glob
+        # metacharacters ('[', ']', '*') — match it literally or siblings are
+        # silently missed. The '*' spans both '-NNN' and '-N-NNN' tails;
+        # _parse_part_name re-validates every candidate, and the stem equality
+        # check rejects files whose stem merely extends this one (e.g.
+        # 'takeout-test-9-001' globbed from stem 'takeout-test').
+        siblings: list[tuple[tuple[int, int], Path]] = sorted(
+            (candidate[2], p)
+            for p in parent.glob(f"{glob.escape(stem)}-*.{ext}")
+            if (candidate := _parse_part_name(p.name)) is not None and candidate[0] == stem
         )
         if len(siblings) > 1:
-            parts = tuple(_make_single_archive(p) for p in siblings)
+            parts = tuple(_make_single_archive(p) for _, p in siblings)
             return MultiPartArchive(parts)
         # Only one file in the "set" → treat as plain archive
         return _make_single_archive(path)
