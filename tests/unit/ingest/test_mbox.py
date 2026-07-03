@@ -5,11 +5,18 @@ Takeout mbox shape (From_ envelope lines, X-Gmail-Labels, multipart/alternative
 with quoted-printable HTML) — content is synthetic.
 """
 
+import email.message
 import hashlib
 from datetime import UTC, datetime
 from io import BytesIO
 
-from potluck.ingest.mbox import iter_mbox_messages, normalize_msgid, parse_email
+from potluck.ingest.mbox import (
+    ParsedEmail,
+    _payload_bytes,
+    iter_mbox_messages,
+    normalize_msgid,
+    parse_email,
+)
 
 # ---------------------------------------------------------------------------
 # iter_mbox_messages
@@ -504,6 +511,133 @@ def test_parse_second_inline_plain_recorded_as_attachment() -> None:
     assert "inline notes file" not in parsed.text
     assert [a.filename for a in parsed.attachments] == ["notes.txt"]
     assert parsed.attachments[0].mime == "text/plain"
+
+
+# ---------------------------------------------------------------------------
+# parse boundary: no ParsedEmail string may carry lone surrogates.
+# Real-data defect: the stdlib email package surrogateescapes undecodable raw
+# header bytes into strings (U+DC80-U+DCFF); ONE such From display name
+# crashed a 126k-email import in content_hash (UnicodeEncodeError). All bytes
+# below are synthetic.
+# ---------------------------------------------------------------------------
+
+
+def _all_strings(parsed: ParsedEmail) -> list[str]:
+    """Every string field of a ParsedEmail (the no-surrogates invariant surface)."""
+    fields: list[str | None] = [
+        parsed.message_id,
+        parsed.in_reply_to,
+        *parsed.references,
+        parsed.from_addr,
+        parsed.from_name,
+        *parsed.to_addrs,
+        *parsed.to_names,
+        *parsed.cc_addrs,
+        *parsed.cc_names,
+        *parsed.bcc_addrs,
+        parsed.subject,
+        parsed.text,
+        *parsed.labels,
+    ]
+    for att in parsed.attachments:
+        fields.extend((att.filename, att.mime))
+    return [f for f in fields if f is not None]
+
+
+def _assert_utf8_clean(parsed: ParsedEmail) -> None:
+    for s in _all_strings(parsed):
+        s.encode("utf-8")  # raises UnicodeEncodeError on any lone surrogate
+
+
+def test_parse_undecodable_from_name_scrubbed() -> None:
+    """THE crash reproducer: junk bytes in the From display name must not
+    surrogateescape into from_name — hashing and SQLite need clean UTF-8."""
+    parsed = parse_email(_msg(b'From: "\x93Bad Name\x94" <x@potluck.test>', b"", b"body"))
+    _assert_utf8_clean(parsed)
+    assert parsed.from_name is not None
+    assert "Bad Name" in parsed.from_name  # readable characters survive
+    assert parsed.from_addr == "x@potluck.test"
+
+
+def test_parse_undecodable_addr_spec_scrubbed() -> None:
+    parsed = parse_email(_msg(b'From: "ok" <ju\x93nk@potluck.test>', b"", b"body"))
+    _assert_utf8_clean(parsed)
+    assert parsed.from_addr is not None
+    assert parsed.from_addr.endswith("nk@potluck.test")
+
+
+def test_parse_undecodable_subject_toname_labels_scrubbed() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Subject: junk \x93quoted\x94 subject",
+            b'To: "\x93Recipient\x94" <to@potluck.test>',
+            b"X-Gmail-Labels: Inbox,\x93Junk\x94,Unread",
+            b"",
+            b"body",
+        )
+    )
+    _assert_utf8_clean(parsed)
+    assert parsed.subject is not None and "junk" in parsed.subject
+    assert parsed.to_names and "Recipient" in parsed.to_names[0]
+    assert parsed.to_addrs == ("to@potluck.test",)
+    assert "Inbox" in parsed.labels and "Unread" in parsed.labels
+
+
+def test_parse_utf7_body_cannot_leak_lone_surrogates() -> None:
+    """bytes.decode CAN emit lone surrogates: utf-7 decodes b'+2AA-' to
+    U+D800 without error — the body path must scrub them too."""
+    parsed = parse_email(
+        _msg(b"Content-Type: text/plain; charset=utf-7", b"", b"+2AA- readable tail")
+    )
+    _assert_utf8_clean(parsed)
+    assert "readable tail" in parsed.text
+
+
+def test_parse_junk_bytes_everywhere_all_fields_utf8_clean() -> None:
+    """Kitchen sink: undecodable bytes in every header the parser reads."""
+    parsed = parse_email(
+        _msg(
+            b"Message-ID: <ab\x93c@potluck.test>",
+            b"In-Reply-To: <de\x94f@potluck.test>",
+            b"References: <ab\x93c@potluck.test> <de\x94f@potluck.test>",
+            b'From: "\x93Alice\x94" <al\x93ice@potluck.test>',
+            b'To: "\x93Bob\x94" <bob@potluck.test>, ca\x94rol@potluck.test',
+            b'Cc: "\x93Dee\x94" <dee@potluck.test>',
+            b"Bcc: ev\x93e@potluck.test",
+            b"Subject: \x93junk\x94",
+            b"X-Gmail-Labels: \x93Label\x94",
+            b'Content-Type: multipart/mixed; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"body",
+            b"--B",
+            b"Content-Type: applica\x93tion/octet-stream",
+            b'Content-Disposition: attachment; filename="re\x93port.bin"',
+            b"",
+            b"AAAA",
+            b"--B--",
+        )
+    )
+    _assert_utf8_clean(parsed)
+
+
+def test_payload_bytes_surrogate_string_fallback_never_raises() -> None:
+    """Broken-CTE fallback: get_payload(decode=True) fails and the undecoded
+    payload STRING carries lone surrogates — re-encoding must not raise."""
+
+    class _BrokenPart(email.message.Message):
+        def get_payload(  # type: ignore[override]
+            self, i: int | None = None, decode: bool = False
+        ) -> object:
+            if decode:
+                raise ValueError("broken CTE")
+            return "ju\udc93nk \ud800payload"
+
+    out = _payload_bytes(_BrokenPart())
+    assert isinstance(out, bytes)
+    assert b"nk" in out
 
 
 def test_parse_nul_charset_falls_back() -> None:

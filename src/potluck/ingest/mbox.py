@@ -64,9 +64,34 @@ class AttachmentInfo:
     sha256: str
 
 
+def _scrub_surrogates(s: str) -> str:
+    """Replace lone UTF-16 surrogates (U+D800-U+DFFF) so parsed strings are
+    always valid UTF-8.
+
+    The stdlib email package decodes undecodable raw header bytes with
+    ``errors="surrogateescape"`` (unknown-8bit), and exotic charsets can
+    decode junk into lone surrogates outright (utf-7 turns ``+2AA-`` into
+    U+D800 without error). Such strings cannot be UTF-8 encoded — one bad
+    header byte would crash content hashing and the SQLite TEXT bind. The
+    engine stays strict; the parse boundary guarantees clean strings.
+
+    Fast path is a single C-level encode probe — no regex scan; the replace
+    path runs only on defective input.
+    """
+    try:
+        s.encode("utf-8")
+    except UnicodeEncodeError:
+        return s.encode("utf-8", errors="replace").decode("utf-8")
+    return s
+
+
 @dataclass(frozen=True)
 class ParsedEmail:
-    """One decoded email — an ingest-layer value, not a storage draft."""
+    """One decoded email — an ingest-layer value, not a storage draft.
+
+    Invariant: no string field (including attachment filename/mime) carries
+    lone surrogates — every string UTF-8-encodes cleanly (hashing, SQLite).
+    """
 
     message_id: str | None
     in_reply_to: str | None
@@ -92,7 +117,7 @@ def _header(msg: email.message.Message, name: str) -> str | None:
         value = msg.get(name)
     except Exception:  # noqa: BLE001 — hostile input; any header error means "absent"
         return None
-    return str(value) if value is not None else None
+    return _scrub_surrogates(str(value)) if value is not None else None
 
 
 def _msgid_list(raw: str | None) -> tuple[str, ...]:
@@ -110,8 +135,12 @@ def _address_pairs(msg: email.message.Message, name: str) -> tuple[tuple[str, st
     5322 parse through getaddresses (~77% of import time is MIME decoding).
     """
     try:
+        # Address tokens carry surrogateescape'd junk bytes through (unlike
+        # unstructured headers, which utils._sanitize already replaces) —
+        # THE real-data crash path: one bad From display name killed a
+        # 126k-email import in content_hash.
         return tuple(
-            (a.display_name, a.addr_spec.lower())
+            (_scrub_surrogates(a.display_name), _scrub_surrogates(a.addr_spec.lower()))
             for v in msg.get_all(name, [])
             for a in getattr(v, "addresses", ())
             if a.addr_spec
@@ -141,12 +170,16 @@ def _decode_bytes(data: bytes, declared: str | None) -> str:
     """Charset fallback chain: declared -> utf-8 -> latin-1 with replacement."""
     for encoding in dict.fromkeys(filter(None, (declared, "utf-8"))):
         try:
-            return data.decode(encoding)
+            # Scrubbed because bytes.decode CAN emit lone surrogates for some
+            # declared charsets (utf-7 decodes b"+2AA-" to U+D800 without
+            # error) — body text must uphold the ParsedEmail invariant too.
+            return _scrub_surrogates(data.decode(encoding))
         # ValueError covers UnicodeDecodeError AND the plain ValueError that
         # str.decode raises for charset names with embedded NULs (seen in
         # malformed mail) — junk charsets must fall through, never abort.
         except (LookupError, ValueError):
             continue
+    # latin-1 maps bytes to U+0000-U+00FF only — no surrogates possible.
     return data.decode("latin-1", errors="replace")
 
 
@@ -161,6 +194,8 @@ def _payload_bytes(part: email.message.Message) -> bytes:
         return payload
     raw = part.get_payload()
     if isinstance(raw, str):
+        # errors="replace" also swallows surrogateescape'd junk in the raw
+        # string ('\udc93' encodes as b"?") — this re-encode cannot raise.
         return raw.encode("latin-1", errors="replace")
     return b""
 
@@ -203,10 +238,13 @@ def parse_email(
         sha256 = hashlib.sha256(payload).hexdigest()
         if payload_sink is not None:
             payload_sink(sha256, payload)
+        # filename/mime are header-derived (Content-Disposition/Content-Type)
+        # and feed the content hash — scrubbed like every header string.
+        filename = part.get_filename()
         attachments.append(
             AttachmentInfo(
-                filename=part.get_filename(),
-                mime=part.get_content_type(),
+                filename=_scrub_surrogates(filename) if filename is not None else None,
+                mime=_scrub_surrogates(part.get_content_type()),
                 size_bytes=len(payload),
                 sha256=sha256,
             )
