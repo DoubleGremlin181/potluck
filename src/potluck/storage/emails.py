@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from typing import NamedTuple
 
 from potluck.models.drafts import EmailDraft
-from potluck.storage.items import PREVIEW_CHARS
+from potluck.storage.items import TEXT_PREVIEW_SQL
 
 
 class EmailRow(NamedTuple):
@@ -138,7 +138,7 @@ def list_thread_rows(
     """All members of one conversation, oldest first (undated members last)."""
     return conn.execute(
         f"""SELECT i.id, i.parent_id, i.ts, i.title,
-                   substr(i.text, 1, {PREVIEW_CHARS}) AS text_preview,
+                   {TEXT_PREVIEW_SQL} AS text_preview,
                    e.from_addr
             FROM emails AS e JOIN items AS i ON i.id = e.item_id
             WHERE i.source_id = ? AND e.thread_key = ?

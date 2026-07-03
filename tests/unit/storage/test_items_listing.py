@@ -3,9 +3,9 @@
 import sqlite3
 from typing import Any
 
-from potluck.models.items import ItemSort
+from potluck.models.items import ItemKind, ItemSort
 from potluck.services.context import AppContext
-from potluck.storage.items import list_item_rows
+from potluck.storage.items import item_filter_predicates, list_item_rows
 from tests.conftest import insert_import, insert_item, insert_source
 
 
@@ -120,6 +120,38 @@ def test_source_filtered_count_still_correct(ctx: AppContext) -> None:
 
     assert (len(rows), total) == (5, 5)
     assert none_total == 0
+
+
+def test_item_filter_predicates_shape_and_date_convention() -> None:
+    """THE single assertion of the shared filter fragments: after/since is
+    inclusive (>=), before/until is exclusive (<) — items listing and
+    search/fts.py both render their WHERE from this helper, so the
+    convention cannot silently diverge."""
+    predicates, params = item_filter_predicates(
+        kinds=[ItemKind.NOTE, ItemKind.EMAIL],
+        sources=["gmail"],
+        after_iso="2024-01-01T00:00:00+00:00",
+        before_iso="2024-02-01T00:00:00+00:00",
+    )
+    assert predicates == [
+        "i.kind IN (?,?)",
+        "s.name IN (?)",
+        "i.ts >= ?",
+        "i.ts < ?",
+    ]
+    assert params == [
+        "note",
+        "email",
+        "gmail",
+        "2024-01-01T00:00:00+00:00",
+        "2024-02-01T00:00:00+00:00",
+    ]
+
+    empty_predicates, empty_params = item_filter_predicates(
+        kinds=None, sources=None, after_iso=None, before_iso=None
+    )
+    assert empty_predicates == []
+    assert empty_params == []
 
 
 def test_count_and_page_share_one_snapshot(ctx: AppContext) -> None:

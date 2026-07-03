@@ -4,7 +4,10 @@ build_search_sql is the single place search SELECTs are rendered: filters are
 appended as AND predicates after the MATCH (the FTS index drives the scan;
 satellite predicates are PK lookups per candidate — codified by the EXPLAIN
 QUERY PLAN test). Without free-text terms the same filters run against items
-directly, newest first.
+directly, newest first. Shared items fragments (kind/source/date filters,
+newest-first order, text preview) are imported from storage.items — storage
+owns items SQL; only FTS-specific SQL (MATCH, bm25, snippet, highlight, the
+keyset) plus the emails-satellite from: filter is rendered here.
 """
 
 import re
@@ -12,9 +15,9 @@ import sqlite3
 from collections.abc import Sequence
 from typing import Final
 
-from potluck.models.items import ItemKind
+from potluck.models.items import ItemKind, ItemSort
 from potluck.storage.fts import BM25_WEIGHT_TEXT, BM25_WEIGHT_TITLE
-from potluck.storage.items import PREVIEW_CHARS
+from potluck.storage.items import LIST_ORDER, TEXT_PREVIEW_SQL, item_filter_predicates
 
 _TOKEN: Final[re.Pattern[str]] = re.compile(r"\w+", re.UNICODE)
 
@@ -56,19 +59,18 @@ def _filter_predicates(
 ) -> tuple[list[str], list[object], list[str]]:
     """Shared WHERE fragments for both the MATCH and filter-only variants.
 
-    Returns (predicates, params, joins).
+    The kind/source/date fragments come from storage.items (which owns items
+    SQL); this module adds only the search-specific parts — the joins those
+    fragments need here and the emails-satellite from: filter. Returns
+    (predicates, params, joins).
     """
-    predicates: list[str] = []
-    params: list[object] = []
+    predicates, params = item_filter_predicates(
+        kinds=kinds, sources=sources, after_iso=after_iso, before_iso=before_iso
+    )
     joins: list[str] = []
 
-    if kinds:
-        predicates.append(f"i.kind IN ({','.join('?' * len(kinds))})")
-        params.extend(k.value for k in kinds)
     if sources:
         joins.append("JOIN sources AS s ON s.id = i.source_id")
-        predicates.append(f"s.name IN ({','.join('?' * len(sources))})")
-        params.extend(sources)
     if from_addrs:
         joins.append("JOIN emails AS e ON e.item_id = i.id")
         alternatives: list[str] = []
@@ -81,12 +83,6 @@ def _filter_predicates(
                 alternatives.append(r"e.from_addr LIKE ? ESCAPE '\'")
                 params.append(_LIKE_SPECIALS.sub(r"\\\1", addr) + "%")
         predicates.append("(" + " OR ".join(alternatives) + ")")
-    if after_iso is not None:
-        predicates.append("i.ts >= ?")
-        params.append(after_iso)
-    if before_iso is not None:
-        predicates.append("i.ts < ?")
-        params.append(before_iso)
 
     return predicates, params, joins
 
@@ -133,21 +129,12 @@ def build_search_sql(
             cursor_sql += " AND i.id <= ?"
             cursor_params.append(max_id)
         if after_score is not None and after_id is not None:
-            # Aliases are not usable in WHERE — repeat the bm25() expression.
-            cursor_sql += (
-                " AND (bm25(items_fts, ?, ?) > ? OR (bm25(items_fts, ?, ?) = ? AND i.id > ?))"
-            )
-            cursor_params.extend(
-                [
-                    BM25_WEIGHT_TITLE,
-                    BM25_WEIGHT_TEXT,
-                    after_score,
-                    BM25_WEIGHT_TITLE,
-                    BM25_WEIGHT_TEXT,
-                    after_score,
-                    after_id,
-                ]
-            )
+            # Aliases are not usable in WHERE, so bm25() must repeat — but the
+            # row-value comparison evaluates it ONCE per candidate row (the
+            # expanded OR form costs two more). `>` is correct for the
+            # ascending ORDER BY score, i.id (bm25 is negative-better).
+            cursor_sql += " AND (bm25(items_fts, ?, ?), i.id) > (?, ?)"
+            cursor_params.extend([BM25_WEIGHT_TITLE, BM25_WEIGHT_TEXT, after_score, after_id])
         sql = (
             "SELECT i.id, i.kind, i.title, "
             "highlight(items_fts, 0, '[', ']') AS title_highlight, i.ts, "
@@ -162,11 +149,11 @@ def build_search_sql(
         all_params.extend(cursor_params)
     else:
         sql = (
-            f"SELECT i.id, i.kind, i.title, NULL AS title_highlight, i.ts, "
-            f"COALESCE(substr(i.text, 1, {PREVIEW_CHARS}), '') AS snippet, "
+            "SELECT i.id, i.kind, i.title, NULL AS title_highlight, i.ts, "
+            f"COALESCE({TEXT_PREVIEW_SQL}, '') AS snippet, "
             "0.0 AS score "
             f"FROM items AS i{join_sql} WHERE 1=1{where_sql} "
-            "ORDER BY i.ts DESC NULLS LAST, i.id DESC LIMIT ? OFFSET ?"
+            f"ORDER BY {LIST_ORDER[ItemSort.TS_DESC]} LIMIT ? OFFSET ?"
         )
         all_params = list(params)
 

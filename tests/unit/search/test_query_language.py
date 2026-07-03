@@ -226,6 +226,33 @@ def test_query_plan_fts_drives_and_emails_uses_pk(ctx: object) -> None:
     assert "SCAN e" not in plan, plan  # never a full emails scan
 
 
+def test_query_plan_keyset_cursor_keeps_fts_driving(ctx: object) -> None:
+    """The row-value keyset predicate must not demote the MATCH: the FTS
+    index still drives the scan on page-2+ fetches."""
+    from potluck.search.fts import build_search_sql
+    from potluck.services.context import AppContext
+
+    assert isinstance(ctx, AppContext)
+    _ingest_mixed(ctx)
+    sql, params = build_search_sql(
+        match='"fennel"',
+        kinds=None,
+        sources=None,
+        from_addrs=None,
+        after_iso=None,
+        before_iso=None,
+        limit=20,
+        offset=0,
+        max_id=10_000,
+        after_score=-1.0,
+        after_id=1,
+    )
+    with ctx.db.read() as conn:
+        plan = "\n".join(str(row[3]) for row in conn.execute(f"EXPLAIN QUERY PLAN {sql}", params))
+    assert "VIRTUAL TABLE INDEX" in plan, plan  # items_fts MATCH drives the scan
+    assert "USING INTEGER PRIMARY KEY" in plan, plan  # items accessed by rowid PK
+
+
 def test_operator_key_requires_token_boundary() -> None:
     """A known key embedded mid-token is NOT an operator: searching for the
     literal 'sent-from:alice@x.com' must not become a from: filter plus the

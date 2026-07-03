@@ -99,6 +99,36 @@ def test_equal_score_pagination_deterministic(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_keyset_predicate_is_row_value_single_bm25(tmp_path: Path) -> None:
+    """The cursor keyset is a row-value comparison — bm25() appears once in
+    the WHERE (plus the SELECT's score column), never the doubled OR
+    expansion that costs three aux-function evaluations per candidate row.
+    Executed against a live FTS5 table to prove row-value + bm25 compose."""
+    from potluck.search.fts import build_search_sql
+
+    sql, params = build_search_sql(
+        match='"pear"',
+        kinds=None,
+        sources=None,
+        from_addrs=None,
+        after_iso=None,
+        before_iso=None,
+        limit=5,
+        offset=0,
+        max_id=100,
+        after_score=-1.5,
+        after_id=7,
+    )
+    assert sql.count("bm25(") == 2, sql
+    assert "(bm25(items_fts, ?, ?), i.id) > (?, ?)" in sql
+
+    conn = _open_migrated(tmp_path)
+    try:
+        conn.execute(sql, params).fetchall()  # must not raise
+    finally:
+        conn.close()
+
+
 def test_fuzz_no_operational_error(tmp_path: Path) -> None:
     """Nasty inputs never cause sqlite3.OperationalError on MATCH."""
     nasty_inputs = [

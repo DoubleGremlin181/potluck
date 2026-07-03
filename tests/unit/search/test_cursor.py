@@ -106,6 +106,46 @@ def test_cursor_pages_match_offset_ground_truth(ctx: AppContext) -> None:
     assert len(cursor_ids) == 25
 
 
+def test_cursor_walk_distinct_scores_no_skip_no_dup(ctx: AppContext) -> None:
+    """Multi-page walk where page boundaries fall between DISTINCT scores,
+    not only ties (the _seed docs all score identically): the keyset must
+    resume strictly after (score, id) in both regimes — no skipped hits, no
+    repeats, identical to offset ground truth."""
+
+    def _go(conn: sqlite3.Connection) -> None:
+        sid = insert_source(conn)
+        iid = insert_import(conn, sid)
+        for n in range(13):
+            # Vary term frequency and document length -> distinct bm25 scores.
+            text = " ".join(["pear"] * (n % 4 + 1) + ["filler"] * n)
+            insert_item(conn, sid, iid, content_hash=f"h{n}", title=f"doc {n}", text=text)
+
+    ctx.db.write(_go)
+
+    offset_ids = [
+        h.id
+        for off in (0, 5, 10)
+        for h in search(ctx, SearchRequest(query="pear", limit=5, offset=off)).hits
+    ]
+
+    walked: list[tuple[int, float]] = []
+    cursor: str | None = None
+    for _ in range(10):  # safety bound
+        resp = search(ctx, SearchRequest(query="pear", limit=5, cursor=cursor))
+        walked.extend((h.id, h.score) for h in resp.hits)
+        cursor = resp.next_cursor
+        if cursor is None:
+            break
+
+    ids = [item_id for item_id, _ in walked]
+    assert ids == offset_ids
+    assert len(ids) == 13
+    assert len(set(ids)) == 13, "cursor pages skipped or repeated a hit"
+    # The seed must actually produce ranking variety, or this test degrades
+    # into another equal-score walk.
+    assert len({score for _, score in walked}) > 1
+
+
 def test_next_cursor_none_when_exhausted(ctx: AppContext) -> None:
     _seed(ctx, 5)
     resp = search(ctx, SearchRequest(query="pear", limit=10))
