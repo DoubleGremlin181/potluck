@@ -5,6 +5,7 @@ The engine owns batching/hashing/dedup/FTS/progress/ledger.
 """
 
 import fnmatch
+import hashlib
 import importlib
 import logging
 import pkgutil
@@ -182,8 +183,6 @@ def registry_fingerprint(plugins: dict[str, SourcePlugin]) -> str:
     the key that lets archive scans be cached (#196). parser_version is
     deliberately excluded: it changes what parse produces, not what matches.
     """
-    import hashlib
-
     canonical = "\n".join(
         f"{name}:{plugin.detect.pattern}" for name, plugin in sorted(plugins.items())
     )

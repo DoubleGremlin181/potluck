@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import typer
 import uvicorn
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
@@ -21,6 +21,7 @@ from potluck.bench.scenarios import ALL_SCENARIOS
 from potluck.core.config import Settings
 from potluck.core.errors import ItemNotFoundError, PotluckError
 from potluck.mcp.server import run_http, run_stdio
+from potluck.models.imports import ImportRun
 from potluck.models.items import ItemKind, ItemSort, ListItemsRequest
 from potluck.models.search import SearchRequest
 from potluck.services import dev as dev_service
@@ -32,6 +33,10 @@ from potluck.services import threads as threads_service
 from potluck.services.context import create_context
 
 console = Console()
+
+# Module-level adapter: pydantic serializes DTO lists in one step (built once,
+# not per call) — no model_dump_json → json.loads → json.dumps round trip.
+_IMPORT_RUNS_JSON = TypeAdapter(list[ImportRun])
 
 app = typer.Typer(
     name="potluck",
@@ -81,7 +86,7 @@ def import_(
         ctx.db.close()
 
     if as_json:
-        print(_json.dumps([_json.loads(run.model_dump_json()) for run in runs], indent=2))
+        print(_IMPORT_RUNS_JSON.dump_json(runs, indent=2).decode())
         return
 
     for run in runs:

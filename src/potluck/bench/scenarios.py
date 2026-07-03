@@ -241,10 +241,22 @@ _PREFIX_QUERIES: tuple[str, ...] = tuple(
         for i in range(_SEARCH_QUERY_COUNT // 2)
     ]
 )
+# Smoke-tier SAYT prefixes for the shared 10k KEEP corpus, whose vocabulary is
+# bare WORDS — the TAIL_WORDS compounds above can never match there, and a
+# zero-hit workload measures only empty term-range scans (never bm25 ranking,
+# snippet(), or row fetch). Each prefix is a WORD minus its final character
+# (a user one keystroke from a real token), so every query hits; guarded by
+# test_prefix_10k_smoke_queries_hit_the_keep_corpus.
+_KEEP_PREFIX_QUERIES: tuple[str, ...] = tuple(
+    [WORDS[i % len(WORDS)][:-1] for i in range(_SEARCH_QUERY_COUNT // 2)]
+    + [
+        f"{WORDS[i % len(WORDS)]} {WORDS[(i + 7) % len(WORDS)][:-1]}"
+        for i in range(_SEARCH_QUERY_COUNT // 2)
+    ]
+)
 
 
-def _search_run(workdir: Path, *, prefix: bool) -> None:
-    queries = _PREFIX_QUERIES if prefix else _FTS_SCALE_QUERIES
+def _search_run(workdir: Path, queries: tuple[str, ...], *, prefix: bool) -> None:
     ctx = _make_ctx(workdir)
     try:
         for q in queries:
@@ -254,11 +266,15 @@ def _search_run(workdir: Path, *, prefix: bool) -> None:
 
 
 def _fts_run(workdir: Path) -> None:
-    _search_run(workdir, prefix=False)
+    _search_run(workdir, _FTS_SCALE_QUERIES, prefix=False)
 
 
 def _prefix_run(workdir: Path) -> None:
-    _search_run(workdir, prefix=True)
+    _search_run(workdir, _PREFIX_QUERIES, prefix=True)
+
+
+def _keep_prefix_run(workdir: Path) -> None:
+    _search_run(workdir, _KEEP_PREFIX_QUERIES, prefix=True)
 
 
 # ---------------------------------------------------------------------------
@@ -320,11 +336,12 @@ ALL_SCENARIOS = [
         run=_prefix_run,
     ),
     # Cheap PR-tier SAYT latency tracking over the shared 10k Keep corpus
+    # (Keep-vocabulary prefixes — every query returns real hits there)
     Scenario(
         name="prefix_10k",
         tier="smoke",
         item_count=_SEARCH_QUERY_COUNT,
         setup=_imported_keep_10k_setup,
-        run=_prefix_run,
+        run=_keep_prefix_run,
     ),
 ]
