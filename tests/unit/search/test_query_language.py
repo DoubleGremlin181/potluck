@@ -25,9 +25,12 @@ def test_operators_extracted_from_terms() -> None:
     assert parsed.after == datetime(2024, 1, 1, tzinfo=UTC)
 
 
-def test_quoted_value() -> None:
-    parsed = parse_query('source:"google keep" basil')
-    assert parsed.sources == ("google keep",)
+def test_quoted_value_normalized() -> None:
+    """source: values normalize (lowercase, spaces -> underscores) to match
+    registered source names — README's own source:"google keep" example must
+    actually hit google_keep (#198 review 14)."""
+    parsed = parse_query('source:"Google Keep" basil')
+    assert parsed.sources == ("google_keep",)
     assert parsed.terms == "basil"
 
 
@@ -221,3 +224,101 @@ def test_query_plan_fts_drives_and_emails_uses_pk(ctx: object) -> None:
     assert "VIRTUAL TABLE INDEX" in plan, plan  # items_fts MATCH drives the scan
     assert "USING INTEGER PRIMARY KEY" in plan, plan  # emails accessed by rowid PK
     assert "SCAN e" not in plan, plan  # never a full emails scan
+
+
+def test_operator_key_requires_token_boundary() -> None:
+    """A known key embedded mid-token is NOT an operator: searching for the
+    literal 'sent-from:alice@x.com' must not become a from: filter plus the
+    junk term 'sent-' (#198 review 16)."""
+    parsed = parse_query("sent-from:alice@potluck.test tax")
+    assert parsed.from_addrs == ()
+    assert "sent-from:alice@potluck.test" in parsed.terms
+    assert "tax" in parsed.terms
+
+
+def test_operator_at_string_start_still_parses() -> None:
+    parsed = parse_query("from:alice@potluck.test")
+    assert parsed.from_addrs == ("alice@potluck.test",)
+
+
+def test_source_operator_normalized_end_to_end(ctx: object) -> None:
+    from potluck.models.drafts import NoteDraft
+    from potluck.models.search import SearchRequest
+    from potluck.services.context import AppContext
+    from potluck.services.search import search
+    from tests.conftest import ingest_email_drafts
+
+    assert isinstance(ctx, AppContext)
+    ingest_email_drafts(
+        ctx,
+        NoteDraft(title="garden notes", text="basil layout"),
+        source_name="google_keep",
+        path="/tmp/t.zip",
+    )
+    resp = search(ctx, SearchRequest(query='source:"Google Keep" basil'))
+    assert [h.title for h in resp.hits] == ["garden notes"]
+
+
+def test_operator_errors_surface_as_warnings(ctx: object) -> None:
+    """Typo'd filters must not silently broaden the search: the response
+    carries warnings on every return path (#198 review 15)."""
+    from potluck.models.search import SearchRequest
+    from potluck.services.context import AppContext
+    from potluck.services.search import search
+
+    assert isinstance(ctx, AppContext)
+    _ingest_mixed(ctx)
+    resp = search(ctx, SearchRequest(query="kind:emial fennel"))
+    assert resp.warnings and "emial" in resp.warnings[0]
+
+    # the early empty-result path carries warnings too
+    resp_empty = search(ctx, SearchRequest(query="before:notadate"))
+    assert resp_empty.hits == []
+    assert resp_empty.warnings
+
+
+def test_structured_from_addrs_lowercased(ctx: object) -> None:
+    """Ingest lowercases from_addr at parse time; the structured field must
+    match the inline operator's normalization (#198 review 20)."""
+    from potluck.models.search import SearchRequest
+    from potluck.services.context import AppContext
+    from potluck.services.search import search
+
+    assert isinstance(ctx, AppContext)
+    _ingest_mixed(ctx)
+    resp = search(ctx, SearchRequest(query="fennel", from_addrs=["ALICE@POTLUCK.TEST"]))
+    assert [h.title for h in resp.hits] == ["garden budget"]
+
+
+def test_structured_naive_dates_pin_utc(ctx: object) -> None:
+    """A naive structured after/before is read as UTC — same rows as the
+    inline operator, independent of the host timezone (#198 review 20)."""
+    from datetime import datetime
+
+    from potluck.models.search import SearchRequest
+    from potluck.services.context import AppContext
+    from potluck.services.search import search
+
+    assert isinstance(ctx, AppContext)
+    _ingest_mixed(ctx)
+    inline = search(ctx, SearchRequest(query="kind:email after:2025-01-01 fennel"))
+    structured = search(ctx, SearchRequest(query="kind:email fennel", after=datetime(2025, 1, 1)))
+    assert [h.id for h in structured.hits] == [h.id for h in inline.hits]
+    assert [h.title for h in structured.hits] == ["fennel recipe"]
+
+
+def test_list_filter_caps() -> None:
+    """Unbounded list fields would blow SQLite's host-parameter limit as an
+    internal error; the model rejects oversized lists up front (#198 review 19)."""
+    import pytest
+    from pydantic import ValidationError
+
+    from potluck.models.items import ItemKind
+    from potluck.models.search import SearchRequest
+
+    with pytest.raises(ValidationError):
+        SearchRequest(query="x", kinds=[ItemKind.EMAIL] * 17)
+    with pytest.raises(ValidationError):
+        SearchRequest(query="x", sources=["s"] * 65)
+    with pytest.raises(ValidationError):
+        SearchRequest(query="x", from_addrs=["a@b"] * 65)

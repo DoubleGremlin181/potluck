@@ -2,7 +2,7 @@
 
 Parsing NEVER raises — search must not fail on user input. Unknown keys stay
 in the free-text terms; known keys with invalid values are dropped and noted
-in ``errors`` (surfaced as help text, not exceptions).
+in ``errors`` (surfaced as SearchResponse.warnings, not exceptions).
 """
 
 import re
@@ -13,8 +13,10 @@ from typing import Final
 from potluck.models.items import ItemKind
 
 _KEYS: Final = frozenset({"from", "source", "kind", "before", "after"})
-# key:value or key:"quoted value" — keys are case-insensitive.
-_OPERATOR: Final = re.compile(r'(?P<key>[A-Za-z]+):(?P<value>"[^"]*"|\S+)')
+# key:value or key:"quoted value" — keys are case-insensitive. (?<!\S) anchors
+# the key at a token boundary: a key embedded mid-token (sent-from:x) is plain
+# search text, not an operator.
+_OPERATOR: Final = re.compile(r'(?<!\S)(?P<key>[A-Za-z]+):(?P<value>"[^"]*"|\S+)')
 
 
 @dataclass(frozen=True)
@@ -67,7 +69,9 @@ def parse_query(raw: str) -> ParsedQuery:
             except ValueError:
                 errors.append(f"kind: unknown kind '{value}' ignored")
         elif key == "source":
-            sources.append(value)
+            # Registered source names are lowercase with underscores
+            # (gmail, google_keep) — normalize so source:"Google Keep" hits.
+            sources.append(value.lower().replace(" ", "_"))
         elif key == "from":
             from_addrs.append(value.lower())
         else:  # before / after — YYYY-MM-DD, UTC midnight; last occurrence wins

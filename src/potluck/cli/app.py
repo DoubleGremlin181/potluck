@@ -140,6 +140,9 @@ def search(
         print(resp.model_dump_json(indent=2))
         return
 
+    for warning in resp.warnings:
+        console.print(f"[yellow]warning:[/] {escape(warning)}")
+
     if not resp.hits:
         console.print("No results found.")
         return

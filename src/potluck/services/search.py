@@ -1,5 +1,7 @@
 """Search service: full-text BM25 search with operators, prefix mode, cursors."""
 
+from datetime import UTC, datetime
+
 from potluck.models.search import SearchHit, SearchRequest, SearchResponse
 from potluck.search.cursor import SearchCursor, decode_cursor, encode_cursor
 from potluck.search.fts import current_score, sanitize_query, search_items
@@ -13,9 +15,12 @@ def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
 
     Workflow:
     1. ``parse_query`` splits inline operators (from:/source:/kind:/before:/
-       after:) out of *req.query*; invalid operator values are silently
-       dropped (never an error — search must not fail on user input).
-    2. Structured request fields win over inline operators for the same filter.
+       after:) out of *req.query*; invalid operator values are dropped and
+       reported in SearchResponse.warnings (never an error — search must not
+       fail on user input, but a typo'd filter must not silently broaden it).
+    2. Structured request fields win over inline operators for the same
+       filter, normalized identically (from_addrs lowercased; naive
+       after/before datetimes read as UTC).
     3. With free-text terms: BM25-ranked FTS5 MATCH (prefix mode stars the
        last token), filters as predicates. Filters alone: matching items
        newest-first with score 0, paged by offset (no cursor). Neither:
@@ -29,16 +34,19 @@ def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
     Raises InvalidCursorError for a malformed req.cursor.
     """
     parsed = parse_query(req.query)
+    warnings = list(parsed.errors)
     kinds = req.kinds if req.kinds else (list(parsed.kinds) or None)
     sources = req.sources if req.sources else (list(parsed.sources) or None)
-    from_addrs = req.from_addrs if req.from_addrs else (list(parsed.from_addrs) or None)
-    after = req.after if req.after is not None else parsed.after
-    before = req.before if req.before is not None else parsed.before
+    from_addrs = (
+        [a.lower() for a in req.from_addrs] if req.from_addrs else (list(parsed.from_addrs) or None)
+    )
+    after = _as_utc(req.after) if req.after is not None else parsed.after
+    before = _as_utc(req.before) if req.before is not None else parsed.before
 
     match_expr = sanitize_query(parsed.terms, prefix=req.prefix)
     has_filters = any((kinds, sources, from_addrs, after, before))
     if match_expr is None and not has_filters:
-        return SearchResponse(query=req.query, hits=[])
+        return SearchResponse(query=req.query, hits=[], warnings=warnings)
 
     cursor: SearchCursor | None = (
         decode_cursor(req.cursor) if req.cursor is not None and match_expr is not None else None
@@ -92,4 +100,10 @@ def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
     if match_expr is not None and max_id is not None and len(hits) == req.limit:
         next_cursor = encode_cursor(max_id=max_id, last_score=hits[-1].score, last_id=hits[-1].id)
 
-    return SearchResponse(query=req.query, hits=hits, next_cursor=next_cursor)
+    return SearchResponse(query=req.query, hits=hits, next_cursor=next_cursor, warnings=warnings)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Naive datetimes are read as UTC — matching the inline operators, never
+    the server's local timezone."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)

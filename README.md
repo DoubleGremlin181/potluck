@@ -93,10 +93,12 @@ potluck dev          source-plugin scaffolding (new-source / check-source)
 Search queries can carry inline operators, combinable with each other and
 free text: `from:alice@example.com` (or a name prefix: `from:alice`),
 `source:gmail`, `kind:email`, `after:2024-01-01` (inclusive),
-`before:2025-06-30` (exclusive), with quoted values supported
-(`source:"google keep"`). Invalid operator values are ignored, never errors;
-unknown `key:value` pairs are searched as plain text. Operators alone (no
-free text) list the matching items newest-first.
+`before:2025-06-30` (exclusive), with quoted values supported. Source values
+are case-insensitive and spaces map to underscores, so `source:"google keep"`
+≡ `source:google_keep`. Invalid operator values are ignored — the response's
+`warnings` list says what was dropped — and unknown `key:value` pairs are
+searched as plain text. Operators alone (no free text) list the matching
+items newest-first.
 
 Search-as-you-type: `--prefix` (CLI) / `prefix=true` (MCP) matches the last
 word as a prefix (`gar` finds garden/garlic/garnet). Pagination uses opaque

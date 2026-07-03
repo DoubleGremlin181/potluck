@@ -21,9 +21,14 @@ class SearchRequest(BaseModel):
         max_length=1000,
         description="Full-text search query (max 1000 chars; guards against pathological inputs).",
     )
-    kinds: list[ItemKind] | None = None
-    sources: list[str] | None = None
-    from_addrs: list[str] | None = None
+    # List caps keep the rendered SQL well under SQLite's host-parameter
+    # limit (one ? per entry) — oversized lists are a validation error, not
+    # an sqlite3.OperationalError.
+    kinds: list[ItemKind] | None = Field(default=None, max_length=16)
+    sources: list[str] | None = Field(default=None, max_length=64)
+    from_addrs: list[str] | None = Field(default=None, max_length=64)
+    # Naive datetimes are read as UTC (matching the inline after:/before:
+    # operators, which pin UTC midnight).
     after: datetime | None = None
     before: datetime | None = None
     prefix: bool = Field(
@@ -83,3 +88,10 @@ class SearchResponse(BaseModel):
     query: str
     hits: list[SearchHit]
     next_cursor: str | None = None
+    warnings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Inline operator values that were ignored, with reasons (e.g. an "
+            "unknown kind: or a malformed date) — the search ran without them."
+        ),
+    )

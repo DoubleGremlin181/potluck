@@ -262,3 +262,12 @@ def test_dev_new_source_and_check(tmp_path: Path) -> None:
     bad_result = runner.invoke(app, ["dev", "check-source", "nonexistent_source_xyz"])
     assert bad_result.exit_code == 1
     assert len(bad_result.output.strip()) > 0  # problems printed
+
+
+def test_search_renders_operator_warnings(tmp_path: Path) -> None:
+    """Ignored operator values surface in the table output (#198 review 15)."""
+    _import_keep(tmp_path)
+    result = runner.invoke(app, ["search", f"kind:bogus {_KNOWN_WORD}"])
+    assert result.exit_code == 0, result.output
+    assert "warning" in result.output.lower()
+    assert "bogus" in result.output
