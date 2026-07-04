@@ -58,7 +58,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from potluck.ingest.plugins import Glob, source
+from potluck.ingest.plugins import Glob, ParseContext, source
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import NoteDraft
 from potluck.models.items import ItemKind
@@ -216,7 +216,7 @@ def _to_draft(data: dict[str, Any], member_name: str) -> NoteDraft | None:
 
 
 @source(name="google_keep", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,), parser_version=3)
-def parse(archive: Archive) -> Iterator[NoteDraft]:
+def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
     """Yield one :class:`~potluck.models.drafts.NoteDraft` per non-skipped Keep note."""
     for member, stream in archive.iter_members("*Keep/*.json"):
         try:

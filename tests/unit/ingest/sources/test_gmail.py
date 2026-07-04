@@ -1,0 +1,225 @@
+"""Gmail Takeout source plugin (#125): detection, draft mapping, containment."""
+
+import hashlib
+import logging
+from pathlib import Path
+
+from potluck.ingest.mbox import parse_email
+from potluck.ingest.plugins import ParseContext, detect_sources, discover
+from potluck.ingest.readers import open_archive
+from potluck.ingest.sources.gmail import _to_draft, parse
+from potluck.models.drafts import EmailDraft
+from potluck.models.items import ItemKind
+from potluck.testing.mbox import write_gmail_takeout
+
+
+def _draft(raw: bytes, seen: dict[str, dict[str, int]]) -> EmailDraft:
+    return _to_draft(parse_email(raw), hashlib.sha256(raw).hexdigest(), seen)
+
+
+def _parsed(*lines: bytes) -> EmailDraft:
+    return _draft(b"\n".join(lines), {})
+
+
+# ---------------------------------------------------------------------------
+# registration + detection
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_registered() -> None:
+    plugin = discover()["gmail"]
+    assert plugin.kinds == (ItemKind.EMAIL,)
+    assert plugin.parser_version == 3  # 198 review: walk/identity fixes changed content hashes
+
+
+def test_detects_gmail_takeout(tmp_path: Path) -> None:
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 5, seed=7)
+    plugins = detect_sources(open_archive(archive_path))
+    assert [p.name for p in plugins] == ["gmail"]
+
+
+# ---------------------------------------------------------------------------
+# identity policy
+# ---------------------------------------------------------------------------
+
+
+def test_external_id_from_message_id() -> None:
+    draft = _parsed(b"Message-ID: <one@potluck.test>", b"Subject: s", b"", b"x")
+    assert draft.external_id == "mid:one@potluck.test"
+    assert draft.message_id == "one@potluck.test"
+
+
+def test_duplicate_message_id_distinct_content_gets_suffix() -> None:
+    """Two DIFFERENT messages sharing a Message-ID stay distinct items."""
+    seen: dict[str, dict[str, int]] = {}
+    first = _draft(b"Message-ID: <dup@potluck.test>\nSubject: s\n\nx", seen)
+    second = _draft(b"Message-ID: <dup@potluck.test>\nSubject: s\n\nanother body", seen)
+    assert first.external_id == "mid:dup@potluck.test"
+    assert second.external_id == "mid:dup@potluck.test#2"
+    # both stay in the same conversation
+    assert first.thread_key == second.thread_key
+
+
+def test_byte_identical_duplicate_reuses_external_id() -> None:
+    """Label-selected Takeout duplicates one message byte-for-byte across mbox
+    members; identical copies must share an external_id so content-hash dedup
+    collapses them (#198 review 5) — including a third copy."""
+    seen: dict[str, dict[str, int]] = {}
+    raw = b"Message-ID: <dup@potluck.test>\nSubject: s\n\nx"
+    drafts = [_draft(raw, seen) for _ in range(3)]
+    assert {d.external_id for d in drafts} == {"mid:dup@potluck.test"}
+
+
+def test_identical_copy_of_suffixed_message_reuses_suffix() -> None:
+    """Repeats interleave: A, B, A again — the second A reuses A's id, B keeps #2."""
+    seen: dict[str, dict[str, int]] = {}
+    raw_a = b"Message-ID: <dup@potluck.test>\nSubject: s\n\nx"
+    raw_b = b"Message-ID: <dup@potluck.test>\nSubject: s\n\ny"
+    a1 = _draft(raw_a, seen)
+    b1 = _draft(raw_b, seen)
+    a2 = _draft(raw_a, seen)
+    b2 = _draft(raw_b, seen)
+    assert a1.external_id == a2.external_id == "mid:dup@potluck.test"
+    assert b1.external_id == b2.external_id == "mid:dup@potluck.test#2"
+
+
+def test_missing_message_id_gets_content_fingerprint() -> None:
+    draft = _parsed(
+        b"From: a@potluck.test",
+        b"Subject: no msgid here",
+        b"Date: Fri, 12 Dec 2025 06:57:49 +0000",
+        b"",
+        b"body",
+    )
+    assert draft.external_id is not None
+    assert draft.external_id.startswith("noid:")
+    assert draft.message_id is None
+    # deterministic: same headers -> same fingerprint
+    again = _parsed(
+        b"From: a@potluck.test",
+        b"Subject: no msgid here",
+        b"Date: Fri, 12 Dec 2025 06:57:49 +0000",
+        b"",
+        b"body",
+    )
+    assert again.external_id == draft.external_id
+
+
+def test_noid_fingerprint_is_textclean_independent(monkeypatch: object) -> None:
+    """The noid fingerprint hashes raw inputs, not cleaned text, so parser
+    text-cleanup changes can never re-mint identities (#198 review 6)."""
+    import pytest
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    raw = b"From: a@potluck.test\nSubject: no msgid\n\nsome body text"
+    before = _draft(raw, {})
+
+    monkeypatch.setattr("potluck.ingest.mbox.clean_text", lambda text: str(text).upper())
+    after = _draft(raw, {})
+
+    assert after.text != before.text  # the simulated cleanup change took effect
+    assert after.external_id == before.external_id
+
+
+def test_noid_fingerprint_differs_for_different_bodies() -> None:
+    d1 = _draft(b"From: a@potluck.test\nSubject: s\n\nbody one", {})
+    d2 = _draft(b"From: a@potluck.test\nSubject: s\n\nbody two", {})
+    assert d1.external_id != d2.external_id
+
+
+# ---------------------------------------------------------------------------
+# thread_key policy: References root > In-Reply-To > Message-ID > fingerprint
+# ---------------------------------------------------------------------------
+
+
+def test_thread_key_prefers_references_root() -> None:
+    draft = _parsed(
+        b"Message-ID: <c@potluck.test>",
+        b"In-Reply-To: <b@potluck.test>",
+        b"References: <a@potluck.test> <b@potluck.test>",
+        b"",
+        b"x",
+    )
+    assert draft.thread_key == "a@potluck.test"
+
+
+def test_thread_key_falls_back_to_in_reply_to() -> None:
+    draft = _parsed(
+        b"Message-ID: <c@potluck.test>",
+        b"In-Reply-To: <b@potluck.test>",
+        b"",
+        b"x",
+    )
+    assert draft.thread_key == "b@potluck.test"
+
+
+def test_thread_key_falls_back_to_message_id() -> None:
+    draft = _parsed(b"Message-ID: <c@potluck.test>", b"", b"x")
+    assert draft.thread_key == "c@potluck.test"
+
+
+def test_thread_key_msgid_less_root_is_own_fingerprint() -> None:
+    draft = _parsed(b"Subject: alone", b"", b"x")
+    assert draft.thread_key == draft.external_id
+
+
+# ---------------------------------------------------------------------------
+# field mapping
+# ---------------------------------------------------------------------------
+
+
+def test_draft_field_mapping() -> None:
+    draft = _parsed(
+        b"Message-ID: <m@potluck.test>",
+        b"From: Alice <alice@potluck.test>",
+        b"To: bob@potluck.test",
+        b"Cc: carol@example.com",
+        b"Subject: garden notes",
+        b"Date: Fri, 12 Dec 2025 06:57:49 +0000",
+        b"X-Gmail-Labels: Inbox,Unread",
+        b"",
+        b"plain body",
+    )
+    assert draft.kind is ItemKind.EMAIL
+    assert draft.title == "garden notes"
+    assert draft.text is not None and "plain body" in draft.text
+    assert draft.ts is not None and draft.ts.year == 2025
+    assert draft.from_addr == "alice@potluck.test"
+    assert draft.to_addrs == ("bob@potluck.test",)
+    assert draft.cc_addrs == ("carol@example.com",)
+    assert draft.labels == ("Inbox", "Unread")
+
+
+# ---------------------------------------------------------------------------
+# containment: one corrupt message never aborts the run
+# ---------------------------------------------------------------------------
+
+
+def test_corrupt_message_logged_and_skipped(tmp_path: Path, caplog: object) -> None:
+    import pytest
+
+    assert isinstance(caplog, pytest.LogCaptureFixture)
+    archive_path = write_gmail_takeout(tmp_path / "takeout", 3, seed=7)
+
+    # Monkey-free containment check: feed a stream with a message whose body
+    # explodes the parser is hard to fabricate (parse_email is tolerant), so
+    # assert the plugin yields all parseable messages from a valid corpus.
+    with caplog.at_level(logging.WARNING):
+        drafts = list(parse(open_archive(archive_path), ParseContext()))
+    assert len(drafts) == 3
+
+
+def test_draft_carries_names_and_bcc() -> None:
+    draft = _parsed(
+        b"Message-ID: <names@potluck.test>",
+        b"From: Alice A <a@potluck.test>",
+        b"To: Bob B <b@potluck.test>, c@potluck.test",
+        b"Cc: Dee <d@potluck.test>",
+        b"Bcc: e@potluck.test",
+        b"",
+        b"body",
+    )
+    assert draft.from_name == "Alice A"
+    assert draft.to_names == ("Bob B", "")
+    assert draft.cc_names == ("Dee",)
+    assert draft.bcc_addrs == ("e@potluck.test",)

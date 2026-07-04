@@ -26,13 +26,15 @@ def begin_import(
     path: str,
     file_hash: str | None,
     parser_version: int,
+    extract_attachments: bool = False,
 ) -> int:
     """Insert a new import row with status 'running'; return its id."""
     now = dt_to_iso(datetime.now(UTC))
     cursor = conn.execute(
-        """INSERT INTO imports (source_id, path, file_hash, parser_version, started_at, status)
-           VALUES (?, ?, ?, ?, ?, 'running')""",
-        (source_id, path, file_hash, parser_version, now),
+        """INSERT INTO imports (source_id, path, file_hash, parser_version, started_at,
+                                status, extract_attachments)
+           VALUES (?, ?, ?, ?, ?, 'running', ?)""",
+        (source_id, path, file_hash, parser_version, now, int(extract_attachments)),
     )
     assert cursor.lastrowid is not None
     return int(cursor.lastrowid)
@@ -90,6 +92,7 @@ def _row_to_import_run(row: sqlite3.Row) -> ImportRun:
         items_updated=int(row["items_updated"]),
         items_skipped=int(row["items_skipped"]),
         error=row["error"],
+        extract_attachments=bool(row["extract_attachments"]),
     )
 
 
@@ -114,3 +117,34 @@ def list_imports(conn: sqlite3.Connection, limit: int = 50) -> list[ImportRun]:
         (limit,),
     ).fetchall()
     return [_row_to_import_run(row) for row in rows]
+
+
+def find_completed_import(
+    conn: sqlite3.Connection,
+    *,
+    source_name: str,
+    file_hash: str,
+    parser_version: int,
+    extract_attachments: bool = False,
+) -> ImportRun | None:
+    """Latest COMPLETED run of *source_name* over this exact archive content.
+
+    The (file_hash, parser_version) key drives the no-op short-circuit (#126):
+    same bytes + same parser means re-parsing cannot change anything; a parser
+    bump misses the key and re-ingests naturally. Failed/running rows never
+    match.
+
+    Parse side effects are settings-dependent (#198 review 9): when the
+    current request wants attachment extraction, only a prior run that also
+    extracted can short-circuit it (the superset rule — a prior extraction
+    run covers a non-extraction request, never vice versa).
+    """
+    row = conn.execute(
+        f"""{_BASE_QUERY}
+            WHERE s.name = ? AND i.file_hash = ? AND i.parser_version = ?
+              AND i.status = 'completed'
+              AND (? = 0 OR i.extract_attachments = 1)
+            ORDER BY i.id DESC LIMIT 1""",
+        (source_name, file_hash, parser_version, int(extract_attachments)),
+    ).fetchone()
+    return _row_to_import_run(row) if row is not None else None

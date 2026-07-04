@@ -6,11 +6,18 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from potluck.bench import scenarios as scenarios_mod
 from potluck.bench.registry import Scenario, scenarios_for
 from potluck.bench.report import BenchReport, ScenarioResult
 from potluck.bench.runner import REPS, run_tier
 from potluck.bench.scenarios import ALL_SCENARIOS
 from potluck.cli.app import app
+from potluck.core.config import Settings
+from potluck.models.search import SearchRequest, SearchResponse
+from potluck.services.context import AppContext, create_context
+from potluck.services.imports import import_path
+from potluck.services.search import search as real_search
+from potluck.testing.keep import write_keep_takeout
 
 runner = CliRunner()
 
@@ -155,3 +162,49 @@ def test_peak_rss_normalized_to_kb_per_platform(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(sys, "platform", "darwin")
     assert runner_mod._peak_rss_kb() == 4  # bytes → KB
+
+
+def test_prefix_10k_smoke_queries_hit_the_keep_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression guard: every query the smoke-tier SAYT scenario measures must
+    actually match the Keep corpus it runs on. TAIL_WORDS-derived prefixes
+    (email vocabulary) return 0 hits there, silently reducing the PR-CI gate
+    to empty term-range scans that never exercise bm25/snippet/row fetch.
+
+    Small-scale twin of the scenario setup: same generator and seed, so the
+    first 300 notes are the exact prefix of the 10k bench corpus — a query
+    that hits here hits the real corpus too.
+    """
+    archive = write_keep_takeout(tmp_path / "archives", 300, seed=42, fmt="dir")
+    ctx = create_context(Settings(db_path=tmp_path / "bench.db"))
+    try:
+        import_path(ctx, archive)
+    finally:
+        ctx.db.close()
+
+    recorded: list[tuple[str, int]] = []
+
+    def recording_search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
+        assert req.prefix, "SAYT scenario must search in prefix mode"
+        resp = real_search(ctx, req)
+        recorded.append((req.query, len(resp.hits)))
+        return resp
+
+    monkeypatch.setattr(scenarios_mod, "search", recording_search)
+
+    (scenario,) = [s for s in ALL_SCENARIOS if s.name == "prefix_10k"]
+    assert scenario.tier == "smoke"
+    scenario.run(tmp_path)
+
+    assert len(recorded) == scenario.item_count  # item_count = query count
+    zero_hit = sorted({q for q, hits in recorded if hits == 0})
+    assert not zero_hit, f"{len(zero_hit)} smoke SAYT queries with 0 hits, e.g. {zero_hit[:5]}"
+
+
+def test_registry_has_sequential_gmail_ab_variant() -> None:
+    """#199 rule-3 evidence: the pool speedup is demonstrated by an A/B pair
+    in the registry — same corpus, workers=1 vs auto."""
+    full = {s.name for s in scenarios_for("full", ALL_SCENARIOS)}
+    assert "ingest_gmail_8k" in full
+    assert "ingest_gmail_8k_seq" in full

@@ -1,6 +1,9 @@
 """Draft↔row mapping for the items table.
 
 All items SQL is owned here; nothing outside storage/ builds items SQL.
+search/fts.py composes its SELECTs from the fragments exported here
+(item_filter_predicates, LIST_ORDER, TEXT_PREVIEW_SQL) plus its own
+FTS-specific pieces (MATCH, bm25, snippet).
 """
 
 import json
@@ -116,9 +119,14 @@ def get_item_row(conn: sqlite3.Connection, item_id: int) -> tuple[sqlite3.Row, s
 
 PREVIEW_CHARS: Final = 200
 
+# The items-aliased preview expression ("i" = items). Every SQL preview —
+# listing, threads, search's filter-only branch — renders from this one
+# fragment so length and shape can never diverge.
+TEXT_PREVIEW_SQL: Final = f"substr(i.text, 1, {PREVIEW_CHARS})"
+
 _LIST_SELECT: Final = (
     "SELECT i.id, i.kind, i.ts, i.title, "
-    f"substr(i.text, 1, {PREVIEW_CHARS}) AS text_preview, "
+    f"{TEXT_PREVIEW_SQL} AS text_preview, "
     "s.name AS source_name "
     "FROM items AS i JOIN sources AS s ON s.id = i.source_id"
 )
@@ -133,13 +141,47 @@ _LIST_COUNT_SOURCES: Final = (
 
 # ORDER BY fragments are whitelisted per ItemSort member — user input never
 # reaches the SQL string. The i.id tiebreaker keeps pagination deterministic;
-# NULLS LAST puts undated items at the end in both ts directions.
-_LIST_ORDER: Final[dict[ItemSort, str]] = {
+# NULLS LAST puts undated items at the end in both ts directions. Exported:
+# search/fts.py's filter-only branch orders by LIST_ORDER[ItemSort.TS_DESC].
+LIST_ORDER: Final[dict[ItemSort, str]] = {
     ItemSort.TS_DESC: "i.ts DESC NULLS LAST, i.id DESC",
     ItemSort.TS_ASC: "i.ts ASC NULLS LAST, i.id ASC",
     ItemSort.ID_DESC: "i.id DESC",
     ItemSort.ID_ASC: "i.id ASC",
 }
+
+
+def item_filter_predicates(
+    *,
+    kinds: Sequence[ItemKind] | None,
+    sources: Sequence[str] | None,
+    after_iso: str | None,
+    before_iso: str | None,
+) -> tuple[list[str], list[object]]:
+    """Fully-parameterized items WHERE fragments (aliases: items AS i, sources AS s).
+
+    THE single place the shared filter conventions are asserted: after/since
+    is inclusive (``i.ts >= ?``), before/until exclusive (``i.ts < ?``).
+    Both list_item_rows and search/fts.py render their WHERE from here, so
+    the conventions cannot silently diverge. A sources filter requires the
+    caller to join ``sources AS s``. Returns (predicates, params) with params
+    aligned to the predicates' placeholders in order.
+    """
+    predicates: list[str] = []
+    params: list[object] = []
+    if kinds:
+        predicates.append(f"i.kind IN ({','.join('?' * len(kinds))})")
+        params.extend(k.value for k in kinds)
+    if sources:
+        predicates.append(f"s.name IN ({','.join('?' * len(sources))})")
+        params.extend(sources)
+    if after_iso is not None:
+        predicates.append("i.ts >= ?")
+        params.append(after_iso)
+    if before_iso is not None:
+        predicates.append("i.ts < ?")
+        params.append(before_iso)
+    return predicates, params
 
 
 def list_item_rows(
@@ -162,20 +204,9 @@ def list_item_rows(
     is sound because every items.ts is written by dt_to_iso (always a +00:00
     offset); NULL ts rows never match a date filter.
     """
-    where: list[str] = []
-    params: list[object] = []
-    if kinds:
-        where.append(f"i.kind IN ({','.join('?' * len(kinds))})")
-        params.extend(k.value for k in kinds)
-    if sources:
-        where.append(f"s.name IN ({','.join('?' * len(sources))})")
-        params.extend(sources)
-    if since_iso is not None:
-        where.append("i.ts >= ?")
-        params.append(since_iso)
-    if until_iso is not None:
-        where.append("i.ts < ?")
-        params.append(until_iso)
+    where, params = item_filter_predicates(
+        kinds=kinds, sources=sources, after_iso=since_iso, before_iso=until_iso
+    )
     where_sql = f" WHERE {' AND '.join(where)}" if where else ""
     count_sql = (_LIST_COUNT_SOURCES if sources else _LIST_COUNT) + where_sql
 
@@ -185,7 +216,7 @@ def list_item_rows(
     try:
         total = int(conn.execute(count_sql, params).fetchone()[0])
         rows = conn.execute(
-            f"{_LIST_SELECT}{where_sql} ORDER BY {_LIST_ORDER[sort]} LIMIT ? OFFSET ?",
+            f"{_LIST_SELECT}{where_sql} ORDER BY {LIST_ORDER[sort]} LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
     finally:
@@ -254,11 +285,17 @@ def update_items_content(conn: sqlite3.Connection, rows: Sequence[ContentUpdate]
 
     title/text in the SET list make the items_fts AFTER UPDATE trigger rewrite
     the index entries — correct here, since content actually changed.
+
+    parent_id resets to NULL: the link was derived from satellite fields that
+    may have changed with the content (e.g. an email's In-Reply-To), and the
+    end-of-run satellite finalize pass re-resolves NULLs — keeping a stale
+    link would outlive the header that justified it. A no-op for kinds that
+    never set parent_id.
     """
     conn.executemany(
         """UPDATE items
            SET import_id = ?, kind = ?, ts = ?, title = ?, text = ?,
-               lat = ?, lon = ?, content_hash = ?, meta = ?
+               lat = ?, lon = ?, content_hash = ?, meta = ?, parent_id = NULL
            WHERE id = ?""",
         rows,
     )

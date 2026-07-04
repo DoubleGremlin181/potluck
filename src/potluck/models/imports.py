@@ -24,3 +24,6 @@ class ImportRun(BaseModel):
     items_updated: int
     items_skipped: int
     error: str | None
+    # Whether the run extracted attachment blobs (parse-affecting setting;
+    # participates in the completed-run short-circuit).
+    extract_attachments: bool = False

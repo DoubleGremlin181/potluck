@@ -11,14 +11,17 @@ import os
 import sqlite3
 import sys
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from fastapi.testclient import TestClient
 
 from potluck.api.app import create_app
 from potluck.core.config import Settings
+from potluck.ingest.engine import DEFAULT_BATCH_SIZE, run_import
+from potluck.models.drafts import EmailAttachment, EmailDraft, ItemDraft
 from potluck.services.context import AppContext, create_context
 from potluck.services.imports import import_path
 from potluck.testing.keep import write_keep_takeout
@@ -37,6 +40,97 @@ def ingest_keep_corpus(ctx: AppContext, tmp_path: Path, count: int = 20, seed: i
     """
     archive = write_keep_takeout(tmp_path / "keep_takeout", count, seed=seed, fmt="dir")
     import_path(ctx, archive)
+
+
+# Sentinel: lets email_draft() distinguish "use the n-derived default ts"
+# from an explicit ts=None (undated draft).
+_TS_DEFAULT: Final = object()
+
+
+def email_draft(
+    n: int = 1,
+    *,
+    message_id: str | None = None,
+    thread_key: str | None = None,
+    in_reply_to: str | None = None,
+    ts: datetime | None | object = _TS_DEFAULT,
+    title: str | None = None,
+    text: str | None = None,
+    from_addr: str | None = None,
+    from_name: str | None = None,
+    to_addrs: tuple[str, ...] = (),
+    to_names: tuple[str, ...] = (),
+    cc_addrs: tuple[str, ...] = (),
+    cc_names: tuple[str, ...] = (),
+    bcc_addrs: tuple[str, ...] = (),
+    labels: tuple[str, ...] = (),
+    attachments: tuple[EmailAttachment, ...] = (),
+) -> EmailDraft:
+    """THE deterministic EmailDraft factory for engine/service/adapter tests.
+
+    Defaults derive from *n*: message id ``m{n}@potluck.test``, external id
+    ``mid:<message id>``, thread_key = the message id, subject/body
+    ``subject {n}`` / ``body {n}``, sender ``sender{n}@potluck.test``, and a
+    ts ordered by *n* (2024-01-01 + n hours). Pass ``ts=None`` for an undated
+    draft; pass any field explicitly to override its default.
+    """
+    mid = message_id or f"m{n}@potluck.test"
+    if ts is _TS_DEFAULT:
+        resolved_ts: datetime | None = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(hours=n)
+    else:
+        assert ts is None or isinstance(ts, datetime)
+        resolved_ts = ts
+    return EmailDraft(
+        external_id=f"mid:{mid}",
+        message_id=mid,
+        in_reply_to=in_reply_to,
+        thread_key=thread_key or mid,
+        ts=resolved_ts,
+        title=f"subject {n}" if title is None else title,
+        text=f"body {n}" if text is None else text,
+        from_addr=f"sender{n}@potluck.test" if from_addr is None else from_addr,
+        from_name=from_name,
+        to_addrs=to_addrs,
+        to_names=to_names,
+        cc_addrs=cc_addrs,
+        cc_names=cc_names,
+        bcc_addrs=bcc_addrs,
+        labels=labels,
+        attachments=attachments,
+    )
+
+
+def ingest_email_drafts(
+    ctx: AppContext,
+    *drafts: ItemDraft,
+    source_name: str = "gmail-test",
+    parser_version: int = 1,
+    path: str = "/tmp/t.mbox",
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> int:
+    """run_import wrapper for draft-level tests; returns the import id.
+
+    Accepts any ItemDraft (mixed-kind corpora ingest notes alongside emails).
+    """
+    return run_import(
+        ctx.db,
+        source_name=source_name,
+        parser_version=parser_version,
+        drafts=iter(drafts),
+        path=path,
+        file_hash=None,
+        batch_size=batch_size,
+    )
+
+
+def email_item_id(ctx: AppContext, message_id: str) -> int:
+    """Resolve an ingested email's item id via its emails satellite row."""
+    with ctx.db.read() as conn:
+        row = conn.execute(
+            "SELECT item_id FROM emails WHERE message_id = ?", (message_id,)
+        ).fetchone()
+    assert row is not None, f"no emails row for message_id {message_id!r}"
+    return int(row[0])
 
 
 def insert_source(conn: sqlite3.Connection, name: str = "test-src") -> int:

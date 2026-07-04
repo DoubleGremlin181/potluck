@@ -8,7 +8,7 @@ Connections run in autocommit mode: a single statement (including one
 import sqlite3
 import threading
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -60,11 +60,48 @@ class Database:
 
     def write[T](self, fn: Callable[[sqlite3.Connection], T]) -> T:
         """Run ``fn`` with the write connection on the writer thread; return its result."""
-        return self._writer.submit(self._run_write, fn).result()
+        return self.write_async(fn).result()
+
+    def write_async[T](self, fn: Callable[[sqlite3.Connection], T]) -> Future[T]:
+        """Submit ``fn`` to the writer thread without waiting (#199 pipelining).
+
+        Same single-writer guarantee as :meth:`write` — the one writer thread
+        executes submissions strictly in order; only the caller's blocking
+        differs. The caller owns the returned future: resolve it to observe
+        errors (an unresolved failed future fails silently)."""
+        return self._writer.submit(self._run_write, fn)
 
     def _run_write[T](self, fn: Callable[[sqlite3.Connection], T]) -> T:
         assert self._writer_conn is not None
         return fn(self._writer_conn)
+
+    @contextmanager
+    def bulk_import_mode(self) -> Iterator[None]:
+        """Scoped import-speed pragmas on the write connection (#199 rider).
+
+        A big page cache + lazier WAL checkpoints for the duration of a bulk
+        load; restored to the standard pragmas on exit, success or failure.
+        synchronous stays at NORMAL (#198 review): OFF skips the fsync that
+        checkpoints do before resetting the WAL, so with autocheckpoints
+        still running a power/OS loss could corrupt the WHOLE database — not
+        merely lose recent commits, which re-running the import cannot heal.
+        NORMAL in WAL mode is already cheap (one fsync per checkpoint, none
+        per commit).
+        """
+
+        def _enable(conn: sqlite3.Connection) -> None:
+            conn.execute("PRAGMA cache_size = -262144")  # 256 MB
+            conn.execute("PRAGMA wal_autocheckpoint = 10000")
+
+        def _restore(conn: sqlite3.Connection) -> None:
+            conn.execute("PRAGMA cache_size = -2000")  # SQLite default
+            conn.execute("PRAGMA wal_autocheckpoint = 1000")  # SQLite default
+
+        self.write(_enable)
+        try:
+            yield
+        finally:
+            self.write(_restore)
 
     @contextmanager
     def read(self) -> Iterator[sqlite3.Connection]:

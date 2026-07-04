@@ -269,3 +269,115 @@ def test_solo_multipart_named_file(tmp_path: Path, fmt: Literal["zip", "tgz"]) -
     archive = open_archive(dest)
     names = set(archive.iter_names())
     assert names == set(NESTED_MEMBERS.keys())
+
+
+# ---------------------------------------------------------------------------
+# Real Takeout part naming: takeout-<timestamp>-<file>-<part>.<ext>
+# (defect found on a real 4-part 2025 export — the parts silently opened solo)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fmt", ["zip", "tgz"])
+def test_multipart_real_takeout_naming_groups(tmp_path: Path, fmt: Literal["zip", "tgz"]) -> None:
+    """The real Takeout naming (takeout-<ts>-<N>-001) groups into ONE set,
+    ordered numerically by N (9 < 12 < 14 < 16 — not lexicographic), and
+    opening ANY part loads the whole set."""
+    file_nos = [9, 12, 14, 16]
+    for n in file_nos:
+        write_archive(
+            tmp_path / f"takeout-20251212T171747Z-{n}-001.{fmt}",
+            {f"Takeout/Part{n}/f.txt": b"x"},
+            fmt,
+        )
+    expected = [f"Takeout/Part{n}/f.txt" for n in file_nos]
+    for n in file_nos:
+        opened = open_archive(tmp_path / f"takeout-20251212T171747Z-{n}-001.{fmt}")
+        assert list(opened.iter_names()) == expected
+
+
+def test_multipart_real_naming_orders_file_then_part(tmp_path: Path) -> None:
+    """Within one set: sub-parts of the same file come before the next file
+    (2-001 < 2-002 < 10-001), all compared numerically."""
+    parts = [(2, 1), (2, 2), (10, 1)]
+    for file_no, part_no in parts:
+        write_archive(
+            tmp_path / f"takeout-20251212T171747Z-{file_no}-{part_no:03d}.tgz",
+            {f"Takeout/F{file_no}P{part_no}/f.txt": b"x"},
+            "tgz",
+        )
+    opened = open_archive(tmp_path / "takeout-20251212T171747Z-10-001.tgz")
+    assert list(opened.iter_names()) == [f"Takeout/F{f}P{p}/f.txt" for f, p in parts]
+
+
+def test_multipart_large_file_numbers_group(tmp_path: Path) -> None:
+    """File numbers are not capped: part -1000-001 of a >999-file export
+    (multi-TB Photos at 1-2 GB chunks) still joins the set — the timestamp
+    anchor alone decides membership."""
+    for n in (2, 1000):
+        write_archive(
+            tmp_path / f"takeout-20251212T171747Z-{n}-001.tgz",
+            {f"Takeout/Part{n}/f.txt": b"x"},
+            "tgz",
+        )
+    opened = open_archive(tmp_path / "takeout-20251212T171747Z-1000-001.tgz")
+    assert list(opened.iter_names()) == ["Takeout/Part2/f.txt", "Takeout/Part1000/f.txt"]
+
+
+def test_multipart_different_timestamps_never_group(tmp_path: Path) -> None:
+    """Two exports with different timestamps are different sets, even when
+    file/part numbers collide."""
+    old = tmp_path / "takeout-20250101T000000Z-1-001.tgz"
+    new = tmp_path / "takeout-20251212T171747Z-1-001.tgz"
+    write_archive(old, {"Takeout/Old/a.txt": b"a"}, "tgz")
+    write_archive(new, {"Takeout/New/b.txt": b"b"}, "tgz")
+    assert list(open_archive(old).iter_names()) == ["Takeout/Old/a.txt"]
+    assert list(open_archive(new).iter_names()) == ["Takeout/New/b.txt"]
+
+
+def test_multipart_year_like_middle_never_groups(tmp_path: Path) -> None:
+    """The over-grouping trap: a naive 'strip two trailing numeric groups'
+    would merge report-2023-001 and report-2024-001 into one 'report' set.
+    Without a Takeout timestamp anchor, the middle number stays in the stem."""
+    a = tmp_path / "report-2023-001.tgz"
+    b = tmp_path / "report-2024-001.tgz"
+    write_archive(a, {"reports/2023.csv": b"a"}, "tgz")
+    write_archive(b, {"reports/2024.csv": b"b"}, "tgz")
+    assert list(open_archive(a).iter_names()) == ["reports/2023.csv"]
+    assert list(open_archive(b).iter_names()) == ["reports/2024.csv"]
+
+
+def test_multipart_solo_real_named_part_opens_plain(tmp_path: Path) -> None:
+    """A lone real-named part (no siblings) opens as a plain archive."""
+    dest = tmp_path / "takeout-20251212T171747Z-14-001.tgz"
+    write_archive(dest, NESTED_MEMBERS, "tgz")
+    assert set(open_archive(dest).iter_names()) == set(NESTED_MEMBERS.keys())
+
+
+def test_no_part_suffix_file_stays_separate_from_adjacent_set(tmp_path: Path) -> None:
+    """A file without a part suffix never joins an adjacent set sharing its
+    prefix — and opening it never pulls the set in."""
+    lone = tmp_path / "takeout-20251212T171747Z.tgz"
+    write_archive(lone, {"Lone/l.txt": b"l"}, "tgz")
+    for n in (9, 12):
+        write_archive(
+            tmp_path / f"takeout-20251212T171747Z-{n}-001.tgz",
+            {f"Takeout/Part{n}/f.txt": b"x"},
+            "tgz",
+        )
+    assert list(open_archive(lone).iter_names()) == ["Lone/l.txt"]
+    opened = open_archive(tmp_path / "takeout-20251212T171747Z-9-001.tgz")
+    assert list(opened.iter_names()) == ["Takeout/Part9/f.txt", "Takeout/Part12/f.txt"]
+
+
+def test_multipart_sibling_scan_keeps_stems_exact(tmp_path: Path) -> None:
+    """Sibling discovery must not swallow files whose stem merely EXTENDS the
+    set's stem: 'takeout-test-9-001' is not part of the 'takeout-test' set,
+    and vice versa."""
+    set_a1 = tmp_path / "takeout-test-001.tgz"
+    set_a2 = tmp_path / "takeout-test-002.tgz"
+    set_b = tmp_path / "takeout-test-9-001.tgz"
+    write_archive(set_a1, {"A/one.txt": b"1"}, "tgz")
+    write_archive(set_a2, {"A/two.txt": b"2"}, "tgz")
+    write_archive(set_b, {"B/nine.txt": b"9"}, "tgz")
+    assert list(open_archive(set_a1).iter_names()) == ["A/one.txt", "A/two.txt"]
+    assert list(open_archive(set_b).iter_names()) == ["B/nine.txt"]

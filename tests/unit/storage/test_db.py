@@ -82,3 +82,52 @@ def test_concurrent_reads_while_writing(db: Database) -> None:
     assert errors == []
     count = db.write(lambda c: c.execute("SELECT count(*) FROM meta").fetchone()[0])
     assert count == 200 * 50
+
+
+def test_write_async_runs_on_writer_thread(tmp_path: Path) -> None:
+    """#199: write_async submits without blocking; the closure still runs on
+    the single writer thread with the sole write connection."""
+    import threading
+
+    db = Database.open(tmp_path / "async.db")
+    try:
+
+        def probe(conn: sqlite3.Connection) -> str:
+            conn.execute("INSERT INTO meta (key, value) VALUES ('k', 'v')")
+            return threading.current_thread().name
+
+        future = db.write_async(probe)
+        thread_name = future.result()
+        assert thread_name.startswith("potluck-writer")
+        value = db.write(lambda c: c.execute("SELECT value FROM meta WHERE key='k'").fetchone()[0])
+        assert value == "v"
+    finally:
+        db.close()
+
+
+def test_bulk_import_mode_keeps_synchronous_normal(db: Database) -> None:
+    """synchronous=OFF with checkpoints running risks corrupting the WHOLE
+    database on power loss, not just losing recent commits — bulk mode must
+    stay at NORMAL (#198 review 12). Pinned so OFF can't sneak back."""
+    with db.bulk_import_mode():
+        sync, cache, autockpt = db.write(
+            lambda conn: (
+                conn.execute("PRAGMA synchronous").fetchone()[0],
+                conn.execute("PRAGMA cache_size").fetchone()[0],
+                conn.execute("PRAGMA wal_autocheckpoint").fetchone()[0],
+            )
+        )
+    assert sync == 1  # NORMAL
+    assert cache == -262144
+    assert autockpt == 10000
+
+    sync_after, cache_after, autockpt_after = db.write(
+        lambda conn: (
+            conn.execute("PRAGMA synchronous").fetchone()[0],
+            conn.execute("PRAGMA cache_size").fetchone()[0],
+            conn.execute("PRAGMA wal_autocheckpoint").fetchone()[0],
+        )
+    )
+    assert sync_after == 1
+    assert cache_after == -2000
+    assert autockpt_after == 1000

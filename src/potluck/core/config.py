@@ -13,7 +13,7 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
-from potluck.core.paths import config_dir, default_db_path
+from potluck.core.paths import config_dir, default_attachments_dir, default_db_path
 
 
 class Settings(BaseSettings):
@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8765
     web_dist: Path | None = None
+    # Attachment policy (#124): metadata always lands in the files table;
+    # blob extraction to attachments_dir is opt-in.
+    extract_attachments: bool = False
+    attachments_dir: Path = Field(default_factory=default_attachments_dir)
+    # MIME parse worker processes (#199): 0 = auto (min(4, cpu_count) —
+    # measured flat beyond 4 workers); 1 = sequential, no pool.
+    ingest_workers: int = 0
 
     @classmethod
     def settings_customise_sources(

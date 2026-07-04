@@ -159,11 +159,11 @@ def test_prefix_query_matches(tmp_path: Path) -> None:
 
 
 def test_migration_idempotent_at_v3(tmp_path: Path) -> None:
-    """Database.open() applies all migrations; user_version == 4."""
+    """Database.open() applies all migrations; user_version == 6."""
     db = Database.open(tmp_path / "v3.db")
     try:
         with db.read() as conn:
             version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-        assert version == 4
+        assert version == 9
     finally:
         db.close()

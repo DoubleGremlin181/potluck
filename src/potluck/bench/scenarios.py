@@ -23,10 +23,12 @@ across the two callables; the persisted SQLite file is the only shared artifact.
 """
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from potluck.bench.registry import Scenario, Tier
 from potluck.core.config import Settings
+from potluck.ingest.engine import run_import
 from potluck.models.search import SearchRequest
 from potluck.services.context import AppContext, create_context
 from potluck.services.imports import import_path
@@ -34,6 +36,7 @@ from potluck.services.search import search
 from potluck.storage.db import Database
 from potluck.testing.generators import WORDS, synthetic_notes
 from potluck.testing.keep import write_keep_takeout
+from potluck.testing.mbox import TAIL_WORDS, synthetic_email_drafts, write_gmail_takeout
 
 _NOTE_COUNT = 5000
 
@@ -153,6 +156,128 @@ def _search_fts_10k_run(workdir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P2: Gmail ingest scenarios
+# ---------------------------------------------------------------------------
+
+
+def _gmail_ingest_scenario(name: str, tier: Tier, count: int, *, workers: int = 0) -> Scenario:
+    """Factory for Gmail mbox-Takeout ingest scenarios (zip; real MIME parse).
+
+    *workers* feeds Settings.ingest_workers: the default 0 (auto pool) and an
+    explicit 1 (sequential) form the #199 rule-3 A/B pair.
+    """
+
+    def setup(workdir: Path) -> None:
+        write_gmail_takeout(workdir / "archives", count, seed=42)
+
+    def run(workdir: Path) -> None:
+        ctx = create_context(Settings(db_path=workdir / "bench.db", ingest_workers=workers))
+        try:
+            import_path(ctx, _archive_path(workdir))
+        finally:
+            ctx.db.close()
+
+    return Scenario(name=name, tier=tier, item_count=count, setup=setup, run=run)
+
+
+def _imported_gmail_10k_setup(workdir: Path) -> None:
+    """Generate a 10k Gmail Takeout zip and import it once (reimport setup)."""
+    archive = write_gmail_takeout(workdir / "archives", 10_000, seed=42)
+    ctx = _make_ctx(workdir)
+    try:
+        import_path(ctx, archive)
+    finally:
+        ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
+# P2: search scenarios at scale (draft-fed corpora — no MIME round trip)
+# ---------------------------------------------------------------------------
+
+
+def _email_corpus_setup(count: int) -> Callable[[Path], None]:
+    """Populate the bench DB with *count* email drafts through the real
+    ingest engine (FTS path included) — tens of seconds at 250k, vs minutes
+    for an mbox round trip."""
+
+    def setup(workdir: Path) -> None:
+        ctx = _make_ctx(workdir)
+        try:
+            run_import(
+                ctx.db,
+                source_name="gmail",
+                parser_version=1,
+                drafts=iter(synthetic_email_drafts(count, seed=42)),
+                path="bench://drafts",
+                file_hash=None,
+            )
+        finally:
+            ctx.db.close()
+
+    return setup
+
+
+# Scenario workloads mirror the gated budgets: realistic selectivity
+# (TAIL_WORDS tokens, rare+common pairs) — see test_p2_budgets.py for why
+# pure stop-word queries are tracked separately rather than gated.
+_FTS_SCALE_QUERIES: tuple[str, ...] = tuple(
+    [TAIL_WORDS[(i * 37) % len(TAIL_WORDS)] for i in range(_SEARCH_QUERY_COUNT // 2)]
+    + [
+        f"{TAIL_WORDS[(i * 53) % len(TAIL_WORDS)]} {WORDS[i % len(WORDS)]}"
+        for i in range(_SEARCH_QUERY_COUNT // 2)
+    ]
+)
+# Selective SAYT prefixes: first word of a TAIL_WORDS compound + 2 chars of
+# the second — never expands to a bare common word's dense doclist.
+_TAIL_PAIRS: tuple[tuple[str, str], ...] = tuple((a, b) for a in WORDS for b in WORDS if a != b)
+_PREFIX_QUERIES: tuple[str, ...] = tuple(
+    [
+        f"{_TAIL_PAIRS[(i * 37) % len(_TAIL_PAIRS)][0]}{_TAIL_PAIRS[(i * 37) % len(_TAIL_PAIRS)][1][:2]}"
+        for i in range(_SEARCH_QUERY_COUNT // 2)
+    ]
+    + [
+        f"{WORDS[i % len(WORDS)]} "
+        f"{_TAIL_PAIRS[(i * 111) % len(_TAIL_PAIRS)][0]}{_TAIL_PAIRS[(i * 111) % len(_TAIL_PAIRS)][1][:2]}"
+        for i in range(_SEARCH_QUERY_COUNT // 2)
+    ]
+)
+# Smoke-tier SAYT prefixes for the shared 10k KEEP corpus, whose vocabulary is
+# bare WORDS — the TAIL_WORDS compounds above can never match there, and a
+# zero-hit workload measures only empty term-range scans (never bm25 ranking,
+# snippet(), or row fetch). Each prefix is a WORD minus its final character
+# (a user one keystroke from a real token), so every query hits; guarded by
+# test_prefix_10k_smoke_queries_hit_the_keep_corpus.
+_KEEP_PREFIX_QUERIES: tuple[str, ...] = tuple(
+    [WORDS[i % len(WORDS)][:-1] for i in range(_SEARCH_QUERY_COUNT // 2)]
+    + [
+        f"{WORDS[i % len(WORDS)]} {WORDS[(i + 7) % len(WORDS)][:-1]}"
+        for i in range(_SEARCH_QUERY_COUNT // 2)
+    ]
+)
+
+
+def _search_run(workdir: Path, queries: tuple[str, ...], *, prefix: bool) -> None:
+    ctx = _make_ctx(workdir)
+    try:
+        for q in queries:
+            search(ctx, SearchRequest(query=q, prefix=prefix))
+    finally:
+        ctx.db.close()
+
+
+def _fts_run(workdir: Path) -> None:
+    _search_run(workdir, _FTS_SCALE_QUERIES, prefix=False)
+
+
+def _prefix_run(workdir: Path) -> None:
+    _search_run(workdir, _PREFIX_QUERIES, prefix=True)
+
+
+def _keep_prefix_run(workdir: Path) -> None:
+    _search_run(workdir, _KEEP_PREFIX_QUERIES, prefix=True)
+
+
+# ---------------------------------------------------------------------------
 # Scenario registry
 # ---------------------------------------------------------------------------
 
@@ -177,5 +302,46 @@ ALL_SCENARIOS = [
         item_count=_SEARCH_QUERY_COUNT,
         setup=_imported_keep_10k_setup,
         run=_search_fts_10k_run,
+    ),
+    # P2 Gmail ingest: smoke pair (2k × 8k) for the 1x-vs-4x scaling gate;
+    # the true 50k/5 GB budget is asserted by the nightly hard-budget tests
+    # (1 rep, subprocess RSS) — the full-tier 50k scenario tracks the trend.
+    _gmail_ingest_scenario("ingest_gmail_2k", "smoke", 2_000),
+    _gmail_ingest_scenario("ingest_gmail_8k", "smoke", 8_000),
+    _gmail_ingest_scenario("ingest_gmail_50k", "full", 50_000),
+    # #199 rule-3 evidence: sequential twin of ingest_gmail_8k — the pooled
+    # default must beat this (gated in test_p2_budgets.py).
+    _gmail_ingest_scenario("ingest_gmail_8k_seq", "full", 8_000, workers=1),
+    # No-op gmail re-import: exercises file-hash + ledger short-circuit
+    Scenario(
+        name="reimport_noop_gmail_10k",
+        tier="full",
+        item_count=10_000,
+        setup=_imported_gmail_10k_setup,
+        run=_reimport_noop_10k_run,
+    ),
+    # P2 search at scale (item_count = query count → throughput = queries/s)
+    Scenario(
+        name="fts_p95_250k",
+        tier="full",
+        item_count=_SEARCH_QUERY_COUNT,
+        setup=_email_corpus_setup(250_000),
+        run=_fts_run,
+    ),
+    Scenario(
+        name="prefix_p95_100k",
+        tier="full",
+        item_count=_SEARCH_QUERY_COUNT,
+        setup=_email_corpus_setup(100_000),
+        run=_prefix_run,
+    ),
+    # Cheap PR-tier SAYT latency tracking over the shared 10k Keep corpus
+    # (Keep-vocabulary prefixes — every query returns real hits there)
+    Scenario(
+        name="prefix_10k",
+        tier="smoke",
+        item_count=_SEARCH_QUERY_COUNT,
+        setup=_imported_keep_10k_setup,
+        run=_keep_prefix_run,
     ),
 ]

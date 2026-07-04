@@ -5,12 +5,14 @@ The engine owns batching/hashing/dedup/FTS/progress/ledger.
 """
 
 import fnmatch
+import hashlib
 import importlib
 import logging
 import pkgutil
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import potluck.ingest.sources as sources_pkg
 from potluck.core.errors import DuplicateSourceError
@@ -24,7 +26,22 @@ _logger = logging.getLogger(__name__)
 # Public types
 # ---------------------------------------------------------------------------
 
-type ParseFn = Callable[[Archive], Iterator[ItemDraft]]
+
+@dataclass(frozen=True)
+class ParseContext:
+    """Engine-provided context passed to every parse function.
+
+    attachments_dir: managed root for content-addressed blob extraction, or
+    None when extraction is disabled (the default — metadata only).
+    workers: parse worker processes for sources that parallelize decoding
+    (#199); 0 = auto, 1 = sequential. Plugins may ignore it.
+    """
+
+    attachments_dir: Path | None = None
+    workers: int = 0
+
+
+type ParseFn = Callable[[Archive, ParseContext], Iterator[ItemDraft]]
 
 
 @dataclass(frozen=True)
@@ -133,23 +150,40 @@ def discover() -> dict[str, SourcePlugin]:
 # ---------------------------------------------------------------------------
 
 
-def detect_source(archive: Archive) -> SourcePlugin | None:
-    """Single sequential pass over archive names; return the first matching plugin.
+def detect_sources(archive: Archive) -> list[SourcePlugin]:
+    """Single sequential pass over archive names; return EVERY matching plugin.
 
-    Precedence rules:
-    - The first archive member (in archive order) to match any plugin wins.
-    - If one member matches multiple plugins, the lexicographically smallest
-      plugin name is returned.
+    A combined Takeout (Keep + Mail in one archive) surfaces every product it
+    contains — the import layer runs one import per matched plugin (#195).
+    Returned sorted by plugin name for a deterministic run order; empty list
+    when nothing matches.
 
-    Returns None when no plugin recognises the archive.
-    Tar-friendly: a single sequential walk with early exit.
+    Tar-friendly: one sequential walk, exiting early once every registered
+    plugin has matched.
     """
     plugins = discover()
-    sorted_names = sorted(plugins.keys())
+    remaining = dict(sorted(plugins.items()))
+    matched: list[SourcePlugin] = []
 
     for archive_name in archive.iter_names():
-        for plugin_name in sorted_names:
-            if plugins[plugin_name].detect.matches(archive_name):
-                return plugins[plugin_name]
+        for name in list(remaining):
+            if remaining[name].detect.matches(archive_name):
+                matched.append(remaining.pop(name))
+        if not remaining:
+            break
 
-    return None
+    matched.sort(key=lambda plugin: plugin.name)
+    return matched
+
+
+def registry_fingerprint(plugins: dict[str, SourcePlugin]) -> str:
+    """Identity of the detection configuration: sorted plugin names + globs.
+
+    detect_sources is a pure function of (archive names, this fingerprint) —
+    the key that lets archive scans be cached (#196). parser_version is
+    deliberately excluded: it changes what parse produces, not what matches.
+    """
+    canonical = "\n".join(
+        f"{name}:{plugin.detect.pattern}" for name, plugin in sorted(plugins.items())
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

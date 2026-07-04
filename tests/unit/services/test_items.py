@@ -197,3 +197,61 @@ def test_list_items_empty_db(ctx: AppContext) -> None:
     resp = list_items(ctx, ListItemsRequest())
     assert resp.items == []
     assert resp.total == 0
+
+
+def test_get_item_email_carries_satellite_detail(ctx: AppContext) -> None:
+    """#200: email items hydrate the emails row + attachment list."""
+    from potluck.models.drafts import EmailAttachment
+    from tests.conftest import email_draft, email_item_id, ingest_email_drafts
+
+    draft = email_draft(
+        1,
+        in_reply_to="m0@potluck.test",
+        thread_key="m0@potluck.test",
+        title="garden notes",
+        text="body",
+        ts=None,
+        from_addr="alice@potluck.test",
+        from_name="Alice A",
+        to_addrs=("bob@potluck.test",),
+        to_names=("Bob B",),
+        cc_addrs=("carol@potluck.test",),
+        cc_names=("",),
+        bcc_addrs=("dave@potluck.test",),
+        labels=("Inbox", "Travel"),
+        attachments=(
+            EmailAttachment(filename="map.png", mime="image/png", size_bytes=5, sha256="ab" * 32),
+        ),
+    )
+    ingest_email_drafts(ctx, draft, source_name="gmail", parser_version=2)
+    item_id = email_item_id(ctx, "m1@potluck.test")
+
+    item = get_item(ctx, item_id)
+    email = item.email
+    assert email is not None
+    assert email.message_id == "m1@potluck.test"
+    assert email.in_reply_to == "m0@potluck.test"
+    assert email.thread_key == "m0@potluck.test"
+    assert email.from_addr == "alice@potluck.test"
+    assert email.from_name == "Alice A"
+    assert email.to_addrs == ["bob@potluck.test"]
+    assert email.to_names == ["Bob B"]
+    assert email.cc_addrs == ["carol@potluck.test"]
+    assert email.cc_names == [""]
+    assert email.bcc_addrs == ["dave@potluck.test"]
+    assert email.labels == ["Inbox", "Travel"]
+    [att] = email.attachments
+    assert att.filename == "map.png"
+    assert att.mime == "image/png"
+    assert att.size_bytes == 5
+    assert att.sha256 == "ab" * 32
+
+
+def test_get_item_non_email_has_no_email_detail(ctx: AppContext, tmp_path: Path) -> None:
+    from potluck.models.drafts import NoteDraft
+    from tests.conftest import ingest_email_drafts
+
+    ingest_email_drafts(ctx, NoteDraft(title="t", text="x"), source_name="keep", path="/tmp/t.zip")
+    with ctx.db.read() as conn:
+        item_id = int(conn.execute("SELECT id FROM items").fetchone()[0])
+    assert get_item(ctx, item_id).email is None

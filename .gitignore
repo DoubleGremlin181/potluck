@@ -46,4 +46,7 @@ Takeout/
 takeout-*.zip
 *.mbox
 *.zip
+# Generated synthetic fixtures are the one exception (PII guard enforces safety)
 !tests/fixtures/**/*.zip
+!tests/fixtures/**/Takeout/
+!tests/fixtures/**/*.mbox

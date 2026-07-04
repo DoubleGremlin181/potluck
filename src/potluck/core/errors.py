@@ -27,3 +27,7 @@ class DuplicateSourceError(PotluckError):
 
 class ItemNotFoundError(PotluckError):
     """No item with the given id exists in the database."""
+
+
+class InvalidCursorError(PotluckError):
+    """The search pagination cursor is malformed or of an unsupported version."""

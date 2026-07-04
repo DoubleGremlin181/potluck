@@ -84,3 +84,100 @@ def test_file_hash_matches_hashlib(tmp_path: Path) -> None:
     p.write_bytes(content)
     expected = hashlib.sha256(content).hexdigest()
     assert file_hash(p) == expected
+
+
+# ---------------------------------------------------------------------------
+# extra_hash_parts (#123): satellite content participates in the hash
+# ---------------------------------------------------------------------------
+
+# Pinned P1 Keep hash: extra_hash_parts must be a pure extension — an empty
+# tuple appends NOTHING, or every existing Keep item re-ingests as updated.
+_PINNED_KEEP_HASH = "337f91bb67cc2a30c7b04c2c915934bccb7907bbb3f2e46a67f9347f7ef74c09"
+
+
+def test_keep_hash_pinned_across_extra_parts_change() -> None:
+    from datetime import UTC, datetime
+
+    draft = NoteDraft(
+        external_id="Keep/note.json",
+        ts=datetime(2021, 5, 4, 12, 0, tzinfo=UTC),
+        title="Amber Basil",
+        text="Cedar dahlia ember.",
+        meta={"labels": ["Work"]},
+    )
+    assert content_hash(draft) == _PINNED_KEEP_HASH
+
+
+def test_email_label_change_changes_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    base = EmailDraft(thread_key="tk", title="s", text="b", labels=("Inbox",))
+    moved = EmailDraft(thread_key="tk", title="s", text="b", labels=("Archived",))
+    assert content_hash(base) != content_hash(moved)
+
+
+def test_email_to_vs_cc_distinct_hash() -> None:
+    """Variable-length groups must not collide across field boundaries."""
+    from potluck.models.drafts import EmailDraft
+
+    to_only = EmailDraft(thread_key="tk", to_addrs=("x@potluck.test",))
+    cc_only = EmailDraft(thread_key="tk", cc_addrs=("x@potluck.test",))
+    assert content_hash(to_only) != content_hash(cc_only)
+
+
+def test_email_attachment_change_changes_hash() -> None:
+    from potluck.models.drafts import EmailAttachment, EmailDraft
+
+    att1 = EmailAttachment(filename="a", mime="text/plain", size_bytes=1, sha256="aa" * 32)
+    att2 = EmailAttachment(filename="a", mime="text/plain", size_bytes=1, sha256="bb" * 32)
+    d1 = EmailDraft(thread_key="tk", attachments=(att1,))
+    d2 = EmailDraft(thread_key="tk", attachments=(att2,))
+    assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_thread_key_changes_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    d1 = EmailDraft(thread_key="a", title="s")
+    d2 = EmailDraft(thread_key="b", title="s")
+    assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_from_name_change_changes_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    d1 = EmailDraft(thread_key="tk", from_addr="a@potluck.test", from_name="Alice")
+    d2 = EmailDraft(thread_key="tk", from_addr="a@potluck.test", from_name="Alicia")
+    assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_bcc_change_changes_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    d1 = EmailDraft(thread_key="tk", bcc_addrs=("x@potluck.test",))
+    d2 = EmailDraft(thread_key="tk", bcc_addrs=())
+    assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_to_names_vs_cc_names_distinct_hash() -> None:
+    from potluck.models.drafts import EmailDraft
+
+    d1 = EmailDraft(thread_key="tk", to_addrs=("x@potluck.test",), to_names=("X",))
+    d2 = EmailDraft(thread_key="tk", to_addrs=("x@potluck.test",), cc_names=("X",))
+    assert content_hash(d1) != content_hash(d2)
+
+
+def test_email_attachment_filename_and_mime_in_hash() -> None:
+    """filename and mime are persisted to the files satellite, so they must
+    live inside the hash like every other satellite field (#198 review 11)."""
+    from potluck.models.drafts import EmailAttachment, EmailDraft
+
+    def _draft(filename: str | None, mime: str | None) -> EmailDraft:
+        att = EmailAttachment(filename=filename, mime=mime, size_bytes=1, sha256="aa" * 32)
+        return EmailDraft(thread_key="tk", attachments=(att,))
+
+    base = content_hash(_draft("a.pdf", "application/pdf"))
+    assert content_hash(_draft("b.pdf", "application/pdf")) != base
+    assert content_hash(_draft("a.pdf", "application/octet-stream")) != base
+    # injectivity across the filename/mime boundary
+    assert content_hash(_draft("ab", "")) != content_hash(_draft("a", "b"))

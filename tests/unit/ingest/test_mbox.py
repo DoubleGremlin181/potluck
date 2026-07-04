@@ -1,0 +1,653 @@
+"""Streaming mbox splitter + MIME email parser (#122).
+
+Message fixtures are small literal byte strings modeled on the real Gmail
+Takeout mbox shape (From_ envelope lines, X-Gmail-Labels, multipart/alternative
+with quoted-printable HTML) — content is synthetic.
+"""
+
+import email.message
+import hashlib
+from datetime import UTC, datetime
+from io import BytesIO
+
+from potluck.ingest.mbox import (
+    ParsedEmail,
+    _payload_bytes,
+    iter_mbox_messages,
+    normalize_msgid,
+    parse_email,
+)
+
+# ---------------------------------------------------------------------------
+# iter_mbox_messages
+# ---------------------------------------------------------------------------
+
+TWO_MESSAGE_MBOX = (
+    b"From alice@potluck.test Fri Dec 12 06:57:49 +0000 2025\n"
+    b"Message-ID: <one@potluck.test>\n"
+    b"Subject: first\n"
+    b"\n"
+    b"body one\n"
+    b"\n"
+    b"From bob@potluck.test Fri Dec 12 07:00:00 +0000 2025\n"
+    b"Message-ID: <two@potluck.test>\n"
+    b"Subject: second\n"
+    b"\n"
+    b"body two\n"
+)
+
+
+def test_iter_splits_on_envelope_lines() -> None:
+    messages = list(iter_mbox_messages(BytesIO(TWO_MESSAGE_MBOX)))
+    assert len(messages) == 2
+    assert messages[0].startswith(b"Message-ID: <one@potluck.test>")
+    assert b"body one" in messages[0]
+    assert messages[1].startswith(b"Message-ID: <two@potluck.test>")
+    assert b"body two" in messages[1]
+
+
+def test_iter_excludes_envelope_from_line() -> None:
+    messages = list(iter_mbox_messages(BytesIO(TWO_MESSAGE_MBOX)))
+    for msg in messages:
+        assert not msg.startswith(b"From ")
+
+
+def test_iter_quoted_from_stays_in_message() -> None:
+    raw = (
+        b"From alice@potluck.test Fri Dec 12 06:57:49 +0000 2025\n"
+        b"Subject: quoting\n"
+        b"\n"
+        b"line one\n"
+        b">From the archives\n"
+        b"line three\n"
+    )
+    messages = list(iter_mbox_messages(BytesIO(raw)))
+    assert len(messages) == 1
+    assert b">From the archives" in messages[0]
+
+
+def test_iter_final_message_without_trailing_newline() -> None:
+    raw = (
+        b"From alice@potluck.test Fri Dec 12 06:57:49 +0000 2025\n"
+        b"Subject: last\n"
+        b"\n"
+        b"no trailing newline"
+    )
+    messages = list(iter_mbox_messages(BytesIO(raw)))
+    assert len(messages) == 1
+    assert messages[0].endswith(b"no trailing newline")
+
+
+def test_iter_empty_stream() -> None:
+    assert list(iter_mbox_messages(BytesIO(b""))) == []
+
+
+def test_iter_ignores_leading_garbage_before_first_envelope() -> None:
+    raw = b"\n\nFrom alice@potluck.test Fri Dec 12 06:57:49 +0000 2025\nSubject: x\n\nbody\n"
+    messages = list(iter_mbox_messages(BytesIO(raw)))
+    assert len(messages) == 1
+
+
+# ---------------------------------------------------------------------------
+# normalize_msgid
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_msgid_strips_brackets_and_whitespace() -> None:
+    assert normalize_msgid(" <abc@potluck.test> ") == "abc@potluck.test"
+    assert normalize_msgid("abc@potluck.test") == "abc@potluck.test"
+
+
+def test_normalize_msgid_empty_inputs() -> None:
+    assert normalize_msgid(None) is None
+    assert normalize_msgid("") is None
+    assert normalize_msgid(" <> ") is None
+
+
+# ---------------------------------------------------------------------------
+# parse_email — headers
+# ---------------------------------------------------------------------------
+
+
+def _msg(*lines: bytes) -> bytes:
+    return b"\n".join(lines)
+
+
+BASIC = _msg(
+    b"Message-ID: <one@potluck.test>",
+    b"From: Alice Example <ALICE@Potluck.test>",
+    b"To: Bob <bob@potluck.test>, carol@example.com",
+    b"Cc: dave@potluck.test",
+    b"Subject: garden notes",
+    b"Date: Fri, 12 Dec 2025 06:57:49 +0000",
+    b"X-Gmail-Labels: Inbox,Category Updates,Unread",
+    b"Content-Type: text/plain; charset=UTF-8",
+    b"",
+    b"plain body here",
+)
+
+
+def test_parse_basic_headers() -> None:
+    parsed = parse_email(BASIC)
+    assert parsed.message_id == "one@potluck.test"
+    assert parsed.from_addr == "alice@potluck.test"
+    assert parsed.to_addrs == ("bob@potluck.test", "carol@example.com")
+    assert parsed.cc_addrs == ("dave@potluck.test",)
+    assert parsed.subject == "garden notes"
+    assert parsed.date == datetime(2025, 12, 12, 6, 57, 49, tzinfo=UTC)
+    assert parsed.labels == ("Inbox", "Category Updates", "Unread")
+    assert parsed.text.strip() == "plain body here"
+    assert parsed.attachments == ()
+
+
+def test_parse_rfc2047_subject() -> None:
+    parsed = parse_email(_msg(b"Subject: =?utf-8?q?caf=C3=A9_notes?=", b"", b"x"))
+    assert parsed.subject == "café notes"
+
+
+def test_parse_references_and_in_reply_to() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Message-ID: <c@potluck.test>",
+            b"In-Reply-To: <b@potluck.test>",
+            b"References: <a@potluck.test> <b@potluck.test>",
+            b"",
+            b"x",
+        )
+    )
+    assert parsed.in_reply_to == "b@potluck.test"
+    assert parsed.references == ("a@potluck.test", "b@potluck.test")
+
+
+def test_parse_missing_message_id() -> None:
+    parsed = parse_email(_msg(b"Subject: nope", b"", b"x"))
+    assert parsed.message_id is None
+
+
+def test_parse_bad_date_yields_none() -> None:
+    parsed = parse_email(_msg(b"Date: not a date at all", b"", b"x"))
+    assert parsed.date is None
+
+
+def test_parse_no_labels_header() -> None:
+    parsed = parse_email(_msg(b"Subject: x", b"", b"x"))
+    assert parsed.labels == ()
+
+
+# ---------------------------------------------------------------------------
+# parse_email — bodies and charsets
+# ---------------------------------------------------------------------------
+
+
+def test_parse_base64_body() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"Content-Transfer-Encoding: base64",
+            b"",
+            b"aGVsbG8gYmFzZTY0IGJvZHk=",
+        )
+    )
+    assert parsed.text.strip() == "hello base64 body"
+
+
+def test_parse_quoted_printable_body() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"Content-Transfer-Encoding: quoted-printable",
+            b"",
+            b"caf=C3=A9 time",
+        )
+    )
+    assert parsed.text.strip() == "café time"
+
+
+def test_parse_latin1_body() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Content-Type: text/plain; charset=ISO-8859-1",
+            b"",
+            b"caf\xe9",
+        )
+    )
+    assert parsed.text.strip() == "café"
+
+
+def test_parse_unknown_charset_falls_back() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Content-Type: text/plain; charset=banana",
+            b"",
+            b"plain enough",
+        )
+    )
+    assert "plain enough" in parsed.text
+
+
+def test_parse_undeclared_charset_non_utf8_does_not_crash() -> None:
+    parsed = parse_email(_msg(b"Content-Type: text/plain", b"", b"caf\xe9 again"))
+    assert "caf" in parsed.text
+
+
+def test_parse_html_only_body_extracts_text() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Content-Type: text/html; charset=UTF-8",
+            b"",
+            b"<html><body><p>Hello <b>world</b></p></body></html>",
+        )
+    )
+    assert "Hello world" in parsed.text
+    assert "<" not in parsed.text
+
+
+def test_parse_empty_plain_falls_back_to_html() -> None:
+    """Seen in real Gmail exports: an empty text/plain alternative next to a
+    populated text/html — the html must win over whitespace."""
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: multipart/alternative; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"",
+            b"--B",
+            b"Content-Type: text/html; charset=UTF-8",
+            b"",
+            b"<p>only the html has content</p>",
+            b"--B--",
+        )
+    )
+    assert "only the html has content" in parsed.text
+
+
+def test_parse_multipart_alternative_prefers_plain() -> None:
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: multipart/alternative; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"the plain version",
+            b"--B",
+            b"Content-Type: text/html; charset=UTF-8",
+            b"",
+            b"<p>the html version</p>",
+            b"--B--",
+        )
+    )
+    assert "the plain version" in parsed.text
+    assert "html version" not in parsed.text
+
+
+# ---------------------------------------------------------------------------
+# parse_email — attachments
+# ---------------------------------------------------------------------------
+
+ATTACHMENT_PAYLOAD = b"attach bytes"
+
+WITH_ATTACHMENT = _msg(
+    b"Message-ID: <att@potluck.test>",
+    b'Content-Type: multipart/mixed; boundary="B"',
+    b"",
+    b"--B",
+    b"Content-Type: text/plain; charset=UTF-8",
+    b"",
+    b"see attached",
+    b"--B",
+    b"Content-Type: application/octet-stream",
+    b'Content-Disposition: attachment; filename="a.bin"',
+    b"Content-Transfer-Encoding: base64",
+    b"",
+    b"YXR0YWNoIGJ5dGVz",
+    b"--B--",
+)
+
+
+def test_parse_attachment_metadata() -> None:
+    parsed = parse_email(WITH_ATTACHMENT)
+    assert len(parsed.attachments) == 1
+    att = parsed.attachments[0]
+    assert att.filename == "a.bin"
+    assert att.mime == "application/octet-stream"
+    assert att.size_bytes == len(ATTACHMENT_PAYLOAD)
+    assert att.sha256 == hashlib.sha256(ATTACHMENT_PAYLOAD).hexdigest()
+
+
+def test_parse_attachment_not_in_text() -> None:
+    parsed = parse_email(WITH_ATTACHMENT)
+    assert "see attached" in parsed.text
+    assert "YXR0YWNo" not in parsed.text
+
+
+def test_parse_inline_image_counts_as_attachment() -> None:
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: multipart/mixed; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain",
+            b"",
+            b"body",
+            b"--B",
+            b"Content-Type: image/png",
+            b"Content-Transfer-Encoding: base64",
+            b"",
+            b"aW1hZ2U=",
+            b"--B--",
+        )
+    )
+    assert len(parsed.attachments) == 1
+    assert parsed.attachments[0].mime == "image/png"
+    assert parsed.attachments[0].filename is None
+
+
+# ---------------------------------------------------------------------------
+# round-trip with the synthetic generator
+# ---------------------------------------------------------------------------
+
+
+def test_round_trip_synthetic_corpus() -> None:
+    from potluck.testing.mbox import synthetic_mbox_messages
+
+    raw = b"".join(synthetic_mbox_messages(50, seed=11))
+    parsed = [parse_email(m) for m in iter_mbox_messages(BytesIO(raw))]
+    assert len(parsed) == 50
+    assert all(p.from_addr for p in parsed)
+    assert any(p.references for p in parsed)
+    assert any(p.attachments for p in parsed)
+
+
+def test_payload_sink_receives_attachment_bytes() -> None:
+    """#124: extraction happens during parse — the sink gets (sha256, payload)."""
+    received: list[tuple[str, bytes]] = []
+    parsed = parse_email(
+        WITH_ATTACHMENT, payload_sink=lambda sha, data: received.append((sha, data))
+    )
+    assert received == [(hashlib.sha256(ATTACHMENT_PAYLOAD).hexdigest(), ATTACHMENT_PAYLOAD)]
+    assert parsed.attachments[0].sha256 == received[0][0]
+
+
+# ---------------------------------------------------------------------------
+# parse_email — body cleanup (#199) and name/bcc fields
+# ---------------------------------------------------------------------------
+
+
+def test_parse_body_junk_run_truncated() -> None:
+    parsed = parse_email(
+        _msg(b"Subject: x", b"Content-Type: text/plain", b"", b"intro " + b"x" * 200 + b" outro")
+    )
+    assert "x" * 80 in parsed.text
+    assert "x" * 81 not in parsed.text
+    assert "outro" in parsed.text
+
+
+def test_parse_body_zero_width_stripped() -> None:
+    parsed = parse_email(_msg(b"Content-Type: text/plain; charset=UTF-8", b"", "he​llo".encode()))
+    assert parsed.text.strip() == "hello"
+
+
+def test_parse_display_names() -> None:
+    parsed = parse_email(BASIC)
+    assert parsed.from_name == "Alice Example"
+    assert parsed.to_names == ("Bob", "")
+    assert parsed.cc_names == ("",)
+
+
+def test_parse_rfc2047_display_name_decoded() -> None:
+    parsed = parse_email(_msg(b"From: =?utf-8?q?Caf=C3=A9_Crew?= <crew@potluck.test>", b"", b"x"))
+    assert parsed.from_name == "Café Crew"
+    assert parsed.from_addr == "crew@potluck.test"
+
+
+def test_parse_bcc_addresses() -> None:
+    parsed = parse_email(_msg(b"Bcc: Eve <EVE@potluck.test>, frank@example.com", b"", b"x"))
+    assert parsed.bcc_addrs == ("eve@potluck.test", "frank@example.com")
+
+
+def test_parse_missing_names_and_bcc() -> None:
+    parsed = parse_email(_msg(b"From: nameless@potluck.test", b"", b"x"))
+    assert parsed.from_name is None
+    assert parsed.bcc_addrs == ()
+    assert parsed.to_names == ()
+
+
+# ---------------------------------------------------------------------------
+# message/rfc822 + extra inline text parts (#198 review 1/2)
+# ---------------------------------------------------------------------------
+
+INNER_EMAIL = _msg(
+    b"Message-ID: <inner@potluck.test>",
+    b"Subject: inner subject",
+    b"Content-Type: text/plain; charset=UTF-8",
+    b"",
+    b"the inner body",
+)
+
+WITH_RFC822 = (
+    _msg(
+        b"Message-ID: <outer@potluck.test>",
+        b'Content-Type: multipart/mixed; boundary="B"',
+        b"",
+        b"--B",
+        b"Content-Type: text/html; charset=UTF-8",
+        b"",
+        b"<p>the outer body</p>",
+        b"--B",
+        b"Content-Type: message/rfc822",
+        b'Content-Disposition: attachment; filename="fwd.eml"',
+        b"",
+    )
+    + INNER_EMAIL
+    + _msg(b"", b"--B--")
+)
+
+
+def test_parse_rfc822_attachment_keeps_outer_body() -> None:
+    """An attached email is one attachment; its body never becomes the outer
+    message's body (walk() must not descend into message/rfc822)."""
+    parsed = parse_email(WITH_RFC822)
+    assert "the outer body" in parsed.text
+    assert "the inner body" not in parsed.text
+    assert len(parsed.attachments) == 1
+    att = parsed.attachments[0]
+    assert att.mime == "message/rfc822"
+    assert att.filename == "fwd.eml"
+    assert att.size_bytes > 0
+    assert len(att.sha256) == 64
+
+
+def test_parse_rfc822_attachment_offered_to_sink() -> None:
+    captured: list[tuple[str, bytes]] = []
+    parse_email(WITH_RFC822, payload_sink=lambda sha, data: captured.append((sha, data)))
+    assert len(captured) == 1
+    assert b"the inner body" in captured[0][1]
+
+
+def test_parse_inline_calendar_recorded_as_attachment() -> None:
+    """A text/calendar alternative (meeting invite) must not vanish."""
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: multipart/alternative; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"meeting body",
+            b"--B",
+            b"Content-Type: text/calendar; charset=UTF-8; method=REQUEST",
+            b"",
+            b"BEGIN:VCALENDAR",
+            b"END:VCALENDAR",
+            b"--B--",
+        )
+    )
+    assert "meeting body" in parsed.text
+    assert [a.mime for a in parsed.attachments] == ["text/calendar"]
+
+
+def test_parse_second_inline_plain_recorded_as_attachment() -> None:
+    """A second inline text/plain (e.g. an inline notes.txt) must not vanish."""
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: multipart/mixed; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"the real body",
+            b"--B",
+            b'Content-Type: text/plain; charset=UTF-8; name="notes.txt"',
+            b'Content-Disposition: inline; filename="notes.txt"',
+            b"",
+            b"inline notes file",
+            b"--B--",
+        )
+    )
+    assert "the real body" in parsed.text
+    assert "inline notes file" not in parsed.text
+    assert [a.filename for a in parsed.attachments] == ["notes.txt"]
+    assert parsed.attachments[0].mime == "text/plain"
+
+
+# ---------------------------------------------------------------------------
+# parse boundary: no ParsedEmail string may carry lone surrogates.
+# Real-data defect: the stdlib email package surrogateescapes undecodable raw
+# header bytes into strings (U+DC80-U+DCFF); ONE such From display name
+# crashed a 126k-email import in content_hash (UnicodeEncodeError). All bytes
+# below are synthetic.
+# ---------------------------------------------------------------------------
+
+
+def _all_strings(parsed: ParsedEmail) -> list[str]:
+    """Every string field of a ParsedEmail (the no-surrogates invariant surface)."""
+    fields: list[str | None] = [
+        parsed.message_id,
+        parsed.in_reply_to,
+        *parsed.references,
+        parsed.from_addr,
+        parsed.from_name,
+        *parsed.to_addrs,
+        *parsed.to_names,
+        *parsed.cc_addrs,
+        *parsed.cc_names,
+        *parsed.bcc_addrs,
+        parsed.subject,
+        parsed.text,
+        *parsed.labels,
+    ]
+    for att in parsed.attachments:
+        fields.extend((att.filename, att.mime))
+    return [f for f in fields if f is not None]
+
+
+def _assert_utf8_clean(parsed: ParsedEmail) -> None:
+    for s in _all_strings(parsed):
+        s.encode("utf-8")  # raises UnicodeEncodeError on any lone surrogate
+
+
+def test_parse_undecodable_from_name_scrubbed() -> None:
+    """THE crash reproducer: junk bytes in the From display name must not
+    surrogateescape into from_name — hashing and SQLite need clean UTF-8."""
+    parsed = parse_email(_msg(b'From: "\x93Bad Name\x94" <x@potluck.test>', b"", b"body"))
+    _assert_utf8_clean(parsed)
+    assert parsed.from_name is not None
+    assert "Bad Name" in parsed.from_name  # readable characters survive
+    assert parsed.from_addr == "x@potluck.test"
+
+
+def test_parse_undecodable_addr_spec_scrubbed() -> None:
+    parsed = parse_email(_msg(b'From: "ok" <ju\x93nk@potluck.test>', b"", b"body"))
+    _assert_utf8_clean(parsed)
+    assert parsed.from_addr is not None
+    assert parsed.from_addr.endswith("nk@potluck.test")
+
+
+def test_parse_undecodable_subject_toname_labels_scrubbed() -> None:
+    parsed = parse_email(
+        _msg(
+            b"Subject: junk \x93quoted\x94 subject",
+            b'To: "\x93Recipient\x94" <to@potluck.test>',
+            b"X-Gmail-Labels: Inbox,\x93Junk\x94,Unread",
+            b"",
+            b"body",
+        )
+    )
+    _assert_utf8_clean(parsed)
+    assert parsed.subject is not None and "junk" in parsed.subject
+    assert parsed.to_names and "Recipient" in parsed.to_names[0]
+    assert parsed.to_addrs == ("to@potluck.test",)
+    assert "Inbox" in parsed.labels and "Unread" in parsed.labels
+
+
+def test_parse_utf7_body_cannot_leak_lone_surrogates() -> None:
+    """bytes.decode CAN emit lone surrogates: utf-7 decodes b'+2AA-' to
+    U+D800 without error — the body path must scrub them too."""
+    parsed = parse_email(
+        _msg(b"Content-Type: text/plain; charset=utf-7", b"", b"+2AA- readable tail")
+    )
+    _assert_utf8_clean(parsed)
+    assert "readable tail" in parsed.text
+
+
+def test_parse_junk_bytes_everywhere_all_fields_utf8_clean() -> None:
+    """Kitchen sink: undecodable bytes in every header the parser reads."""
+    parsed = parse_email(
+        _msg(
+            b"Message-ID: <ab\x93c@potluck.test>",
+            b"In-Reply-To: <de\x94f@potluck.test>",
+            b"References: <ab\x93c@potluck.test> <de\x94f@potluck.test>",
+            b'From: "\x93Alice\x94" <al\x93ice@potluck.test>',
+            b'To: "\x93Bob\x94" <bob@potluck.test>, ca\x94rol@potluck.test',
+            b'Cc: "\x93Dee\x94" <dee@potluck.test>',
+            b"Bcc: ev\x93e@potluck.test",
+            b"Subject: \x93junk\x94",
+            b"X-Gmail-Labels: \x93Label\x94",
+            b'Content-Type: multipart/mixed; boundary="B"',
+            b"",
+            b"--B",
+            b"Content-Type: text/plain; charset=UTF-8",
+            b"",
+            b"body",
+            b"--B",
+            b"Content-Type: applica\x93tion/octet-stream",
+            b'Content-Disposition: attachment; filename="re\x93port.bin"',
+            b"",
+            b"AAAA",
+            b"--B--",
+        )
+    )
+    _assert_utf8_clean(parsed)
+
+
+def test_payload_bytes_surrogate_string_fallback_never_raises() -> None:
+    """Broken-CTE fallback: get_payload(decode=True) fails and the undecoded
+    payload STRING carries lone surrogates — re-encoding must not raise."""
+
+    class _BrokenPart(email.message.Message):
+        def get_payload(  # type: ignore[override]
+            self, i: int | None = None, decode: bool = False
+        ) -> object:
+            if decode:
+                raise ValueError("broken CTE")
+            return "ju\udc93nk \ud800payload"
+
+    out = _payload_bytes(_BrokenPart())
+    assert isinstance(out, bytes)
+    assert b"nk" in out
+
+
+def test_parse_nul_charset_falls_back() -> None:
+    """A charset with an embedded NUL raises ValueError from str.decode —
+    it must hit the fallback chain, not abort the message (#198 review 4)."""
+    parsed = parse_email(
+        _msg(
+            b'Content-Type: text/plain; charset="utf-8\x00junk"',
+            b"",
+            b"resilient body",
+        )
+    )
+    assert "resilient body" in parsed.text

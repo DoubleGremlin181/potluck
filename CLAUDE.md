@@ -47,6 +47,11 @@ web/         Vite + React + TS + Tailwind + shadcn/ui (dist built in CI, served 
   commit body contains `Closes #N`.
 - Branch `v1/p<N>-<slug>` per phase; PR to `main` at phase end; merge with a **merge commit**
   (preserves per-issue commits so `Closes` fires on main).
+- **Merging** (policy set by Kavish, 2026-07-03): a phase PR may be merged autonomously
+  once the phase is complete and CI is green — one phase per branch, merge, tag/release,
+  then continue from `main`. Merge authority covers exactly this flow; anything outside it
+  (force-pushes to main, reverts of his commits, releases without a merged phase) still
+  requires his explicit go-ahead.
 - Phase end: bump `version` in `pyproject.toml`, tag (PEP 440 aware: version `1.0.0a1` ↔ tag
   `v1.0.0-alpha.1`), push tag → release workflow publishes the GitHub Release (wheel with
   embedded SPA) + GHCR image. `latest` Docker tag only on stable releases.

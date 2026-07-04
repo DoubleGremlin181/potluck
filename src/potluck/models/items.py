@@ -39,6 +39,37 @@ class ItemKind(StrEnum):
     ACTIVITY = "activity"
 
 
+class AttachmentDetail(BaseModel):
+    """One files-table row on an item detail (#200)."""
+
+    filename: str  # member_path; unnamed MIME parts surface as "part-N"
+    mime: str | None
+    size_bytes: int | None
+    sha256: str | None
+
+
+class EmailDetail(BaseModel):
+    """Emails-satellite fields surfaced on item detail (#200).
+
+    Name lists are positional parallels of their addr lists ("" = mailbox had
+    no display name); rows written before the #199 re-ingest may have empty
+    name/bcc lists alongside populated addr lists.
+    """
+
+    message_id: str | None
+    in_reply_to: str | None
+    thread_key: str
+    from_addr: str | None
+    from_name: str | None
+    to_addrs: list[str]
+    to_names: list[str]
+    cc_addrs: list[str]
+    cc_names: list[str]
+    bcc_addrs: list[str]
+    labels: list[str]
+    attachments: list[AttachmentDetail]
+
+
 class Item(BaseModel):
     """A fully-hydrated item row returned from the storage layer."""
 
@@ -55,6 +86,8 @@ class Item(BaseModel):
     lon: float | None
     parent_id: int | None
     meta: dict[str, JsonValue]
+    # Satellite detail (#200): hydrated only for kinds with a SATELLITE_READER.
+    email: EmailDetail | None = None
 
 
 class ItemSort(StrEnum):

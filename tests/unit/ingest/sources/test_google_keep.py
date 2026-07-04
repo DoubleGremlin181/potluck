@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from potluck.ingest.plugins import detect_source, discover
+from potluck.ingest.plugins import ParseContext, detect_sources, discover
 from potluck.ingest.readers import open_archive
 from potluck.ingest.sources.google_keep import _to_draft, parse
 from potluck.services.context import AppContext
@@ -401,7 +401,7 @@ def test_malformed_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     assert any(
@@ -429,7 +429,7 @@ def test_non_dict_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     assert any(
@@ -458,7 +458,7 @@ def test_bad_timestamp_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     skipped = [r.message for r in caplog.records if "skipping" in r.message.lower()]
@@ -480,7 +480,7 @@ def test_nan_literal_member_skipped_with_warning(
 
     archive = open_archive(zip_path)
     with caplog.at_level(logging.WARNING, logger="potluck.ingest.sources.google_keep"):
-        drafts = list(parse(archive))
+        drafts = list(parse(archive, ParseContext()))
 
     assert len(drafts) == 1
     skipped = [r.message for r in caplog.records if "skipping" in r.message.lower()]
@@ -494,12 +494,11 @@ def test_nan_literal_member_skipped_with_warning(
 
 @pytest.mark.parametrize("fmt", ["zip", "tgz", "dir"])
 def test_detection(tmp_path: Path, fmt: str) -> None:
-    """detect_source finds google_keep plugin for each supported archive format."""
+    """detect_sources finds the google_keep plugin for each supported archive format."""
     archive_path = write_keep_takeout(tmp_path / fmt, count=5, seed=1, fmt=fmt)  # type: ignore[arg-type]
     archive = open_archive(archive_path)
-    plugin = detect_source(archive)
-    assert plugin is not None, f"No plugin detected for fmt={fmt}"
-    assert plugin.name == "google_keep"
+    [plugin] = detect_sources(archive)
+    assert plugin.name == "google_keep", f"wrong plugin detected for fmt={fmt}"
 
 
 def test_multipart_tgz_detection_and_full_parse(tmp_path: Path) -> None:
@@ -510,8 +509,7 @@ def test_multipart_tgz_detection_and_full_parse(tmp_path: Path) -> None:
 
     # Detection works via multi-part
     archive = open_archive(part1)
-    plugin = detect_source(archive)
-    assert plugin is not None
+    [plugin] = detect_sources(archive)
     assert plugin.name == "google_keep"
 
     # Full parse: reuse the implementation's own skip predicate
@@ -520,7 +518,7 @@ def test_multipart_tgz_detection_and_full_parse(tmp_path: Path) -> None:
     )
 
     archive2 = open_archive(part1)
-    drafts = list(plugin.parse(archive2))
+    drafts = list(plugin.parse(archive2, ParseContext()))
     assert len(drafts) == non_skipped
 
 
@@ -528,10 +526,10 @@ def test_reimport_from_extracted_takeout_dir_is_noop(ctx: AppContext, tmp_path: 
     """Importing the zip and then the extracted tree rooted at Takeout/ must
     dedup completely: identity is layout-independent, not member-path-deep."""
     zip_path = write_keep_takeout(tmp_path / "z", count=12, seed=7, fmt="zip")
-    run1 = import_path(ctx, zip_path)
+    [run1] = import_path(ctx, zip_path)
 
     dir_root = write_keep_takeout(tmp_path / "d", count=12, seed=7, fmt="dir")
-    run2 = import_path(ctx, dir_root / "Takeout")
+    [run2] = import_path(ctx, dir_root / "Takeout")
 
     assert run1.items_new > 0
     assert run2.items_new == 0
@@ -571,7 +569,7 @@ def test_golden_fixture(ctx: AppContext) -> None:
         "write_keep_takeout; write_keep_takeout(Path('tests/fixtures/keep'), 12, seed=7, fmt='dir')\""
     )
 
-    run = import_path(ctx, fixture)
+    [run] = import_path(ctx, fixture)
 
     assert run.status == "completed"
     assert run.source == "google_keep"
@@ -607,7 +605,7 @@ def test_golden_fixture(ctx: AppContext) -> None:
     assert total == _GOLDEN_ITEMS_NEW
 
     # Spot-check 4: re-import produces 0 new (dedup)
-    run2 = import_path(ctx, fixture)
+    [run2] = import_path(ctx, fixture)
     assert run2.items_new == 0
     assert run2.items_duplicate == _GOLDEN_ITEMS_NEW
 
@@ -631,7 +629,7 @@ def test_meta_created_backfills_on_reimport(ctx: AppContext) -> None:
             for r in conn.execute("SELECT id, content_hash FROM items").fetchall()
         }
 
-    run = import_path(ctx, fixture)
+    [run] = import_path(ctx, fixture)
 
     assert run.items_new == 0
     assert run.items_updated == _GOLDEN_ITEMS_NEW

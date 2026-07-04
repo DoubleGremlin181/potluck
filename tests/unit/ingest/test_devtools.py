@@ -21,7 +21,7 @@ TODO: Describe this source and its data format.
 
 from collections.abc import Iterator
 
-from potluck.ingest.plugins import Glob, source
+from potluck.ingest.plugins import Glob, ParseContext, source
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import NoteDraft
 from potluck.models.items import ItemKind
@@ -33,7 +33,7 @@ from potluck.models.items import ItemKind
     kinds=(ItemKind.NOTE,),
     parser_version=1,
 )
-def parse(archive: Archive) -> Iterator[NoteDraft]:
+def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
     """Toy parser (yields nothing)."""
     notes: list[NoteDraft] = []
     yield from notes
@@ -44,7 +44,7 @@ _NON_GENERATOR_MODULE = '''\
 
 from collections.abc import Iterator
 
-from potluck.ingest.plugins import Glob, source
+from potluck.ingest.plugins import Glob, ParseContext, source
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import NoteDraft
 from potluck.models.items import ItemKind
@@ -56,7 +56,7 @@ from potluck.models.items import ItemKind
     kinds=(ItemKind.NOTE,),
     parser_version=1,
 )
-def parse(archive: Archive) -> list[NoteDraft]:  # type: ignore[return-value]
+def parse(archive: Archive, ctx: ParseContext) -> list[NoteDraft]:  # type: ignore[return-value]
     """Not a generator — returns a list."""
     return []
 '''

@@ -456,3 +456,126 @@ def test_constant_queries_per_batch_with_external_ids(
     assert calls["existing_eid"] == 2 * expected_batches
     assert calls["update_content"] == 2 * expected_batches
     assert calls["update_meta"] == 2 * expected_batches
+
+
+def test_parse_overlaps_inflight_write(ctx: AppContext, monkeypatch: pytest.MonkeyPatch) -> None:
+    """#199 pipelining: the engine pulls (parses) batch N+1 while batch N's
+    write is still executing on the writer thread — deterministically proven
+    by blocking the first write until the generator reaches batch 2."""
+    import threading
+
+    write_started = threading.Event()
+    release_write = threading.Event()
+    write_calls: list[int] = []
+    real_write_batch = engine_mod._write_batch
+
+    def gated_write(conn: sqlite3.Connection, **kwargs: object) -> list[str]:
+        write_calls.append(1)
+        if len(write_calls) == 1:
+            write_started.set()
+            assert release_write.wait(timeout=10), "batch 2 was never pulled during write 1"
+        return real_write_batch(conn, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_mod, "_write_batch", gated_write)
+
+    def drafts() -> Iterator[NoteDraft]:
+        for i in range(4):
+            if i == 3:  # inside batch 2's pull (batch_size=2)
+                assert write_started.wait(timeout=10)
+                release_write.set()
+            yield NoteDraft(title=f"t{i}", text=f"unique body {i}")
+
+    import_id = run_import(
+        ctx.db,
+        source_name="test-src",
+        parser_version=1,
+        drafts=drafts(),
+        path="/tmp/test.zip",
+        file_hash=None,
+        batch_size=2,
+    )
+
+    with ctx.db.read() as conn:
+        count = int(conn.execute("SELECT COUNT(*) FROM items").fetchone()[0])
+        status = conn.execute("SELECT status FROM imports WHERE id = ?", (import_id,)).fetchone()[
+            "status"
+        ]
+    assert count == 4
+    assert status == "completed"
+
+
+def test_bulk_pragmas_active_during_import_and_restored(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#199 rider: batch writes run under the bulk cache/checkpoint pragmas,
+    restored when the import finishes. synchronous stays NORMAL throughout —
+    OFF plus running checkpoints risks whole-DB corruption on power loss
+    (#198 review 12)."""
+    observed: list[tuple[int, int]] = []
+    real_write_batch = engine_mod._write_batch
+
+    def spying_write(conn: sqlite3.Connection, **kwargs: object) -> list[str]:
+        observed.append(
+            (
+                int(conn.execute("PRAGMA synchronous").fetchone()[0]),
+                int(conn.execute("PRAGMA wal_autocheckpoint").fetchone()[0]),
+            )
+        )
+        return real_write_batch(conn, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_mod, "_write_batch", spying_write)
+    _run(ctx, _make_drafts(5))
+
+    assert observed, "no batches written"
+    assert all(sync == 1 for sync, _ in observed), f"synchronous must stay NORMAL: {observed}"
+    assert all(ckpt == 10000 for _, ckpt in observed), f"bulk checkpoints expected: {observed}"
+    after = ctx.db.write(lambda c: int(c.execute("PRAGMA wal_autocheckpoint").fetchone()[0]))
+    assert after == 1000, "standard checkpoint cadence must be restored after the import"
+
+
+def test_bulk_pragmas_restored_after_failed_import(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def exploding_write(conn: sqlite3.Connection, **kwargs: object) -> list[str]:
+        raise sqlite3.OperationalError("disk I/O error (synthetic)")
+
+    monkeypatch.setattr(engine_mod, "_write_batch", exploding_write)
+    with pytest.raises(sqlite3.OperationalError):
+        _run(ctx, _make_drafts(5))
+
+    after = ctx.db.write(lambda c: int(c.execute("PRAGMA synchronous").fetchone()[0]))
+    assert after == 1, "synchronous=NORMAL must be restored after a failed import"
+
+
+def test_in_batch_displacement_then_revert_across_batches(ctx: AppContext) -> None:
+    """batch 1 = [x/C1, x/C2] (C2 displaces C1 in-batch), batch 2 = [x/C1]:
+    the displaced draft's hash must leave the seen set when it is shadowed,
+    or the revert is misclassified as an in-run duplicate and the row stays
+    at C2 (#198 review 17). The outcome must not depend on batch boundaries."""
+    drafts = [
+        _eid_draft("Keep/r.json", text="version-one"),
+        _eid_draft("Keep/r.json", text="version-two"),
+        _eid_draft("Keep/r.json", text="version-one"),
+    ]
+    import_id = _run(ctx, drafts, batch_size=2)
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT text FROM items").fetchall()
+
+    assert [r["text"] for r in rows] == ["version-one"]
+    assert _import_counters(ctx, import_id) == (1, 1, 1)
+
+
+def test_in_batch_displacement_then_revert_same_batch(ctx: AppContext) -> None:
+    """All three drafts in ONE batch: last-wins must also hold there."""
+    drafts = [
+        _eid_draft("Keep/r.json", text="version-one"),
+        _eid_draft("Keep/r.json", text="version-two"),
+        _eid_draft("Keep/r.json", text="version-one"),
+    ]
+    _run(ctx, drafts, batch_size=1000)
+
+    with ctx.db.read() as conn:
+        rows = conn.execute("SELECT text FROM items").fetchall()
+
+    assert [r["text"] for r in rows] == ["version-one"]
