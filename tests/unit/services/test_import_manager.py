@@ -22,6 +22,7 @@ from potluck.core.errors import (
     ImportInProgressError,
     ImportNotFoundError,
     UnsupportedArchiveError,
+    UploadTooLargeError,
 )
 from potluck.ingest.plugins import Glob, ParseContext, source
 from potluck.ingest.readers import Archive
@@ -215,28 +216,63 @@ def test_second_start_conflicts_then_manager_reusable(
 
 
 # ---------------------------------------------------------------------------
-# Startup recovery: stale 'running' rows are failed('interrupted') on open
+# Recovery runs ONLY at write-ownership entrypoints (#132 review):
+# read-only contexts never sweep; taking import ownership does.
 # ---------------------------------------------------------------------------
 
 
-def test_startup_recovery_marks_stale_running_failed(settings: Settings) -> None:
+def test_read_only_context_does_not_sweep_running_rows(settings: Settings) -> None:
+    """`potluck status` (or any read-only invocation) while another process
+    imports must NEVER mark that live 'running' row interrupted."""
     ctx1 = create_context(settings)
     try:
         iid = ctx1.db.write(lambda conn: insert_import(conn, insert_source(conn)))
-        assert imports_service.get_import(ctx1, iid).status == "running"
     finally:
         ctx1.db.close()
 
-    # Simulates a crashed process: the row was left 'running' with the last
-    # committed batch's counters; reopening the context recovers it.
+    # A plain context open is not write ownership — the row stays 'running'.
     ctx2 = create_context(settings)
     try:
         run = imports_service.get_import(ctx2, iid)
-        assert run.status == "failed"
-        assert run.error == "interrupted"
-        assert run.finished_at is not None
+        assert run.status == "running"
+        assert run.error is None
+        assert run.finished_at is None
     finally:
         ctx2.db.close()
+
+
+def test_import_run_sweeps_stale_running_rows(
+    ctx: AppContext, tmp_path: Path, clean_registry: dict[str, Any]
+) -> None:
+    """Running an import takes write ownership: the stale 'running' row left
+    by a crash is failed('interrupted') before the new run begins — this is
+    the CLI import path AND what the background manager worker executes."""
+    stale = ctx.db.write(lambda conn: insert_import(conn, insert_source(conn)))
+
+    release = threading.Event()
+    release.set()  # no gating needed; reuse the registered toy source
+    _register_gated_source(release, second=0)
+    [run] = imports_service.import_path(ctx, _gated_archive(tmp_path))
+
+    assert run.status == "completed"
+    recovered = imports_service.get_import(ctx, stale)
+    assert recovered.status == "failed"
+    assert recovered.error == "interrupted"
+    assert recovered.finished_at is not None
+
+
+def test_recover_interrupted_imports_service(settings: Settings) -> None:
+    """The explicit ownership seam sweeps and reports the count; idempotent."""
+    ctx = create_context(settings)
+    try:
+        iid = ctx.db.write(lambda conn: insert_import(conn, insert_source(conn)))
+        assert imports_service.recover_interrupted_imports(ctx) == 1
+        run = imports_service.get_import(ctx, iid)
+        assert (run.status, run.error) == ("failed", "interrupted")
+        assert run.finished_at is not None
+        assert imports_service.recover_interrupted_imports(ctx) == 0
+    finally:
+        ctx.db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +318,24 @@ def test_store_upload_rejects_empty_and_dot_names(ctx: AppContext) -> None:
     for bad in ("", ".", "..", "a/../.."):
         with pytest.raises(UnsupportedArchiveError, match="filename"):
             imports_service.store_upload(ctx, bad, io.BytesIO(b"x"))
+
+
+def test_store_upload_over_limit_rejected_and_partial_removed(ctx: AppContext) -> None:
+    """The copy stops at max_upload_bytes; nothing is left in the store."""
+    small = AppContext(
+        settings=ctx.settings.model_copy(update={"max_upload_bytes": 1024}), db=ctx.db
+    )
+
+    with pytest.raises(UploadTooLargeError, match="max_upload_bytes"):
+        imports_service.store_upload(small, "big.zip", io.BytesIO(b"x" * 2048))
+
+    uploads = small.settings.uploads_dir
+    leftovers = list(uploads.rglob("*")) if uploads.exists() else []
+    assert leftovers == [], f"partial upload left behind: {leftovers}"
+
+    # At exactly the limit the upload is accepted.
+    stored = imports_service.store_upload(small, "ok.zip", io.BytesIO(b"x" * 1024))
+    assert stored.read_bytes() == b"x" * 1024
 
 
 # ---------------------------------------------------------------------------

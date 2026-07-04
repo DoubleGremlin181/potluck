@@ -37,5 +37,9 @@ class ImportInProgressError(PotluckError):
     """A background import is already running; only one runs at a time (#132)."""
 
 
+class UploadTooLargeError(PotluckError):
+    """An uploaded archive exceeds the configured max_upload_bytes limit."""
+
+
 class InvalidCursorError(PotluckError):
     """The search pagination cursor is malformed or of an unsupported version."""

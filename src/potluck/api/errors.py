@@ -24,6 +24,7 @@ from potluck.core.errors import (
     InvalidCursorError,
     ItemNotFoundError,
     UnsupportedArchiveError,
+    UploadTooLargeError,
 )
 
 
@@ -48,6 +49,7 @@ _RESPONSE_DESCRIPTIONS = {
     400: "Malformed pagination cursor, or a cursor produced by a different query.",
     404: "No item with this id exists.",
     409: "An import is already running; only one runs at a time.",
+    413: "The uploaded file exceeds the configured size limit (max_upload_bytes).",
     422: "Request validation failed; `error.detail` lists the offending parameters.",
 }
 
@@ -100,6 +102,10 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(UnsupportedArchiveError)
     def unsupported_archive(request: Request, exc: UnsupportedArchiveError) -> JSONResponse:
         return _envelope(400, "unsupported_archive", str(exc))
+
+    @app.exception_handler(UploadTooLargeError)
+    def upload_too_large(request: Request, exc: UploadTooLargeError) -> JSONResponse:
+        return _envelope(413, "upload_too_large", str(exc))
 
     @app.exception_handler(RequestValidationError)
     def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

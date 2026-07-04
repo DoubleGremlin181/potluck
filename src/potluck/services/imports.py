@@ -5,20 +5,21 @@ directly. Phase timings (detect / file-hash / per-source parse+write) are
 logged at INFO — the #196 measurement surface.
 """
 
+import contextlib
 import logging
-import shutil
 import tarfile
 import time
 import uuid
 import zipfile
 from functools import partial
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Final
 
 from potluck.core.errors import (
     ImportInProgressError,
     UnknownSourceError,
     UnsupportedArchiveError,
+    UploadTooLargeError,
 )
 from potluck.ingest.engine import run_import
 from potluck.ingest.hashing import file_hash as _file_hash
@@ -36,9 +37,32 @@ from potluck.storage import scans as _storage_scans
 
 _logger = logging.getLogger(__name__)
 
+_UPLOAD_CHUNK_BYTES: Final = 1024 * 1024
+
+
+def recover_interrupted_imports(ctx: AppContext) -> int:
+    """Mark stale 'running' import rows failed('interrupted'); return the count.
+
+    A run left 'running' by a crash/kill can never resume — but only a
+    process taking WRITE OWNERSHIP of the imports ledger may decide that a
+    'running' row is stale. Call sites are exactly those ownership moments:
+    API serve startup (before the first request can be served) and the top
+    of :func:`import_path` (every import run — background manager and CLI
+    alike). Read-only contexts (status/search/show) must never call this, or
+    they would mark another process's live import as interrupted mid-run.
+    """
+    interrupted = int(ctx.db.write(_storage_imports.fail_stale_running_imports))
+    if interrupted:
+        _logger.warning("marked %d interrupted import run(s) as failed", interrupted)
+    return interrupted
+
 
 def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
     """Open the archive at *path* and run one import per detected source.
+
+    Takes write ownership of the imports ledger: stale 'running' rows left by
+    a crashed process are swept to failed('interrupted') before this run
+    begins (see :func:`recover_interrupted_imports`).
 
     Returns the completed ledger rows in detection order (sorted by source
     name). A failure in source N marks ITS ledger row failed and re-raises;
@@ -55,6 +79,7 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
     multi-part archives → sha256 of the PASSED PART only (not the full set);
     directories → None.
     """
+    recover_interrupted_imports(ctx)
     # The try spans detection AND parsing: archives are read lazily, so a
     # truncated zip can surface BadZipFile mid-import, not just at open.
     try:
@@ -222,17 +247,40 @@ def store_upload(ctx: AppContext, filename: str, stream: BinaryIO) -> Path:
     is used, inside a fresh unique subdirectory of ``settings.uploads_dir`` —
     a name like ``../../evil.zip`` lands as ``uploads/<token>/evil.zip``.
 
+    Size cap: the copy stops at ``settings.max_upload_bytes`` (default
+    10 GiB — a real Takeout part is at most ~50 GB split into parts, 10 GiB
+    covers the common 2/4/10 GB splits) and the partial file is removed.
+    This guards the managed store; capping the request body itself before it
+    reaches the handler is a front-server concern.
+
     Raises:
         UnsupportedArchiveError: if the filename has no usable basename.
+        UploadTooLargeError: if the payload exceeds ``settings.max_upload_bytes``.
     """
     name = Path(filename.replace("\\", "/")).name
     if name in ("", ".", ".."):
         raise UnsupportedArchiveError(f"invalid upload filename: {filename!r}")
+    limit = ctx.settings.max_upload_bytes
     dest_dir = ctx.settings.uploads_dir / uuid.uuid4().hex
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / name
-    with dest.open("wb") as out:
-        shutil.copyfileobj(stream, out)
+    copied = 0
+    try:
+        with dest.open("wb") as out:
+            while chunk := stream.read(_UPLOAD_CHUNK_BYTES):
+                copied += len(chunk)
+                if copied > limit:
+                    raise UploadTooLargeError(
+                        f"upload '{name}' exceeds the configured limit of {limit} bytes "
+                        "(settings: max_upload_bytes)"
+                    )
+                out.write(chunk)
+    except BaseException:
+        # Never leave a partial (or oversized) file in the managed store.
+        dest.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            dest_dir.rmdir()
+        raise
     return dest
 
 

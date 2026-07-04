@@ -20,12 +20,18 @@ from potluck.api.errors import register_error_handlers
 from potluck.api.routes import imports, items, search, system
 from potluck.api.static import find_web_dist
 from potluck.services.context import AppContext, create_context
+from potluck.services.imports import recover_interrupted_imports
 
 _SPA_MISSING = (
     "Potluck API is running, but the SPA build was not found.\n"
     "Build it with: cd web && npm ci && npm run build\n"
     "API docs are at /api/docs\n"
 )
+
+# Bounded grace for a finishing background import at shutdown: clean exits
+# settle the ledger row; a long-running import still exceeds this and leans
+# on the next write-ownership sweep instead.
+_SHUTDOWN_JOIN_S = 5.0
 
 
 def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> FastAPI:
@@ -34,9 +40,14 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # Serving = taking write ownership of the imports ledger (#132):
+        # sweep stale 'running' rows before the first request can observe
+        # phantom progress. ASGI lifespan startup completes before serving.
+        recover_interrupted_imports(context)
         if open_browser:
             webbrowser.open(f"http://{context.settings.host}:{context.settings.port}/")
         yield
+        context.import_manager.join(_SHUTDOWN_JOIN_S)
 
     app = FastAPI(
         title="Potluck",

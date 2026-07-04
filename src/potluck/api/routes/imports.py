@@ -49,7 +49,7 @@ def start_import(ctx: CtxDep, req: StartImportRequest) -> ImportTask:
     "/imports/upload",
     status_code=202,
     summary="Upload an archive and import it",
-    responses=error_responses(400, 409, 422, overrides=_START_400),
+    responses=error_responses(400, 409, 413, 422, overrides=_START_400),
 )
 def upload_import(
     ctx: CtxDep,
@@ -60,7 +60,8 @@ def upload_import(
 ) -> ImportTask:
     """Store the uploaded archive under the data directory, then import it in
     the background exactly like the server-path variant. Only the basename of
-    the client filename is used (path-traversal sanity)."""
+    the client filename is used (path-traversal sanity); payloads over
+    `max_upload_bytes` (default 10 GiB) are rejected with 413."""
     return imports_service.start_upload_import(ctx, file.filename or "", file.file)
 
 

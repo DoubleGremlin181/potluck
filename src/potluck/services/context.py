@@ -1,14 +1,10 @@
 """AppContext: the shared runtime handle every service function takes."""
 
-import logging
 from dataclasses import dataclass, field
 
 from potluck.core.config import Settings
 from potluck.services.import_manager import ImportManager
-from potluck.storage import imports as _storage_imports
 from potluck.storage.db import Database
-
-_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -23,13 +19,14 @@ class AppContext:
 
 
 def create_context(settings: Settings | None = None) -> AppContext:
-    """Build the runtime context: load settings (unless given) and open the database."""
+    """Build the runtime context: load settings (unless given) and open the database.
+
+    Deliberately does NOT sweep stale 'running' import rows: a read-only
+    invocation (status/search/show) must never mark another process's live
+    import as interrupted. Recovery runs only where a process takes write
+    ownership of the imports ledger — see
+    ``services.imports.recover_interrupted_imports`` (API serve startup and
+    the top of every import run).
+    """
     resolved = settings if settings is not None else Settings()
-    db = Database.open(resolved.db_path)
-    # Startup recovery (#132): runs left 'running' by a crash/kill can never
-    # resume — mark them failed('interrupted') before anything can observe
-    # phantom progress. Counters keep the last committed batch's values.
-    interrupted = db.write(_storage_imports.fail_stale_running_imports)
-    if interrupted:
-        _logger.warning("marked %d interrupted import run(s) as failed", interrupted)
-    return AppContext(settings=resolved, db=db)
+    return AppContext(settings=resolved, db=Database.open(resolved.db_path))
