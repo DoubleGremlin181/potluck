@@ -78,3 +78,50 @@ def test_source_newlines_collapse_identically() -> None:
     still collapse to single spaces."""
     assert html_to_text("<p>a\r\n\tb</p>") == "a b"
     assert html_to_text("a\nb") == "a b"
+
+
+# ---------------------------------------------------------------------------
+# RCDATA/CDATA tokenization variants. CPython gh-135462 (CVE-2025-6069
+# hardening, backported into 3.13.x maintenance releases) rewrote
+# html.parser tokenization: <title>/<textarea> became RCDATA and
+# xmp/iframe/noembed/noframes became rawtext (CDATA). An UNCLOSED rawtext
+# element now swallows the whole document tail as one character-data blob —
+# no tag events fire — where older 3.13.x kept tokenizing markup after it.
+# These tests pin ONE output contract that must hold on both parser
+# generations (the CI/local split that motivated them: 3.13.14 vs 3.13.2).
+# ---------------------------------------------------------------------------
+
+
+def test_unclosed_title_recovers_document_tail() -> None:
+    """The swallowed markup after an unclosed <title> is re-parsed; only the
+    title's own text (up to the first '<') is dropped."""
+    assert html_to_text("<head><title>page title<body><p>content</p>") == "content"
+
+
+def test_unclosed_title_without_markup_extracts_nothing() -> None:
+    assert html_to_text("<head><title>just a title") == ""
+
+
+def test_unclosed_textarea_keeps_text_and_recovers_tail() -> None:
+    """<textarea> text is legitimate content (not a skip tag); the swallowed
+    markup after it must be re-parsed, never emitted raw."""
+    assert html_to_text("<textarea>abc<p>content</p>") == "abc\ncontent"
+
+
+def test_chained_unclosed_rcdata_elements() -> None:
+    """Each recovery pass may end inside another unclosed RCDATA element."""
+    assert html_to_text("<head><title>t<body><p>a</p><textarea>x<p>b</p>") == "a\nx\nb"
+
+
+def test_unclosed_style_swallows_to_eof() -> None:
+    """Rawtext without any end tag consumes everything to EOF on BOTH parser
+    generations (old: silently; new: as skipped character data) — pin the
+    swallow so the contract stays cross-version."""
+    assert html_to_text("<head><style>p{color:red}<p>hello</p>") == ""
+
+
+def test_new_rawtext_elements_are_skipped() -> None:
+    """iframe/xmp/noembed/noframes fallback content is never indexed — on new
+    parsers an unclosed one would otherwise leak raw markup into the text."""
+    assert html_to_text("<iframe>fallback</iframe><p>real</p>") == "real"
+    assert html_to_text("<p>a</p><iframe>tail<p>x</p>") == "a"
