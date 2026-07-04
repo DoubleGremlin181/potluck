@@ -26,6 +26,23 @@ import { cn } from '@/lib/utils'
 const PAGE_SIZE = 30
 const DEBOUNCE_MS = 220
 
+// Results scroll offset per search key: back from an item detail remounts
+// this page, react-query restores the loaded pages from cache, and this map
+// restores where the user was in them. Module-level on purpose — it must
+// outlive the component; bounded so an exploratory session can't grow it
+// forever.
+const scrollMemory = new Map<string, number>()
+const SCROLL_MEMORY_MAX = 50
+
+function rememberScroll(key: string, top: number) {
+  scrollMemory.delete(key)
+  scrollMemory.set(key, top)
+  if (scrollMemory.size > SCROLL_MEMORY_MAX) {
+    const oldest = scrollMemory.keys().next().value
+    if (oldest !== undefined) scrollMemory.delete(oldest)
+  }
+}
+
 const QUERY_EXAMPLES = [
   'maple syrup',
   'kind:email quarterly report',
@@ -200,12 +217,20 @@ export function SearchPage() {
   })
   const virtualItems = virtualizer.getVirtualItems()
 
-  // New search: back to the top, re-arm the automatic cursor restart, and
-  // drop any stuck-cursor affordance from the previous search.
+  // New search: back to the top (or to the remembered offset when returning
+  // to a search we already scrolled — e.g. back from an item detail), re-arm
+  // the automatic cursor restart, and drop any stuck-cursor affordance from
+  // the previous search. The offset is recorded as the user scrolls — by
+  // unmount-cleanup time the node is detached and reads scrollTop 0.
   useEffect(() => {
-    parentRef.current?.scrollTo({ top: 0 })
+    const el = parentRef.current
+    el?.scrollTo({ top: scrollMemory.get(keyString) ?? 0 })
     autoResetDoneFor.current = null
     setCursorStuck(false)
+    if (!el) return
+    const onScroll = () => rememberScroll(keyString, el.scrollTop)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
   }, [keyString])
 
   // Sentinel row visible -> fetch the next page (cursor passed back

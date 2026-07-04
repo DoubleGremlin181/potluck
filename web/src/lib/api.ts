@@ -72,6 +72,8 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
 export interface SearchHit {
   id: number
   kind: ItemKind
+  /** Name of the source the item was ingested from (e.g. "gmail"). */
+  source: string
   title: string | null
   /** Title with `[match]` brackets around matched terms; null for filter-only searches. */
   title_highlight: string | null
@@ -161,6 +163,33 @@ export interface Item {
 
 export function fetchItem(id: number, signal?: AbortSignal): Promise<Item> {
   return request<Item>(`/api/items/${id}`, signal)
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/items/{id}/thread
+// ---------------------------------------------------------------------------
+
+export interface ThreadEntry {
+  id: number
+  /** Reply-tree link to another entry's id; null for the thread root. */
+  parent_id: number | null
+  ts: string | null
+  title: string | null
+  from_addr: string | null
+  /** First 200 chars of the message text. */
+  text_preview: string | null
+}
+
+export interface ThreadResponse {
+  item_id: number
+  /** Null when the item is not part of any email thread (entries then hold just the item). */
+  thread_key: string | null
+  /** Oldest message first; undated members last. */
+  entries: ThreadEntry[]
+}
+
+export function fetchThread(id: number, signal?: AbortSignal): Promise<ThreadResponse> {
+  return request<ThreadResponse>(`/api/items/${id}/thread`, signal)
 }
 
 // ---------------------------------------------------------------------------

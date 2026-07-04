@@ -36,6 +36,21 @@ def test_search_finds_ingested_notes(ctx: AppContext, tmp_path: Path) -> None:
     assert hit.score < 0.0, "BM25 scores are negative (lower = better match)"
 
 
+def test_search_hits_carry_source_name(ctx: AppContext, tmp_path: Path) -> None:
+    """Hits carry the source name in BOTH branches: BM25-ranked (free text)
+    and filter-only (no free text) — the SPA renders a source badge per hit
+    without a second lookup (#135)."""
+    ingest_keep_corpus(ctx, tmp_path)
+
+    ranked = search(ctx, SearchRequest(query="amber", limit=5))
+    assert ranked.hits, "expected ranked hits for 'amber'"
+    assert all(hit.source == "google_keep" for hit in ranked.hits)
+
+    filter_only = search(ctx, SearchRequest(query="", kinds=[ItemKind.NOTE], limit=5))
+    assert filter_only.hits, "expected filter-only hits for kind=note"
+    assert all(hit.source == "google_keep" for hit in filter_only.hits)
+
+
 def test_search_empty_query_returns_empty(ctx: AppContext, tmp_path: Path) -> None:
     """Empty query string returns empty hits without error."""
     ingest_keep_corpus(ctx, tmp_path)

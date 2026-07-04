@@ -18,3 +18,17 @@ export function formatDate(iso: string | null): string | null {
   if (Number.isNaN(date.getTime())) return null
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
+
+/** Date plus time of day — thread messages need intra-day ordering context. */
+export function formatDateTime(iso: string | null): string | null {
+  if (iso === null) return null
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}

@@ -108,6 +108,7 @@ def search(ctx: AppContext, req: SearchRequest) -> SearchResponse:
         SearchHit(
             id=int(row["id"]),
             kind=row["kind"],
+            source=str(row["source"]),
             title=row["title"],
             title_highlight=row["title_highlight"],
             snippet=str(row["snippet"]),

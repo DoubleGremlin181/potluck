@@ -17,12 +17,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 
 from potluck import __version__
 from potluck.api.errors import register_error_handlers
 from potluck.api.routes import imports, items, search, system
-from potluck.api.static import find_web_dist
+from potluck.api.static import SPAStaticFiles, find_web_dist
 from potluck.mcp.server import create_mcp
 from potluck.services.context import AppContext, create_context
 from potluck.services.imports import recover_interrupted_imports
@@ -91,7 +90,9 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
 
     web_dist = find_web_dist(context.settings)
     if web_dist is not None:
-        app.mount("/", StaticFiles(directory=web_dist, html=True), name="spa")
+        # html=True serves index.html at "/"; the subclass adds the SPA
+        # fallback so client-route deep links survive hard reloads (#135).
+        app.mount("/", SPAStaticFiles(directory=web_dist, html=True), name="spa")
     else:
 
         @app.get("/", response_class=PlainTextResponse, include_in_schema=False)

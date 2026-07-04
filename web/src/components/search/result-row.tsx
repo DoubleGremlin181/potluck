@@ -4,7 +4,7 @@ import type { SearchHit } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { parseHighlight } from '@/lib/highlight'
 
-/** One search hit: kind icon, highlighted title, snippet, date. */
+/** One search hit: kind icon, highlighted title, snippet, source badge, date. */
 export function ResultRow({ hit }: { hit: SearchHit }) {
   const title = hit.title_highlight
     ? parseHighlight(hit.title_highlight)
@@ -27,11 +27,17 @@ export function ResultRow({ hit }: { hit: SearchHit }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-3">
           <span className="truncate text-sm font-medium">{title}</span>
-          {date && (
-            <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground">
-              {date}
+          <span className="flex shrink-0 items-baseline gap-2">
+            <span
+              data-testid="result-source"
+              className="rounded-sm bg-muted px-1.5 py-px text-[11px] leading-4 text-muted-foreground"
+            >
+              {hit.source}
             </span>
-          )}
+            {date && (
+              <span className="text-xs whitespace-nowrap text-muted-foreground">{date}</span>
+            )}
+          </span>
         </span>
         <span className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
           {parseHighlight(hit.snippet)}
