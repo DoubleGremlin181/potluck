@@ -15,7 +15,6 @@ import re
 from collections.abc import Iterator
 from typing import Any
 
-import httpx
 import pytest
 from playwright.sync_api import Locator, Page, Route, expect
 
@@ -25,7 +24,7 @@ from potluck.services.context import create_context
 from potluck.services.imports import import_path
 from potluck.testing.keep import write_keep_takeout
 from potluck.testing.mbox import synthetic_email_drafts
-from tests.e2e.conftest import serve_app
+from tests.e2e.conftest import api_get, serve_app
 
 pytestmark = pytest.mark.browser
 
@@ -76,9 +75,7 @@ def corpus_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 
 def api_search(url: str, **params: Any) -> dict[str, Any]:
     """Ground-truth search results straight from the API."""
-    resp = httpx.get(f"{url}/api/search", params=params, timeout=10.0)
-    resp.raise_for_status()
-    return dict(resp.json())
+    return api_get(url, "/api/search", **params)
 
 
 def search_input(page: Page) -> Locator:

@@ -23,7 +23,7 @@ from potluck.core.config import Settings
 from potluck.models.drafts import EmailAttachment, NoteDraft
 from potluck.services.context import create_context
 from tests.conftest import email_draft, ingest_email_drafts
-from tests.e2e.conftest import serve_app
+from tests.e2e.conftest import api_get, serve_app
 
 pytestmark = pytest.mark.browser
 
@@ -128,12 +128,6 @@ def detail_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         ctx.db.close()
     with serve_app(db_path, root / "config") as url:
         yield url
-
-
-def api_get(url: str, path: str, **params: Any) -> dict[str, Any]:
-    resp = httpx.get(f"{url}{path}", params=params, timeout=10.0)
-    resp.raise_for_status()
-    return dict(resp.json())
 
 
 def hit_id(url: str, query: str) -> int:

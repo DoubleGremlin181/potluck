@@ -19,7 +19,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 from playwright.sync_api import Page, Route, expect
 
@@ -30,7 +29,7 @@ from potluck.services.context import create_context
 from potluck.services.imports import import_path
 from potluck.testing.keep import write_keep_takeout
 from potluck.testing.mbox import synthetic_email_drafts, write_gmail_takeout
-from tests.e2e.conftest import serve_app
+from tests.e2e.conftest import api_get, serve_app
 
 pytestmark = pytest.mark.browser
 
@@ -59,9 +58,7 @@ def server_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]
 
 def api_imports(url: str) -> dict[str, Any]:
     """Ground-truth import history straight from the API."""
-    resp = httpx.get(f"{url}/api/imports", timeout=10.0)
-    resp.raise_for_status()
-    return dict(resp.json())
+    return api_get(url, "/api/imports")
 
 
 # ---------------------------------------------------------------------------

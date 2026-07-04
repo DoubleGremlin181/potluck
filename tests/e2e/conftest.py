@@ -12,12 +12,20 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WEB_DIST = REPO_ROOT / "web" / "dist"
+
+
+def api_get(url: str, path: str, **params: Any) -> dict[str, Any]:
+    """Ground-truth JSON straight from the API (assertions only, never actions)."""
+    resp = httpx.get(f"{url}{path}", params=params, timeout=10.0)
+    resp.raise_for_status()
+    return dict(resp.json())
 
 
 def free_port() -> int:

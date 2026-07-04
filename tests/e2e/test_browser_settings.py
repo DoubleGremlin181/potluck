@@ -20,7 +20,7 @@ from potluck.services.context import create_context
 from potluck.services.imports import import_path
 from potluck.testing.keep import write_keep_takeout
 from tests.conftest import email_draft, ingest_email_drafts
-from tests.e2e.conftest import serve_app
+from tests.e2e.conftest import api_get, serve_app
 
 pytestmark = pytest.mark.browser
 
@@ -55,18 +55,12 @@ def settings_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[
         yield url, str(db_path)
 
 
-def api_json(url: str, path: str) -> dict[str, object]:
-    resp = httpx.get(f"{url}{path}", timeout=10.0)
-    resp.raise_for_status()
-    return dict(resp.json())
-
-
 def test_database_section_shows_real_path_and_version(
     settings_server: tuple[str, str], page: Page, context: BrowserContext
 ) -> None:
     url, db_path = settings_server
     # Ground truth: the version the running package actually serves.
-    health = api_json(url, "/api/health")
+    health = api_get(url, "/api/health")
 
     page.goto(f"{url}/settings")
     # The served database file's real path, verbatim.
@@ -83,7 +77,7 @@ def test_database_section_shows_real_path_and_version(
 
 def test_items_by_kind_shows_true_counts(settings_server: tuple[str, str], page: Page) -> None:
     url, _ = settings_server
-    stats = api_json(url, "/api/stats")
+    stats = api_get(url, "/api/stats")
     assert stats["items_by_kind"] == {"note": NOTES, "email": EMAILS}
 
     page.goto(f"{url}/settings")
