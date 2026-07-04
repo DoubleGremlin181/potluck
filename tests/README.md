@@ -12,7 +12,7 @@ Patterns every phase reuses. All fixtures live in [`conftest.py`](conftest.py).
 | `api_client` | FastAPI `TestClient` over `ctx` (lifespan runs) | No SPA build present → `/` serves the fallback message |
 | `runner` (in `tests/unit/test_cli.py`) | Typer `CliRunner` | CLI tests reuse the service layer end to end |
 | MCP in-memory | `async with fastmcp.Client(create_mcp(ctx))` | See `tests/unit/mcp/test_server.py`; pytest-asyncio is in auto mode |
-| `server_url` (browser tests) | Real `potluck serve` subprocess, free port, tmp DB | `tests/e2e/test_browser_smoke.py`, marker `browser` |
+| `serve_app` (browser tests) | Context manager: real `potluck serve` subprocess, free port, scrubbed env, over a given tmp DB | `tests/e2e/conftest.py`; wrapped by `server_url` (fresh DB, smoke) and the module-scoped `corpus_server` (10k synthetic items, search page) — marker `browser` |
 
 ## Tiers / markers
 

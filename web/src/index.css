@@ -127,4 +127,8 @@
   html {
     @apply font-sans;
     }
+  /* FTS5 highlight markers are parsed into <mark> (see lib/highlight.tsx). */
+  mark {
+    @apply rounded-[3px] bg-amber-200/60 px-px font-medium text-inherit dark:bg-amber-400/25;
+    }
 }
