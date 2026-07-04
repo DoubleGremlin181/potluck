@@ -125,3 +125,31 @@ def test_new_rawtext_elements_are_skipped() -> None:
     parsers an unclosed one would otherwise leak raw markup into the text."""
     assert html_to_text("<iframe>fallback</iframe><p>real</p>") == "real"
     assert html_to_text("<p>a</p><iframe>tail<p>x</p>") == "a"
+
+
+def test_unclosed_title_tail_charrefs_decode_once() -> None:
+    """The recovered tail must be re-fed from RAW source: re-feeding the
+    charref-DECODED buffer would decode twice ('&amp;copy=' -> '&copy=' -> ©)
+    and silently corrupt URLs at index time."""
+    out = html_to_text("<head><title>t<body><p>see http://x.com/?a=1&amp;copy=2</p>")
+    assert out == "see http://x.com/?a=1&copy=2"
+
+
+def test_unclosed_title_decoded_lt_is_not_markup() -> None:
+    """A '&lt;' decoded during the swallowed pass must not turn into a bogus
+    tag open when the tail is re-parsed."""
+    assert html_to_text("<title>a&lt;b<body>x") == "x"
+
+
+def test_unclosed_textarea_decoded_lt_is_not_markup() -> None:
+    assert html_to_text("<textarea>a&lt;b<p>x</p>") == "a<b\nx"
+
+
+def test_closed_title_containing_markup_known_divergence() -> None:
+    """KNOWN residual divergence (accepted, outside the contract): markup
+    inside a CLOSED <title>. Pre-RCDATA parsers tokenize '<body>b' as real
+    tags and emit 'b' ('bc'); RCDATA parsers spec-correctly treat everything
+    up to </title> as title text and drop it ('c'). Unreachable from the
+    unclosed-rawtext email corpus pinned above; documented so the inventory
+    stays visible."""
+    assert html_to_text("<title>a<body>b</title>c") in {"bc", "c"}

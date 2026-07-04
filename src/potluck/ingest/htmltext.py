@@ -8,8 +8,8 @@ maintenance releases) rewrote html.parser tokenization: <title>/<textarea>
 became RCDATA and xmp/iframe/noembed/noframes became rawtext, so an UNCLOSED
 <title> now swallows the document tail as character data — no tag events
 fire — where older parsers kept tokenizing markup. The extractor buffers
-RCDATA text and re-feeds any swallowed tail (see html_to_text) so both
-parser generations produce identical output.
+RCDATA text and re-feeds a swallowed tail from the raw source (see
+html_to_text) so both parser generations produce identical output.
 """
 
 import re
@@ -46,17 +46,33 @@ class _TextExtractor(HTMLParser):
     """Collects text chunks; block tags become newline markers."""
 
     def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs=True)  # calls reset(), creating _raw
         self.chunks: list[str] = []
         self._skip_stack: list[str] = []
         self._rcdata_tag: str | None = None
         self._rcdata_buf: list[str] = []
+        self._rcdata_pos: tuple[int, int] = (1, 0)
+        self._rcdata_taglen = 0
+
+    def feed(self, data: str) -> None:
+        # Keep the raw source of the current reset() epoch: take_rawtext_tail
+        # maps getpos() back into it. Accumulating per feed() keeps offsets
+        # chunk-safe (getpos is cumulative); the whole-document single feed
+        # from html_to_text just aliases the string ('' + s copies nothing).
+        self._raw += data
+        super().feed(data)
+
+    def reset(self) -> None:
+        super().reset()
+        self._raw = ""
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if self._rcdata_tag is not None:
             self._flush_rcdata()
         if tag in _RCDATA_TAGS:
             self._rcdata_tag = tag
+            self._rcdata_pos = self.getpos()  # (1-based line, col) of the '<'
+            self._rcdata_taglen = len(self.get_starttag_text() or "")
         if tag in _SKIP_TAGS:
             self._skip_stack.append(tag)
             return
@@ -105,21 +121,23 @@ class _TextExtractor(HTMLParser):
     def take_rawtext_tail(self) -> str | None:
         """Call after close(): recover from EOF inside an unclosed RCDATA
         element (newer parsers swallowed the rest of the document as one
-        character-data blob). Emits the element's own text — everything up to
-        the first '<' — under the still-open skip stack, and returns the
-        swallowed markup for the caller to re-feed. None when parsing ended
-        normally or there is no markup to recover."""
+        character-data blob; older ones only get here when nothing after the
+        start tag parsed as a tag). Discards the decoded buffer and returns
+        the RAW source suffix from just past the element's start tag for the
+        caller to re-feed — pass 2 then tokenizes exactly what pre-RCDATA
+        parsers saw. The decoded buffer must NOT be re-fed: charrefs would
+        decode twice and a decoded '&lt;' would turn into markup. None when
+        parsing ended normally or nothing follows the start tag."""
         if self._rcdata_tag is None:
             return None
         self._rcdata_tag = None
-        data = "".join(self._rcdata_buf)
         self._rcdata_buf.clear()
-        lt = data.find("<")
-        if lt < 0:
-            self._emit_data(data)
-            return None
-        self._emit_data(data[:lt])
-        return data[lt:]
+        lineno, col = self._rcdata_pos
+        start = 0
+        for _ in range(lineno - 1):  # getpos() lines are 1-based, '\n'-split
+            start = self._raw.index("\n", start) + 1
+        start += col + self._rcdata_taglen
+        return self._raw[start:] or None
 
 
 def html_to_text(html: str) -> str:
@@ -128,12 +146,12 @@ def html_to_text(html: str) -> str:
     extractor = _TextExtractor()
     extractor.feed(html)
     extractor.close()
-    # Unclosed <title>/<textarea>: re-tokenize the swallowed tail, matching
-    # what pre-RCDATA parsers did by continuing to emit tag events. reset()
-    # (documented API) clears the parser's rawtext mode but leaves our chunks
-    # and skip stack intact, so head-level skip semantics carry across passes.
-    # Terminates: each pass consumes at least the next RCDATA start tag before
-    # another swallow can begin. No cost on the happy path.
+    # Unclosed <title>/<textarea>: re-tokenize the swallowed raw tail,
+    # matching what pre-RCDATA parsers did by continuing to emit tag events.
+    # reset() (documented API) clears the parser's rawtext mode but leaves our
+    # chunks and skip stack intact, so head-level skip semantics carry across
+    # passes. Terminates: each pass consumes at least the next RCDATA start
+    # tag before another swallow can begin. No cost on the happy path.
     while (tail := extractor.take_rawtext_tail()) is not None:
         extractor.reset()
         extractor.feed(tail)
