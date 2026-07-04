@@ -48,6 +48,19 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+@theme {
+    /* Indeterminate progress bar (imports with an unknown items_total). */
+    --animate-progress-slide: progress-slide 1.4s ease-in-out infinite;
+    @keyframes progress-slide {
+        0% {
+            margin-left: -40%;
+        }
+        100% {
+            margin-left: 100%;
+        }
+    }
+}
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

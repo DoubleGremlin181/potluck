@@ -46,10 +46,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
-  // The signal comes from react-query: superseded queries (rapid typing)
-  // abort their in-flight requests instead of racing them to completion.
-  const res = await fetch(path, { signal })
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // The signal (threaded via init) comes from react-query: superseded queries
+  // (rapid typing) abort their in-flight requests instead of racing them to
+  // completion.
+  const res = await fetch(path, init)
   if (!res.ok) {
     let code = `http_${res.status}`
     let message = `Request failed with status ${res.status}`
@@ -115,7 +116,7 @@ export function searchItems(query: SearchQuery, signal?: AbortSignal): Promise<S
   if (query.prefix) params.set('prefix', 'true')
   if (query.cursor) params.set('cursor', query.cursor)
   if (query.limit !== undefined) params.set('limit', String(query.limit))
-  return request<SearchResponse>(`/api/search?${params.toString()}`, signal)
+  return request<SearchResponse>(`/api/search?${params.toString()}`, { signal })
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +163,7 @@ export interface Item {
 }
 
 export function fetchItem(id: number, signal?: AbortSignal): Promise<Item> {
-  return request<Item>(`/api/items/${id}`, signal)
+  return request<Item>(`/api/items/${id}`, { signal })
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +190,7 @@ export interface ThreadResponse {
 }
 
 export function fetchThread(id: number, signal?: AbortSignal): Promise<ThreadResponse> {
-  return request<ThreadResponse>(`/api/items/${id}/thread`, signal)
+  return request<ThreadResponse>(`/api/items/${id}/thread`, { signal })
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +203,7 @@ export interface SourceInfo {
 }
 
 export function fetchSources(signal?: AbortSignal): Promise<SourceInfo[]> {
-  return request<SourceInfo[]>('/api/sources', signal)
+  return request<SourceInfo[]>('/api/sources', { signal })
 }
 
 // ---------------------------------------------------------------------------
@@ -220,5 +221,87 @@ export interface Stats {
 }
 
 export function fetchStats(signal?: AbortSignal): Promise<Stats> {
-  return request<Stats>('/api/stats', signal)
+  return request<Stats>('/api/stats', { signal })
+}
+
+// ---------------------------------------------------------------------------
+// Imports: POST /api/imports (+ /upload), GET /api/imports (+ /status)
+// ---------------------------------------------------------------------------
+
+export type ImportStatus = 'running' | 'completed' | 'failed'
+
+/** One import-ledger row (mirrors `models/imports.py::ImportRun`). */
+export interface ImportRun {
+  id: number
+  source: string
+  /** Server-local archive path (for uploads: inside the managed uploads dir). */
+  path: string
+  file_hash: string | null
+  parser_version: number
+  started_at: string
+  finished_at: string | null
+  status: ImportStatus
+  items_new: number
+  items_duplicate: number
+  items_updated: number
+  items_skipped: number
+  /** Progress denominator; null = unknown (streaming sources never pre-count). */
+  items_total: number | null
+  error: string | null
+  extract_attachments: boolean
+  /** Progress numerator, advanced once per committed batch (server-computed). */
+  items_done: number
+}
+
+/** Snapshot of the background import operation (mirrors `ImportTask`).
+ * Covers the whole operation, including archive detection BEFORE any ledger
+ * row exists — detection failures only ever surface here. */
+export interface ImportTask {
+  path: string
+  status: ImportStatus
+  error: string | null
+  /** Per-source ledger row ids; filled in on completion. */
+  import_ids: number[]
+  started_at: string
+  finished_at: string | null
+}
+
+export interface ImportListResponse {
+  runs: ImportRun[]
+  /** Unpaginated run count — pages exist while offset < total. */
+  total: number
+}
+
+/** Current (or most recent) background import; null before any start. */
+export function fetchImportStatus(signal?: AbortSignal): Promise<ImportTask | null> {
+  return request<ImportTask | null>('/api/imports/status', { signal })
+}
+
+export function fetchImports(
+  params: { limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<ImportListResponse> {
+  const search = new URLSearchParams()
+  if (params.limit !== undefined) search.set('limit', String(params.limit))
+  if (params.offset !== undefined) search.set('offset', String(params.offset))
+  const qs = search.toString()
+  return request<ImportListResponse>(`/api/imports${qs ? `?${qs}` : ''}`, { signal })
+}
+
+/** Start a background import of an archive already on the server's machine.
+ * 202 returns the initial task snapshot; 400 = bad path, 409 = one already runs. */
+export function startPathImport(path: string): Promise<ImportTask> {
+  return request<ImportTask>('/api/imports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+}
+
+/** Upload an archive into the managed uploads dir, then import it exactly
+ * like the path variant. 409 = one already runs, 413 = over max_upload_bytes. */
+export function startUploadImport(file: File): Promise<ImportTask> {
+  const form = new FormData()
+  form.append('file', file)
+  return request<ImportTask>('/api/imports/upload', { method: 'POST', body: form })
 }
