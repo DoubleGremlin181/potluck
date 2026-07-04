@@ -46,8 +46,10 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string): Promise<T> {
-  const res = await fetch(path)
+async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+  // The signal comes from react-query: superseded queries (rapid typing)
+  // abort their in-flight requests instead of racing them to completion.
+  const res = await fetch(path, { signal })
   if (!res.ok) {
     let code = `http_${res.status}`
     let message = `Request failed with status ${res.status}`
@@ -102,7 +104,7 @@ export interface SearchQuery {
   limit?: number
 }
 
-export function searchItems(query: SearchQuery): Promise<SearchResponse> {
+export function searchItems(query: SearchQuery, signal?: AbortSignal): Promise<SearchResponse> {
   const params = new URLSearchParams({ q: query.q })
   for (const kind of query.kinds ?? []) params.append('kind', kind)
   for (const source of query.sources ?? []) params.append('source', source)
@@ -111,7 +113,7 @@ export function searchItems(query: SearchQuery): Promise<SearchResponse> {
   if (query.prefix) params.set('prefix', 'true')
   if (query.cursor) params.set('cursor', query.cursor)
   if (query.limit !== undefined) params.set('limit', String(query.limit))
-  return request<SearchResponse>(`/api/search?${params.toString()}`)
+  return request<SearchResponse>(`/api/search?${params.toString()}`, signal)
 }
 
 // ---------------------------------------------------------------------------
@@ -157,8 +159,8 @@ export interface Item {
   email: EmailDetail | null
 }
 
-export function fetchItem(id: number): Promise<Item> {
-  return request<Item>(`/api/items/${id}`)
+export function fetchItem(id: number, signal?: AbortSignal): Promise<Item> {
+  return request<Item>(`/api/items/${id}`, signal)
 }
 
 // ---------------------------------------------------------------------------
@@ -170,8 +172,8 @@ export interface SourceInfo {
   kinds: ItemKind[]
 }
 
-export function fetchSources(): Promise<SourceInfo[]> {
-  return request<SourceInfo[]>('/api/sources')
+export function fetchSources(signal?: AbortSignal): Promise<SourceInfo[]> {
+  return request<SourceInfo[]>('/api/sources', signal)
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +190,6 @@ export interface Stats {
   imports: number
 }
 
-export function fetchStats(): Promise<Stats> {
-  return request<Stats>('/api/stats')
+export function fetchStats(signal?: AbortSignal): Promise<Stats> {
+  return request<Stats>('/api/stats', signal)
 }

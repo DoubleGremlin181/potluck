@@ -27,7 +27,10 @@ function StatCard({ label, value }: { label: string; value: string }) {
 /** Settings: appearance plus the database overview (the P0 stats page). */
 export function SettingsPage() {
   const { theme, setTheme } = useTheme()
-  const { data: stats, error, isPending } = useQuery({ queryKey: ['stats'], queryFn: fetchStats })
+  const { data: stats, error, isPending } = useQuery({
+    queryKey: ['stats'],
+    queryFn: ({ signal }) => fetchStats(signal),
+  })
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">

@@ -198,9 +198,14 @@ def test_infinite_scroll_loads_next_page_and_stays_virtualized(
 
 def test_invalid_cursor_restarts_walk_instead_of_erroring(corpus_server: str, page: Page) -> None:
     # Force every cursor-bearing request to 400 invalid_cursor: the UI must
-    # restart from the first page with a notice — not show an error state.
+    # restart from the first page with a notice — not show an error state —
+    # and it must NOT loop: exactly one automatic restart per search, then a
+    # manual "Restart search" affordance.
+    cursor_requests: list[str] = []
+
     def reject_cursors(route: Route) -> None:
         if "cursor=" in route.request.url:
+            cursor_requests.append(route.request.url)
             route.fulfill(status=400, content_type="application/json", body=INVALID_CURSOR_BODY)
         else:
             route.continue_()
@@ -210,13 +215,31 @@ def test_invalid_cursor_restarts_walk_instead_of_erroring(corpus_server: str, pa
     scroller = page.get_by_test_id("results-scroll")
     expect(scroller).to_have_attribute("data-loaded-count", str(PAGE_SIZE))
 
+    # First rejection: automatic restart with a transient notice, scrolled
+    # back to the top (so the sentinel isn't instantly visible again).
     scroller.evaluate("el => { el.scrollTop = el.scrollHeight }")
     expect(page.get_by_test_id("cursor-reset-banner")).to_be_visible()
     expect(page.get_by_test_id("cursor-reset-banner")).to_contain_text("restarting")
     expect(page.get_by_test_id("error-state")).to_have_count(0)
+    assert scroller.evaluate("el => el.scrollTop") == 0
+    expect(scroller).to_have_attribute("data-loaded-count", str(PAGE_SIZE))
 
-    # Once cursors work again the walk resumes past the first page.
+    # Second rejection: the automatic reset is capped — the UI offers a
+    # manual restart instead of looping reset -> refetch -> reject.
+    scroller.evaluate("el => { el.scrollTop = el.scrollHeight }")
+    stuck = page.get_by_test_id("cursor-stuck-banner")
+    expect(stuck).to_be_visible()
+    expect(page.get_by_test_id("error-state")).to_have_count(0)
+    seen = len(cursor_requests)
+    page.wait_for_timeout(1_500)  # a runaway loop would fire many requests here
+    assert len(cursor_requests) - seen <= 1, f"cursor request loop ran away: {cursor_requests}"
+    assert len(cursor_requests) <= 3
+
+    # The manual restart resumes the walk once the server behaves again.
     page.unroute("**/api/search*")
+    stuck.get_by_role("button", name="Restart search").click()
+    expect(stuck).to_have_count(0)
+    expect(scroller).to_have_attribute("data-loaded-count", str(PAGE_SIZE), timeout=10_000)
     scroller.evaluate("el => { el.scrollTop = el.scrollHeight }")
     expect(scroller).not_to_have_attribute("data-loaded-count", str(PAGE_SIZE), timeout=15_000)
 

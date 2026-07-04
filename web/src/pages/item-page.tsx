@@ -58,7 +58,7 @@ export function ItemPage() {
 
   const { data: item, error, isPending } = useQuery({
     queryKey: ['item', id],
-    queryFn: () => fetchItem(id),
+    queryFn: ({ signal }) => fetchItem(id, signal),
     enabled: validId,
   })
 

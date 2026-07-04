@@ -70,9 +70,14 @@ export function SearchPage() {
   const [text, setText] = useState(urlQ)
   const selfWriteQ = useRef(urlQ)
   const inputRef = useRef<HTMLInputElement>(null)
+  const parentRef = useRef<HTMLDivElement>(null) // the results scroll container
 
   function commitQuery(value: string, opts: { prefix: boolean; replace?: boolean }) {
     selfWriteQ.current = value
+    // Already committed in this exact mode (e.g. Enter pressed twice on the
+    // same query): skip the no-op write so history gets no duplicate entry.
+    const targetPrefix = opts.prefix && value !== ''
+    if (value === urlQ && targetPrefix === (params.get('prefix') === '1')) return
     updateParams(
       (next) => {
         if (value) next.set('q', value)
@@ -122,17 +127,20 @@ export function SearchPage() {
     refetch,
   } = useInfiniteQuery({
     queryKey,
-    queryFn: ({ pageParam }) =>
-      searchItems({
-        q: urlQ,
-        kinds,
-        sources,
-        after: after || undefined,
-        before: before || undefined,
-        prefix,
-        cursor: pageParam,
-        limit: PAGE_SIZE,
-      }),
+    queryFn: ({ pageParam, signal }) =>
+      searchItems(
+        {
+          q: urlQ,
+          kinds,
+          sources,
+          after: after || undefined,
+          before: before || undefined,
+          prefix,
+          cursor: pageParam,
+          limit: PAGE_SIZE,
+        },
+        signal,
+      ),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     enabled,
@@ -146,14 +154,25 @@ export function SearchPage() {
 
   // Cursor etiquette: a 400 invalid_cursor means the walk no longer matches
   // the query (foreign/stale cursor). Restart from the first page with a
-  // transient notice — never an error state.
+  // transient notice — never an error state. At most ONE automatic restart
+  // per search: if the server keeps rejecting the cursors it just issued
+  // (e.g. restarted mid-session), the next rejection hands the restart to
+  // the user instead of looping reset -> refetch -> reject.
   const [cursorReset, setCursorReset] = useState(false)
+  const [cursorStuck, setCursorStuck] = useState(false)
+  const autoResetDoneFor = useRef<string | null>(null)
   useEffect(() => {
-    if (errorCode === 'invalid_cursor') {
-      setCursorReset(true)
-      void queryClient.resetQueries({ queryKey })
+    if (errorCode !== 'invalid_cursor') return
+    if (autoResetDoneFor.current === keyString) {
+      setCursorStuck(true)
+      return
     }
-  }, [errorCode, queryClient, queryKey])
+    autoResetDoneFor.current = keyString
+    setCursorReset(true)
+    // Back to the top so the sentinel isn't instantly visible again.
+    parentRef.current?.scrollTo({ top: 0 })
+    void queryClient.resetQueries({ queryKey })
+  }, [errorCode, keyString, queryClient, queryKey])
   useEffect(() => {
     if (!cursorReset) return
     const timer = window.setTimeout(() => setCursorReset(false), 5000)
@@ -167,12 +186,11 @@ export function SearchPage() {
   // ---- Sources for the filter popover ------------------------------------
   const sourcesQuery = useQuery({
     queryKey: ['sources'],
-    queryFn: fetchSources,
+    queryFn: ({ signal }) => fetchSources(signal),
     staleTime: 5 * 60_000,
   })
 
   // ---- Virtualized results -----------------------------------------------
-  const parentRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
     count: rows.length + (hasNextPage ? 1 : 0),
     getScrollElement: () => parentRef.current,
@@ -182,9 +200,12 @@ export function SearchPage() {
   })
   const virtualItems = virtualizer.getVirtualItems()
 
-  // New search: back to the top.
+  // New search: back to the top, re-arm the automatic cursor restart, and
+  // drop any stuck-cursor affordance from the previous search.
   useEffect(() => {
     parentRef.current?.scrollTo({ top: 0 })
+    autoResetDoneFor.current = null
+    setCursorStuck(false)
   }, [keyString])
 
   // Sentinel row visible -> fetch the next page (cursor passed back
@@ -230,6 +251,15 @@ export function SearchPage() {
     setText(example)
     commitQuery(example, { prefix: false })
     inputRef.current?.focus()
+  }
+
+  function restartSearch() {
+    // Manual restart: the user asked, so the automatic reset is re-armed.
+    autoResetDoneFor.current = null
+    setCursorStuck(false)
+    setCursorReset(false)
+    parentRef.current?.scrollTo({ top: 0 })
+    void queryClient.resetQueries({ queryKey })
   }
 
   const isFilterOnly = urlQ.trim() === '' && hasFilters
@@ -358,7 +388,20 @@ export function SearchPage() {
             </div>
           )}
 
-          {cursorReset && (
+          {cursorStuck ? (
+            <div
+              data-testid="cursor-stuck-banner"
+              className="flex items-center gap-3 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground"
+            >
+              <RotateCw aria-hidden className="size-4 shrink-0" />
+              <span className="flex-1">
+                Results keep changing on the server — restart the search to continue.
+              </span>
+              <Button variant="outline" size="xs" onClick={restartSearch}>
+                Restart search
+              </Button>
+            </div>
+          ) : cursorReset ? (
             <div
               data-testid="cursor-reset-banner"
               className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground"
@@ -366,7 +409,7 @@ export function SearchPage() {
               <RotateCw aria-hidden className="size-4 shrink-0" />
               Search changed — restarting from the first page.
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -413,8 +456,12 @@ export function SearchPage() {
                         data-testid="load-more-row"
                         className="flex items-center justify-center gap-2 py-5 text-sm text-muted-foreground"
                       >
-                        <LoaderCircle aria-hidden className="size-4 animate-spin" />
-                        Loading more…
+                        {!isError && (
+                          <>
+                            <LoaderCircle aria-hidden className="size-4 animate-spin" />
+                            Loading more…
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
