@@ -35,9 +35,20 @@ NOTES = 30
 EMAILS = 60
 PAGE_SIZE = 30  # mirrors the UI's search page size
 
+# Deterministic import outcome for (SEED, NOTES): the generated Keep corpus
+# carries 2 parser skip targets (trashed/empty notes), so 28 of 30 import.
+# Every generated email imports. Pinned exactly — silent item drops must fail
+# the test, and UI-vs-API assertions alone cannot see them.
+EXPECTED_NOTE_ITEMS = 28
+
 # A WORDS-vocabulary token: with this (seed, corpus) it matches both kinds,
 # and the top hit is an email whose thread has more than one message.
 SAYT_TERM = "maple"
+
+# Members BOTH product generators emit (parser-ignored decoys — real Takeouts
+# have shared members too, e.g. archive_browser.html). Any other collision
+# while merging the product trees is a bug and fails loudly below.
+SHARED_DECOY_MEMBERS = frozenset({"Takeout/Other/ignored.txt"})
 
 
 @pytest.fixture
@@ -52,18 +63,25 @@ def server_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]
 def write_journey_takeout(dest_dir: Path) -> Path:
     """One Takeout zip with BOTH Keep notes and Gmail mail inside.
 
-    Each generator writes the real member layout for its product as a
-    directory tree under the same ``takeout-synth-001`` root — merging them
-    mirrors a real multi-product Takeout export — then the merged tree is
-    zipped as a single part.
+    Each generator writes the real member layout for its product into its own
+    directory tree; the trees merge member-by-member — mirroring a real
+    multi-product Takeout export — into one single-part zip. Any collision
+    outside the known shared decoys fails loudly: a meaningful member emitted
+    by both generators must never be silently clobbered.
     """
-    tree = write_keep_takeout(dest_dir, NOTES, seed=SEED, fmt="dir")
-    assert write_gmail_takeout(dest_dir, EMAILS, seed=SEED, fmt="dir") == tree
-    members = {
-        path.relative_to(tree).as_posix(): path.read_bytes()
-        for path in sorted(tree.rglob("*"))
-        if path.is_file()
-    }
+    members: dict[str, bytes] = {}
+    for tree in (
+        write_keep_takeout(dest_dir / "keep", NOTES, seed=SEED, fmt="dir"),
+        write_gmail_takeout(dest_dir / "mail", EMAILS, seed=SEED, fmt="dir"),
+    ):
+        for path in sorted(tree.rglob("*")):
+            if not path.is_file():
+                continue
+            name = path.relative_to(tree).as_posix()
+            assert name not in members or name in SHARED_DECOY_MEMBERS, (
+                f"unexpected member collision merging product trees: {name}"
+            )
+            members[name] = path.read_bytes()
     return write_archive(dest_dir / "takeout-journey-001.zip", members, fmt="zip")
 
 
@@ -103,14 +121,15 @@ def test_mvp_user_journey(server_url: str, tmp_path: Path, page: Page) -> None:
     expect(keep_row).to_have_attribute("data-status", "completed")
     expect(page.get_by_test_id("current-import")).to_have_count(0)  # settled
 
+    # Ledger ground truth, pinned to the deterministic expected counts: every
+    # generated item imported, none silently dropped, all new on an empty db.
     runs = {run["source"]: run for run in api_get(server_url, "/api/imports")["runs"]}
-    assert runs["gmail"]["items_done"] > 0 and runs["google_keep"]["items_done"] > 0
-    expect(gmail_row.get_by_test_id("history-items")).to_contain_text(
-        str(runs["gmail"]["items_done"])
-    )
-    expect(keep_row.get_by_test_id("history-items")).to_contain_text(
-        str(runs["google_keep"]["items_done"])
-    )
+    assert runs["gmail"]["items_done"] == EMAILS
+    assert runs["gmail"]["items_new"] == EMAILS
+    assert runs["google_keep"]["items_done"] == EXPECTED_NOTE_ITEMS
+    assert runs["google_keep"]["items_new"] == EXPECTED_NOTE_ITEMS
+    expect(gmail_row.get_by_test_id("history-items")).to_contain_text(str(EMAILS))
+    expect(keep_row.get_by_test_id("history-items")).to_contain_text(str(EXPECTED_NOTE_ITEMS))
 
     # --- Search: SAYT over the corpus we just imported -----------------------
     nav.get_by_role("link", name="Search").click()
@@ -170,9 +189,8 @@ def test_mvp_user_journey(server_url: str, tmp_path: Path, page: Page) -> None:
     # --- Settings: the true nonzero counts for everything we imported ---------
     nav.get_by_role("link", name="Settings").click()
     stats = api_get(server_url, "/api/stats")
-    by_kind = stats["items_by_kind"]
-    assert by_kind["email"] > 0 and by_kind["note"] > 0
+    assert stats["items_by_kind"] == {"email": EMAILS, "note": EXPECTED_NOTE_ITEMS}
     email_count = page.locator('[data-testid="kind-count"][data-kind="email"]')
     note_count = page.locator('[data-testid="kind-count"][data-kind="note"]')
-    expect(email_count).to_have_attribute("data-count", str(by_kind["email"]))
-    expect(note_count).to_have_attribute("data-count", str(by_kind["note"]))
+    expect(email_count).to_have_attribute("data-count", str(EMAILS))
+    expect(note_count).to_have_attribute("data-count", str(EXPECTED_NOTE_ITEMS))
