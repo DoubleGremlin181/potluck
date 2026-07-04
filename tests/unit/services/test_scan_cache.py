@@ -179,30 +179,33 @@ def test_multipart_set_redetects_when_sibling_parts_appear(
     assert {r.source for r in runs} == {"gmail", "google_keep"}
 
 
+@pytest.mark.parametrize("first", ["mail", "keep"])
 def test_real_takeout_naming_imports_all_sources_from_any_part(
-    ctx: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ctx: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, first: str
 ) -> None:
-    """Real part naming (takeout-<ts>-<N>-001): importing ANY part ingests
-    every source in the set, and a re-import via another part re-scans
-    (multi-part sets bypass both the detection cache and the ledger
+    """Real part naming (takeout-<ts>-<N>-001): a fresh-DB import via EITHER
+    part ingests every source in the set, and a re-import via the other part
+    re-scans (multi-part sets bypass both the detection cache and the ledger
     short-circuit) without duplicating items."""
     calls = _detect_counter(monkeypatch)
     mbox = (
         b"From x@potluck.test Fri Dec 12 06:57:49 2025\n"
         b"Message-ID: <a@potluck.test>\nSubject: s\n\nbody\n"
     )
-    mail_part = write_archive(
-        tmp_path / "takeout-20251212T171747Z-14-001.zip",
-        {"Takeout/Mail/All mail Including Spam and Trash.mbox": mbox},
-        "zip",
-    )
-    keep_part = write_archive(
-        tmp_path / "takeout-20251212T171747Z-16-001.zip",
-        {"Takeout/Keep/note.json": b'{"title": "t", "textContent": "hello"}'},
-        "zip",
-    )
+    parts = {
+        "mail": write_archive(
+            tmp_path / "takeout-20251212T171747Z-14-001.zip",
+            {"Takeout/Mail/All mail Including Spam and Trash.mbox": mbox},
+            "zip",
+        ),
+        "keep": write_archive(
+            tmp_path / "takeout-20251212T171747Z-16-001.zip",
+            {"Takeout/Keep/note.json": b'{"title": "t", "textContent": "hello"}'},
+            "zip",
+        ),
+    }
 
-    runs = import_path(ctx, mail_part)
+    runs = import_path(ctx, parts[first])
     assert {r.source for r in runs} == {"gmail", "google_keep"}
     assert all(r.status == "completed" for r in runs)
     assert sum(r.items_new for r in runs) == 2
@@ -210,7 +213,7 @@ def test_real_takeout_naming_imports_all_sources_from_any_part(
 
     # Import via the OTHER part: same logical set — re-scanned (no false
     # cache hit or ledger short-circuit), everything dedups to 0 new items.
-    runs2 = import_path(ctx, keep_part)
+    runs2 = import_path(ctx, parts["keep" if first == "mail" else "mail"])
     assert {r.source for r in runs2} == {"gmail", "google_keep"}
     assert all(r.status == "completed" for r in runs2)
     assert sum(r.items_new for r in runs2) == 0

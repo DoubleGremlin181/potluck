@@ -309,6 +309,20 @@ def test_multipart_real_naming_orders_file_then_part(tmp_path: Path) -> None:
     assert list(opened.iter_names()) == [f"Takeout/F{f}P{p}/f.txt" for f, p in parts]
 
 
+def test_multipart_large_file_numbers_group(tmp_path: Path) -> None:
+    """File numbers are not capped: part -1000-001 of a >999-file export
+    (multi-TB Photos at 1-2 GB chunks) still joins the set — the timestamp
+    anchor alone decides membership."""
+    for n in (2, 1000):
+        write_archive(
+            tmp_path / f"takeout-20251212T171747Z-{n}-001.tgz",
+            {f"Takeout/Part{n}/f.txt": b"x"},
+            "tgz",
+        )
+    opened = open_archive(tmp_path / "takeout-20251212T171747Z-1000-001.tgz")
+    assert list(opened.iter_names()) == ["Takeout/Part2/f.txt", "Takeout/Part1000/f.txt"]
+
+
 def test_multipart_different_timestamps_never_group(tmp_path: Path) -> None:
     """Two exports with different timestamps are different sets, even when
     file/part numbers collide."""

@@ -29,15 +29,17 @@ from potluck.core.errors import UnsupportedArchiveError
 # intentionally loose (any stem) — that is the historical behaviour and what
 # the synthetic generator emits. _TAKEOUT_FILE_RE then strips the new-style
 # file number, but ONLY when the remaining stem still ends in a Takeout export
-# timestamp: the timestamp uniquely identifies one export, so the extra strip
-# cannot over-group. Without that anchor a second numeric strip would merge
-# unrelated sets (report-2023-001 vs report-2024-001). The file number is
-# capped at 3 digits so a year-like group directly after a timestamp is also
-# never treated as a file number.
+# timestamp — that anchor is the sole safety argument: the timestamp uniquely
+# identifies one export, so anything sharing (prefix, timestamp) IS the same
+# export and the extra strip cannot over-group. Without the anchor a second
+# numeric strip would merge unrelated sets (report-2023-001 vs
+# report-2024-001). The file number is deliberately uncapped (\d+): a
+# >999-file export (multi-TB Photos at 1-2 GB chunks) must not silently split
+# its high-numbered parts out of the set.
 _MULTIPART_RE: re.Pattern[str] = re.compile(
     r"^(?P<stem>.+)-(?P<part>\d{3})\.(?P<ext>zip|tgz|tar\.gz)$"
 )
-_TAKEOUT_FILE_RE: re.Pattern[str] = re.compile(r"^(?P<stem>.+-\d{8}T\d{6}Z)-(?P<file>\d{1,3})$")
+_TAKEOUT_FILE_RE: re.Pattern[str] = re.compile(r"^(?P<stem>.+-\d{8}T\d{6}Z)-(?P<file>\d+)$")
 
 
 def _parse_part_name(name: str) -> tuple[str, str, tuple[int, int]] | None:
@@ -254,6 +256,8 @@ def open_archive(path: Path) -> Archive:
         # _parse_part_name re-validates every candidate, and the stem equality
         # check rejects files whose stem merely extends this one (e.g.
         # 'takeout-test-9-001' globbed from stem 'takeout-test').
+        # Zero-padded and bare file numbers ('-014-' vs '-14-') collide to
+        # equal order keys; the Path in the tuple breaks the tie deterministically.
         siblings: list[tuple[tuple[int, int], Path]] = sorted(
             (candidate[2], p)
             for p in parent.glob(f"{glob.escape(stem)}-*.{ext}")
