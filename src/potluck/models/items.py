@@ -102,8 +102,12 @@ class ItemSort(StrEnum):
 class ListItemsRequest(BaseModel):
     """Parameters for browsing items without a search query."""
 
-    kinds: list[ItemKind] | None = None
-    sources: list[str] | None = None  # sources.name values; unknown names match nothing
+    # List caps keep the rendered SQL well under SQLite's host-parameter
+    # limit (one ? per entry) — oversized lists are a validation error, not
+    # an sqlite3.OperationalError. Same caps as SearchRequest.
+    kinds: list[ItemKind] | None = Field(default=None, max_length=16)
+    # sources.name values; unknown names match nothing.
+    sources: list[str] | None = Field(default=None, max_length=64)
     since: datetime | None = Field(default=None, description="Inclusive lower bound on ts.")
     until: datetime | None = Field(default=None, description="Exclusive upper bound on ts.")
     sort: ItemSort = ItemSort.TS_DESC

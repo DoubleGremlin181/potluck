@@ -7,11 +7,15 @@ adapt (DTO parity, like test_app.py); error shapes against the envelope
 the conftest draft factory — no mocks.
 """
 
-from typing import Any
+from pathlib import Path
+from typing import Any, NoReturn
 
+import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from httpx2 import Response  # starlette 1.x TestClient is an httpx2.Client
 
+from potluck.api.app import create_app
 from potluck.models.items import ItemKind
 from potluck.models.search import SearchRequest
 from potluck.services import items as items_service
@@ -277,10 +281,70 @@ def test_items_listing_validation_errors_use_envelope(api_client: TestClient) ->
     )
 
 
+def test_items_oversized_list_is_422_envelope(api_client: TestClient) -> None:
+    """The listing's kind/source caps mirror the ListItemsRequest DTO caps —
+    oversized lists are a validation error, not an sqlite3 host-parameter
+    blowup."""
+    resp = api_client.get("/api/items", params=tuple(("source", f"s{i}") for i in range(65)))
+    _assert_envelope(resp, 422, "validation_error")
+
+
 def test_unknown_api_path_is_enveloped_404(api_client: TestClient) -> None:
     """All /api/* error responses use the envelope — including router-level
     404s, not just service errors."""
     _assert_envelope(api_client.get("/api/nope"), 404, "not_found")
+
+
+def _no_spa_app(ctx: AppContext, tmp_path: Path) -> FastAPI:
+    """create_app over *ctx* with the SPA pinned absent (the api_client
+    fixture does the same, but these tests need raise_server_exceptions=False
+    to observe the 500 response instead of the re-raised exception)."""
+    no_spa = AppContext(
+        settings=ctx.settings.model_copy(update={"web_dist": tmp_path / "no-spa"}),
+        db=ctx.db,
+    )
+    return create_app(no_spa)
+
+
+def test_unhandled_service_error_is_enveloped_500(
+    ctx: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unexpected exception surfacing through a service must still produce
+    the envelope — generic message, never the exception text. (Starlette
+    re-raises after the response is sent so servers still log the traceback;
+    hence raise_server_exceptions=False.)"""
+
+    def explode(_ctx: AppContext) -> NoReturn:
+        raise RuntimeError("secret sqlite detail")
+
+    monkeypatch.setattr("potluck.api.routes.system.get_stats", explode)
+
+    with TestClient(_no_spa_app(ctx, tmp_path), raise_server_exceptions=False) as client:
+        resp = client.get("/api/stats")
+
+    err = _assert_envelope(resp, 500, "internal_error")
+    assert "secret sqlite detail" not in resp.text
+    assert "RuntimeError" not in resp.text
+    assert "detail" not in err, "500s carry no detail block"
+
+
+def test_unhandled_error_outside_api_keeps_default_plaintext(
+    ctx: AppContext, tmp_path: Path
+) -> None:
+    """The catch-all is scoped to /api/*: non-API paths (the SPA surface)
+    keep starlette's default plain-text 500."""
+    app = _no_spa_app(ctx, tmp_path)
+
+    @app.get("/boom", include_in_schema=False, response_model=None)
+    def boom() -> None:
+        raise RuntimeError("kaboom")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        resp = client.get("/boom")
+
+    assert resp.status_code == 500
+    assert resp.text == "Internal Server Error"
+    assert "kaboom" not in resp.text
 
 
 # ---------------------------------------------------------------------------

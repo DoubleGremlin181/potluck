@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, JsonValue
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -89,3 +89,13 @@ def register_error_handlers(app: FastAPI) -> None:
             return _envelope(exc.status_code, code, str(exc.detail))
         # SPA/static paths keep the default handler (plain-text/HTML 404s).
         return await http_exception_handler(request, exc)
+
+    @app.exception_handler(Exception)
+    def unhandled_error(request: Request, exc: Exception) -> Response:
+        # Catch-all: starlette re-raises after this response is sent, so
+        # servers still log the full traceback — but clients only ever get
+        # the generic envelope, never the exception text (no internal detail
+        # can leak).
+        if request.url.path.startswith("/api/"):
+            return _envelope(500, "internal_error", "Internal server error.")
+        return PlainTextResponse("Internal Server Error", status_code=500)

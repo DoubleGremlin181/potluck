@@ -144,3 +144,16 @@ def test_note_draft_naive_datetime_rejected() -> None:
     naive = datetime(2024, 6, 15, 12, 30, 0)  # no tzinfo
     with pytest.raises(ValidationError):
         NoteDraft(ts=naive)
+
+
+def test_list_items_request_caps_list_lengths() -> None:
+    """kinds/sources carry the same list caps as SearchRequest, so the REST
+    route's Query caps mirror the DTO instead of quietly tightening it (and
+    oversized lists fail validation, not the SQLite host-parameter limit)."""
+    from potluck.models.items import ListItemsRequest
+
+    assert ListItemsRequest(kinds=[ItemKind.NOTE] * 16, sources=[f"s{i}" for i in range(64)])
+    with pytest.raises(ValidationError):
+        ListItemsRequest(kinds=[ItemKind.NOTE] * 17)
+    with pytest.raises(ValidationError):
+        ListItemsRequest(sources=[f"s{i}" for i in range(65)])
