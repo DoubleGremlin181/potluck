@@ -26,6 +26,9 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from potluck.api.app import create_app
 from potluck.bench.registry import Scenario, Tier
 from potluck.core.config import Settings
 from potluck.ingest.engine import run_import
@@ -278,6 +281,27 @@ def _keep_prefix_run(workdir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P3: end-to-end REST search (#131)
+# ---------------------------------------------------------------------------
+
+
+def _api_search_run(workdir: Path) -> None:
+    """Drive GET /api/search through starlette's TestClient — in-process
+    ASGI, so the measurement is server time (routing + param validation +
+    search service + JSON serialization) without network-socket noise.
+    Reuses _FTS_SCALE_QUERIES: the same realistic-selectivity workload the
+    service-level fts scenarios measure, over the same email corpus."""
+    ctx = _make_ctx(workdir)
+    try:
+        with TestClient(create_app(ctx)) as client:
+            for q in _FTS_SCALE_QUERIES:
+                resp = client.get("/api/search", params={"q": q})
+                resp.raise_for_status()
+    finally:
+        ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
 # Scenario registry
 # ---------------------------------------------------------------------------
 
@@ -343,5 +367,21 @@ ALL_SCENARIOS = [
         item_count=_SEARCH_QUERY_COUNT,
         setup=_imported_keep_10k_setup,
         run=_keep_prefix_run,
+    ),
+    # P3 REST search end-to-end (#131): nightly 100k budget anchor (p95
+    # < 100 ms, asserted in test_p3_budgets.py) + smoke 10k PR-CI tracker
+    Scenario(
+        name="api_search_p95_100k",
+        tier="full",
+        item_count=_SEARCH_QUERY_COUNT,
+        setup=_email_corpus_setup(100_000),
+        run=_api_search_run,
+    ),
+    Scenario(
+        name="api_search_10k",
+        tier="smoke",
+        item_count=_SEARCH_QUERY_COUNT,
+        setup=_email_corpus_setup(10_000),
+        run=_api_search_run,
     ),
 ]

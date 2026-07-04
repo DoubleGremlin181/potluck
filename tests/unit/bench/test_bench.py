@@ -208,3 +208,16 @@ def test_registry_has_sequential_gmail_ab_variant() -> None:
     full = {s.name for s in scenarios_for("full", ALL_SCENARIOS)}
     assert "ingest_gmail_8k" in full
     assert "ingest_gmail_8k_seq" in full
+
+
+def test_registry_has_api_search_scenarios() -> None:
+    """#131: end-to-end REST search is benched at both tiers — the nightly
+    100k budget anchor plus a cheap 10k PR-CI tracking variant."""
+    smoke = {s.name for s in scenarios_for("smoke", ALL_SCENARIOS)}
+    full = {s.name for s in scenarios_for("full", ALL_SCENARIOS)}
+    assert "api_search_10k" in smoke
+    assert "api_search_p95_100k" in full - smoke
+
+    by_name = {s.name: s for s in ALL_SCENARIOS}
+    # item_count = query count for both, so throughput_items_s = queries/s.
+    assert by_name["api_search_10k"].item_count == by_name["api_search_p95_100k"].item_count == 100
