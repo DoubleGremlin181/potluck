@@ -216,6 +216,8 @@ export interface Stats {
   db_path: string
   db_size_bytes: number
   items: number
+  /** Nonzero kinds only, largest count first (server-ordered). */
+  items_by_kind: Partial<Record<ItemKind, number>>
   sources: number
   imports: number
 }

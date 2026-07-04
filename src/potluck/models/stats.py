@@ -1,6 +1,8 @@
 """Stats DTOs."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from potluck.models.items import ItemKind
 
 
 class StatsResponse(BaseModel):
@@ -11,5 +13,9 @@ class StatsResponse(BaseModel):
     db_path: str
     db_size_bytes: int
     items: int
+    items_by_kind: dict[ItemKind, int] = Field(
+        description="Item counts per kind; kinds with zero items are omitted. "
+        "Ordered by count descending, then kind name."
+    )
     sources: int
     imports: int

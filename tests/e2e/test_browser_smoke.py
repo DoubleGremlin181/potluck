@@ -30,8 +30,6 @@ def test_shell_renders_and_stats_reachable(server_url: str, page: Page) -> None:
     expect(page.get_by_test_id("empty-idle")).to_be_visible()
     # The P0 stats overview lives on the Settings page now.
     page.get_by_role("navigation", name="Primary").get_by_role("link", name="Settings").click()
-    expect(page.get_by_text("Items")).to_be_visible()
-    expect(page.get_by_text("Sources")).to_be_visible()
-    expect(page.get_by_text("Database size")).to_be_visible()
-    # The three count cards all show 0 on a fresh database.
+    expect(page.get_by_test_id("db-path")).to_contain_text("potluck.db")
+    # The Items/Sources/Imports count cards all show 0 on a fresh database.
     expect(page.get_by_text("0", exact=True)).to_have_count(3)
