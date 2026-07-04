@@ -13,6 +13,7 @@ from potluck.ingest.engine import run_import
 from potluck.models.drafts import NoteDraft
 from potluck.services.context import AppContext
 from potluck.storage import fts
+from potluck.storage import imports as imports_storage
 from potluck.storage import items as items_storage
 from potluck.storage.items import ItemRow
 from potluck.testing.generators import synthetic_notes
@@ -579,3 +580,64 @@ def test_in_batch_displacement_then_revert_same_batch(ctx: AppContext) -> None:
         rows = conn.execute("SELECT text FROM items").fetchall()
 
     assert [r["text"] for r in rows] == ["version-one"]
+
+
+# ---------------------------------------------------------------------------
+# #132: progress seam — items_total on the ledger row, sane error truncation
+# ---------------------------------------------------------------------------
+
+
+def test_run_import_records_items_total(ctx: AppContext) -> None:
+    """A caller-supplied expected total lands on the row; items_done derives
+    from the existing per-batch counters."""
+    import_id = run_import(
+        ctx.db,
+        source_name="test-src",
+        parser_version=1,
+        drafts=iter(_make_drafts(3)),
+        path="/tmp/x",
+        file_hash=None,
+        items_total=3,
+    )
+
+    with ctx.db.read() as conn:
+        run = imports_storage.get_import(conn, import_id)
+    assert run.items_total == 3
+    assert run.items_done == 3
+    assert run.status == "completed"
+
+
+def test_run_import_items_total_defaults_to_unknown(ctx: AppContext) -> None:
+    """No total supplied -> NULL (= unknown); progress still counts up."""
+    import_id = _run(ctx, _make_drafts(4))
+
+    with ctx.db.read() as conn:
+        run = imports_storage.get_import(conn, import_id)
+    assert run.items_total is None
+    assert run.items_done == 4
+
+
+def test_failed_import_error_is_truncated(ctx: AppContext) -> None:
+    """Terminal failure captures the error on the row, truncated sanely —
+    a pathological exception message must not bloat the ledger."""
+
+    def _boom() -> Iterator[NoteDraft]:
+        yield NoteDraft(title="a", text="b")
+        raise ValueError("x" * 50_000)
+
+    with pytest.raises(ValueError):
+        run_import(
+            ctx.db,
+            source_name="test-src",
+            parser_version=1,
+            drafts=_boom(),
+            path="/tmp/x",
+            file_hash=None,
+        )
+
+    with ctx.db.read() as conn:
+        [run] = imports_storage.list_imports(conn)
+    assert run.status == "failed"
+    assert run.error is not None
+    assert len(run.error) <= 1100
+    assert run.error.endswith("[truncated]")

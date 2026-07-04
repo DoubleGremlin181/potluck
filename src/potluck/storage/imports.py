@@ -3,8 +3,13 @@
 import sqlite3
 from datetime import UTC, datetime
 
+from potluck.core.errors import ImportNotFoundError
 from potluck.models.imports import ImportRun, ImportStatus
 from potluck.storage.items import dt_to_iso, iso_to_dt
+
+# Sane cap for the error column (#132): str(exc) can be pathological; the
+# ledger keeps enough to diagnose, never megabytes.
+_ERROR_MAX_CHARS = 1000
 
 
 def ensure_source(conn: sqlite3.Connection, name: str) -> int:
@@ -27,14 +32,20 @@ def begin_import(
     file_hash: str | None,
     parser_version: int,
     extract_attachments: bool = False,
+    items_total: int | None = None,
 ) -> int:
-    """Insert a new import row with status 'running'; return its id."""
+    """Insert a new import row with status 'running'; return its id.
+
+    items_total is the expected item count when the caller can know it
+    cheaply; None (the default) means unknown — progress UIs then show an
+    indeterminate bar off items_done alone.
+    """
     now = dt_to_iso(datetime.now(UTC))
     cursor = conn.execute(
         """INSERT INTO imports (source_id, path, file_hash, parser_version, started_at,
-                                status, extract_attachments)
-           VALUES (?, ?, ?, ?, ?, 'running', ?)""",
-        (source_id, path, file_hash, parser_version, now, int(extract_attachments)),
+                                status, extract_attachments, items_total)
+           VALUES (?, ?, ?, ?, ?, 'running', ?, ?)""",
+        (source_id, path, file_hash, parser_version, now, int(extract_attachments), items_total),
     )
     assert cursor.lastrowid is not None
     return int(cursor.lastrowid)
@@ -68,12 +79,31 @@ def finish_import(
     status: ImportStatus,
     error: str | None = None,
 ) -> None:
-    """Set finished_at, status, and optional error on the import row."""
+    """Set finished_at, status, and optional error (truncated sanely) on the row."""
     now = dt_to_iso(datetime.now(UTC))
+    if error is not None and len(error) > _ERROR_MAX_CHARS:
+        error = error[:_ERROR_MAX_CHARS] + " [truncated]"
     conn.execute(
         "UPDATE imports SET finished_at = ?, status = ?, error = ? WHERE id = ?",
         (now, status, error, import_id),
     )
+
+
+def fail_stale_running_imports(conn: sqlite3.Connection) -> int:
+    """Mark every 'running' import failed with error='interrupted'; return the count.
+
+    Startup recovery (#132): a run left 'running' by a crash or kill can never
+    resume (its drafts stream is gone), but its counters still reflect the
+    last committed batch — only the status lies. Called when the context
+    opens the database, BEFORE any new import can start.
+    """
+    now = dt_to_iso(datetime.now(UTC))
+    cursor = conn.execute(
+        """UPDATE imports SET status = 'failed', error = 'interrupted', finished_at = ?
+           WHERE status = 'running'""",
+        (now,),
+    )
+    return cursor.rowcount
 
 
 def _row_to_import_run(row: sqlite3.Row) -> ImportRun:
@@ -91,6 +121,7 @@ def _row_to_import_run(row: sqlite3.Row) -> ImportRun:
         items_duplicate=int(row["items_duplicate"]),
         items_updated=int(row["items_updated"]),
         items_skipped=int(row["items_skipped"]),
+        items_total=row["items_total"],
         error=row["error"],
         extract_attachments=bool(row["extract_attachments"]),
     )
@@ -102,21 +133,32 @@ _BASE_QUERY = (
 
 
 def get_import(conn: sqlite3.Connection, import_id: int) -> ImportRun:
-    """Return a fully-hydrated ImportRun for the given import id."""
+    """Return a fully-hydrated ImportRun for the given import id.
+
+    Raises:
+        ImportNotFoundError: if no import row has this id.
+    """
     row = conn.execute(
         f"{_BASE_QUERY} WHERE i.id = ?",
         (import_id,),
     ).fetchone()
+    if row is None:
+        raise ImportNotFoundError(f"no import with id {import_id}")
     return _row_to_import_run(row)
 
 
-def list_imports(conn: sqlite3.Connection, limit: int = 50) -> list[ImportRun]:
-    """Return the most recent import runs, newest first."""
+def list_imports(conn: sqlite3.Connection, limit: int = 50, offset: int = 0) -> list[ImportRun]:
+    """Return one page of import runs, newest first."""
     rows = conn.execute(
-        f"{_BASE_QUERY} ORDER BY i.id DESC LIMIT ?",
-        (limit,),
+        f"{_BASE_QUERY} ORDER BY i.id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
     ).fetchall()
     return [_row_to_import_run(row) for row in rows]
+
+
+def count_imports(conn: sqlite3.Connection) -> int:
+    """Total number of import runs (the unpaginated history size)."""
+    return int(conn.execute("SELECT count(*) FROM imports").fetchone()[0])
 
 
 def find_completed_import(

@@ -29,3 +29,8 @@ def default_db_path() -> Path:
 def default_attachments_dir() -> Path:
     """Default managed directory for extracted attachment blobs (#124)."""
     return data_dir() / "attachments"
+
+
+def default_uploads_dir() -> Path:
+    """Default managed directory for archives uploaded through the API (#132)."""
+    return data_dir() / "uploads"

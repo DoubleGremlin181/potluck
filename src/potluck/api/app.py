@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from potluck import __version__
 from potluck.api.errors import register_error_handlers
-from potluck.api.routes import items, search, system
+from potluck.api.routes import imports, items, search, system
 from potluck.api.static import find_web_dist
 from potluck.services.context import AppContext, create_context
 
@@ -51,6 +51,7 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
     app.include_router(system.router, prefix="/api")
     app.include_router(search.router, prefix="/api")
     app.include_router(items.router, prefix="/api")
+    app.include_router(imports.router, prefix="/api")
 
     web_dist = find_web_dist(context.settings)
     if web_dist is not None:

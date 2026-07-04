@@ -350,7 +350,7 @@ def status(
     ctx = create_context()
     try:
         stats = stats_service.get_stats(ctx)
-        import_runs = imports_service.list_imports(ctx)
+        import_runs = imports_service.list_imports(ctx).runs
     finally:
         ctx.db.close()
 

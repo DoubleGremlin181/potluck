@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-settings>=2.7",
     "fastmcp>=3",
     "platformdirs>=4.3",
+    "python-multipart>=0.0.20",  # FastAPI multipart form parsing (POST /api/imports/upload)
     "httpx>=0.28",
     "rich>=13",
 ]

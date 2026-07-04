@@ -13,7 +13,12 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
-from potluck.core.paths import config_dir, default_attachments_dir, default_db_path
+from potluck.core.paths import (
+    config_dir,
+    default_attachments_dir,
+    default_db_path,
+    default_uploads_dir,
+)
 
 
 class Settings(BaseSettings):
@@ -29,6 +34,8 @@ class Settings(BaseSettings):
     # blob extraction to attachments_dir is opt-in.
     extract_attachments: bool = False
     attachments_dir: Path = Field(default_factory=default_attachments_dir)
+    # Managed landing directory for archives uploaded via the API (#132).
+    uploads_dir: Path = Field(default_factory=default_uploads_dir)
     # MIME parse worker processes (#199): 0 = auto (min(4, cpu_count) —
     # measured flat beyond 4 workers); 1 = sequential, no pool.
     ingest_workers: int = 0

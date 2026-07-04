@@ -164,7 +164,7 @@ def test_import_failure_marks_run_failed(tmp_path: Path, monkeypatch: object) ->
     try:
         with pytest.raises(OSError):
             import_path(ctx, archive_path)
-        runs = list_imports(ctx)
+        runs = list_imports(ctx).runs
         assert runs and runs[0].status == "failed"
     finally:
         ctx.db.close()

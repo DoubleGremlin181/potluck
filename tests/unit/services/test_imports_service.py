@@ -139,16 +139,18 @@ def test_list_imports(ctx: AppContext, tmp_path: Path, clean_registry: dict[str,
     import_path(ctx, zip_a)
     import_path(ctx, zip_b)
 
-    runs = list_imports(ctx)
-    assert len(runs) == 2
+    history = list_imports(ctx)
+    assert history.total == 2
+    assert len(history.runs) == 2
     # Newest first (b was imported second)
-    assert runs[0].source == "list_src_b"
-    assert runs[1].source == "list_src_a"
+    assert history.runs[0].source == "list_src_b"
+    assert history.runs[1].source == "list_src_a"
 
-    # Limit works
+    # Limit pages, total stays the unpaginated count
     limited = list_imports(ctx, limit=1)
-    assert len(limited) == 1
-    assert limited[0].source == "list_src_b"
+    assert limited.total == 2
+    assert len(limited.runs) == 1
+    assert limited.runs[0].source == "list_src_b"
 
 
 # ---------------------------------------------------------------------------

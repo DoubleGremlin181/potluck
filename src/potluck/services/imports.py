@@ -6,17 +6,30 @@ logged at INFO — the #196 measurement surface.
 """
 
 import logging
+import shutil
 import tarfile
 import time
+import uuid
 import zipfile
+from functools import partial
 from pathlib import Path
+from typing import BinaryIO
 
-from potluck.core.errors import UnknownSourceError, UnsupportedArchiveError
+from potluck.core.errors import (
+    ImportInProgressError,
+    UnknownSourceError,
+    UnsupportedArchiveError,
+)
 from potluck.ingest.engine import run_import
 from potluck.ingest.hashing import file_hash as _file_hash
 from potluck.ingest.plugins import ParseContext, detect_sources, discover, registry_fingerprint
 from potluck.ingest.readers import MultiPartArchive, open_archive
-from potluck.models.imports import ImportRun
+from potluck.models.imports import (
+    ImportListResponse,
+    ImportRun,
+    ImportTask,
+    SourceInfo,
+)
 from potluck.services.context import AppContext
 from potluck.storage import imports as _storage_imports
 from potluck.storage import scans as _storage_scans
@@ -155,7 +168,102 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
         return [_storage_imports.get_import(conn, import_id) for import_id in import_ids]
 
 
-def list_imports(ctx: AppContext, limit: int = 50) -> list[ImportRun]:
-    """Return import runs ordered newest-first, capped at *limit*."""
+def list_imports(ctx: AppContext, limit: int = 50, offset: int = 0) -> ImportListResponse:
+    """One page of import history, newest first, with the unpaginated total."""
     with ctx.db.read() as conn:
-        return _storage_imports.list_imports(conn, limit)
+        return ImportListResponse(
+            runs=_storage_imports.list_imports(conn, limit, offset),
+            total=_storage_imports.count_imports(conn),
+        )
+
+
+def get_import(ctx: AppContext, import_id: int) -> ImportRun:
+    """One import row including its progress fields (the UI's poll target).
+
+    Raises:
+        ImportNotFoundError: if no import run has this id.
+    """
+    with ctx.db.read() as conn:
+        return _storage_imports.get_import(conn, import_id)
+
+
+def start_import(ctx: AppContext, path: Path) -> ImportTask:
+    """Start a background import of *path*; return the initial task snapshot.
+
+    The import runs on the context's single import worker thread and drives
+    the exact same :func:`import_path` the CLI uses — all writes still funnel
+    through the database's single writer thread. Progress is polled from the
+    imports row (updated once per committed batch); the returned task is the
+    handle for the detection phase, before any row exists.
+
+    The server-path variant is localhost-only by design (v1 threat model):
+    the API binds 127.0.0.1 and its only client is the machine's owner, so
+    reading an arbitrary local path is the feature, not a traversal risk.
+
+    Raises:
+        UnsupportedArchiveError: if *path* does not exist (fail fast on typos;
+            all other archive errors surface on the task, then the ledger).
+        ImportInProgressError: if an import is already running (HTTP 409).
+    """
+    if not path.exists():
+        raise UnsupportedArchiveError(f"no such file or directory: {path}")
+    return ctx.import_manager.start(partial(import_path, ctx, path), path=str(path))
+
+
+def import_status(ctx: AppContext) -> ImportTask | None:
+    """Snapshot of the current/last background import; None before any start."""
+    return ctx.import_manager.status()
+
+
+def store_upload(ctx: AppContext, filename: str, stream: BinaryIO) -> Path:
+    """Persist an uploaded archive into the managed uploads dir; return its path.
+
+    Path-traversal sanity: only the basename of the client-supplied filename
+    is used, inside a fresh unique subdirectory of ``settings.uploads_dir`` —
+    a name like ``../../evil.zip`` lands as ``uploads/<token>/evil.zip``.
+
+    Raises:
+        UnsupportedArchiveError: if the filename has no usable basename.
+    """
+    name = Path(filename.replace("\\", "/")).name
+    if name in ("", ".", ".."):
+        raise UnsupportedArchiveError(f"invalid upload filename: {filename!r}")
+    dest_dir = ctx.settings.uploads_dir / uuid.uuid4().hex
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / name
+    with dest.open("wb") as out:
+        shutil.copyfileobj(stream, out)
+    return dest
+
+
+def start_upload_import(ctx: AppContext, filename: str, stream: BinaryIO) -> ImportTask:
+    """Store an uploaded archive, then start the background import over it.
+
+    The busy check runs BEFORE the upload is written so a conflicting request
+    fails without copying gigabytes first; the manager re-checks atomically
+    at start (a lost race can still 409 after storing — the orphaned file
+    stays in the uploads dir, harmless).
+
+    Raises:
+        ImportInProgressError: if an import is already running (HTTP 409).
+        UnsupportedArchiveError: if the filename has no usable basename.
+    """
+    task = ctx.import_manager.status()
+    if task is not None and task.status == "running":
+        raise ImportInProgressError(
+            f"an import of '{task.path}' is already running; only one import runs at a time"
+        )
+    return start_import(ctx, store_upload(ctx, filename, stream))
+
+
+def list_sources(ctx: AppContext) -> list[SourceInfo]:
+    """Registered source plugins (name + item kinds), sorted by name.
+
+    A pure registry read — *ctx* is unused today but keeps the uniform
+    ``(ctx, req) -> resp`` service shape.
+    """
+    del ctx
+    return [
+        SourceInfo(name=plugin.name, kinds=list(plugin.kinds))
+        for _, plugin in sorted(discover().items())
+    ]

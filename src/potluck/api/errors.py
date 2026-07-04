@@ -18,7 +18,13 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, JsonValue
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from potluck.core.errors import InvalidCursorError, ItemNotFoundError
+from potluck.core.errors import (
+    ImportInProgressError,
+    ImportNotFoundError,
+    InvalidCursorError,
+    ItemNotFoundError,
+    UnsupportedArchiveError,
+)
 
 
 class ErrorDetail(BaseModel):
@@ -41,15 +47,23 @@ class ErrorEnvelope(BaseModel):
 _RESPONSE_DESCRIPTIONS = {
     400: "Malformed pagination cursor, or a cursor produced by a different query.",
     404: "No item with this id exists.",
+    409: "An import is already running; only one runs at a time.",
     422: "Request validation failed; `error.detail` lists the offending parameters.",
 }
 
 
-def error_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
-    """OpenAPI ``responses`` entries documenting enveloped error statuses."""
+def error_responses(
+    *statuses: int, overrides: dict[int, str] | None = None
+) -> dict[int | str, dict[str, Any]]:
+    """OpenAPI ``responses`` entries documenting enveloped error statuses.
+
+    ``overrides`` replaces the default description for a status where the
+    endpoint's failure mode differs (e.g. a 404 that is about imports, not
+    items).
+    """
+    descriptions = _RESPONSE_DESCRIPTIONS | (overrides or {})
     return {
-        status: {"model": ErrorEnvelope, "description": _RESPONSE_DESCRIPTIONS[status]}
-        for status in statuses
+        status: {"model": ErrorEnvelope, "description": descriptions[status]} for status in statuses
     }
 
 
@@ -74,6 +88,18 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(InvalidCursorError)
     def invalid_cursor(request: Request, exc: InvalidCursorError) -> JSONResponse:
         return _envelope(400, "invalid_cursor", str(exc))
+
+    @app.exception_handler(ImportNotFoundError)
+    def import_not_found(request: Request, exc: ImportNotFoundError) -> JSONResponse:
+        return _envelope(404, "import_not_found", str(exc))
+
+    @app.exception_handler(ImportInProgressError)
+    def import_in_progress(request: Request, exc: ImportInProgressError) -> JSONResponse:
+        return _envelope(409, "import_in_progress", str(exc))
+
+    @app.exception_handler(UnsupportedArchiveError)
+    def unsupported_archive(request: Request, exc: UnsupportedArchiveError) -> JSONResponse:
+        return _envelope(400, "unsupported_archive", str(exc))
 
     @app.exception_handler(RequestValidationError)
     def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
