@@ -77,6 +77,9 @@ Toolset: `search` (keyword search with ranked, snippeted hits), `list_items`
 (the whole email conversation around an item), `get_stats` (database
 overview), `list_sources` (what this build can ingest).
 
+**Setup guides — Claude Desktop, Claude Code, OpenClaw, Hermes, direct REST
+without MCP, and troubleshooting: [docs/ai-integration.md](docs/ai-integration.md).**
+
 ## CLI
 
 ```text
