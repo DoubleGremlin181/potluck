@@ -20,7 +20,7 @@ from potluck.bench.runner import run_tier
 from potluck.bench.scenarios import ALL_SCENARIOS
 from potluck.core.config import Settings
 from potluck.core.errors import ItemNotFoundError, PotluckError
-from potluck.mcp.server import run_http, run_stdio
+from potluck.mcp.server import run_stdio
 from potluck.models.imports import ImportRun
 from potluck.models.items import ItemKind, ItemSort, ListItemsRequest
 from potluck.models.search import SearchRequest
@@ -412,16 +412,13 @@ def serve(
 
 
 @app.command()
-def mcp(
-    http: bool = typer.Option(False, "--http", help="Serve streamable HTTP instead of stdio."),
-    host: str = typer.Option("127.0.0.1", help="HTTP bind address."),
-    port: int = typer.Option(8766, help="HTTP port."),
-) -> None:
-    """Start the MCP server (stdio by default; --http for streamable HTTP)."""
-    if http:
-        run_http(create_context(), host=host, port=port)
-    else:
-        run_stdio(create_context())
+def mcp() -> None:
+    """Start the MCP server on stdio (for local AI clients).
+
+    Streamable HTTP needs no separate command: `potluck serve` exposes the
+    same tools at /mcp on the web/API port.
+    """
+    run_stdio(create_context())
 
 
 @bench_app.command("run")

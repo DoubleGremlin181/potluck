@@ -23,7 +23,7 @@ async def test_mcp_tool_inventory(ctx: AppContext) -> None:
     """Server exposes exactly the expected toolset."""
     async with Client(create_mcp(ctx)) as client:
         tools = {tool.name for tool in await client.list_tools()}
-    assert tools == {"get_stats", "search", "list_items", "get_item", "get_thread"}
+    assert tools == {"get_stats", "search", "list_items", "get_item", "get_thread", "list_sources"}
 
 
 # ---------------------------------------------------------------------------
@@ -166,12 +166,27 @@ async def test_mcp_get_item_full_text(ctx: AppContext, tmp_path: Path) -> None:
 
 async def test_mcp_search_invalid_limit_is_tool_error(ctx: AppContext) -> None:
     """Out-of-range arguments surface as an informative ToolError (like
-    get_item), not a masked internal error."""
+    get_item), not a masked internal error — and not pydantic's raw multiline
+    report (#202)."""
     async with Client(create_mcp(ctx)) as client:
         with pytest.raises(ToolError) as exc_info:
             await client.call_tool("search", {"query": "x", "limit": 500})
 
-    assert "limit" in str(exc_info.value).lower()
+    message = str(exc_info.value)
+    assert "limit" in message.lower()
+    assert "pydantic.dev" not in message
+    assert "validation error for" not in message
+
+
+async def test_mcp_search_oversized_kinds_list_is_tool_error(ctx: AppContext) -> None:
+    """A kinds list beyond the DTO cap is a clean ToolError naming the field (#202)."""
+    async with Client(create_mcp(ctx)) as client:
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("search", {"query": "x", "kinds": ["note"] * 17})
+
+    message = str(exc_info.value)
+    assert "kinds" in message
+    assert "pydantic.dev" not in message
 
 
 async def test_mcp_list_items_invalid_limit_is_tool_error(ctx: AppContext) -> None:
@@ -179,7 +194,9 @@ async def test_mcp_list_items_invalid_limit_is_tool_error(ctx: AppContext) -> No
         with pytest.raises(ToolError) as exc_info:
             await client.call_tool("list_items", {"limit": 500})
 
-    assert "limit" in str(exc_info.value).lower()
+    message = str(exc_info.value)
+    assert "limit" in message.lower()
+    assert "pydantic.dev" not in message
 
 
 async def test_mcp_get_item_missing_is_tool_error(ctx: AppContext) -> None:
@@ -189,3 +206,110 @@ async def test_mcp_get_item_missing_is_tool_error(ctx: AppContext) -> None:
             await client.call_tool("get_item", {"item_id": 999999})
 
     assert "not found" in str(exc_info.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# Warnings passthrough
+# ---------------------------------------------------------------------------
+
+
+async def test_mcp_search_warnings_passthrough(ctx: AppContext, tmp_path: Path) -> None:
+    """Invalid inline operator values surface in warnings, matching the service."""
+    ingest_keep_corpus(ctx, tmp_path)
+
+    query = "kind:bogus amber"
+    async with Client(create_mcp(ctx)) as client:
+        result = await client.call_tool("search", {"query": query})
+
+    assert not result.is_error
+    structured = result.structured_content
+    assert structured is not None
+    expected = search_service.search(ctx, SearchRequest(query=query))
+    assert structured["warnings"] == expected.warnings
+    assert any("bogus" in w for w in structured["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# Cursor pagination (#202)
+# ---------------------------------------------------------------------------
+
+
+async def test_mcp_search_cursor_round_trip(ctx: AppContext, tmp_path: Path) -> None:
+    """A next_cursor passed back verbatim with the same query yields page two."""
+    ingest_keep_corpus(ctx, tmp_path)
+
+    async with Client(create_mcp(ctx)) as client:
+        first = await client.call_tool("search", {"query": "amber", "limit": 2})
+        page_one = first.structured_content
+        assert page_one is not None
+        assert page_one["next_cursor"] is not None
+
+        second = await client.call_tool(
+            "search", {"query": "amber", "limit": 2, "cursor": page_one["next_cursor"]}
+        )
+
+    page_two = second.structured_content
+    assert page_two is not None
+    first_ids = {hit["id"] for hit in page_one["hits"]}
+    second_ids = {hit["id"] for hit in page_two["hits"]}
+    assert second_ids and not (first_ids & second_ids)
+
+
+async def test_mcp_search_foreign_cursor_is_tool_error(ctx: AppContext, tmp_path: Path) -> None:
+    """A cursor replayed with a DIFFERENT query is a clean, actionable
+    ToolError (#202) — not a protocol error or a raw traceback message."""
+    ingest_keep_corpus(ctx, tmp_path)
+
+    async with Client(create_mcp(ctx)) as client:
+        first = await client.call_tool("search", {"query": "amber", "limit": 2})
+        page_one = first.structured_content
+        assert page_one is not None and page_one["next_cursor"] is not None
+
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("search", {"query": "basil", "cursor": page_one["next_cursor"]})
+
+    message = str(exc_info.value)
+    assert "cursor" in message.lower()
+    # Actionable recovery guidance for the calling model:
+    assert "omit the cursor" in message
+
+
+async def test_mcp_search_malformed_cursor_is_tool_error(ctx: AppContext) -> None:
+    """Garbage cursors are rejected the same way as foreign ones (#202)."""
+    async with Client(create_mcp(ctx)) as client:
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("search", {"query": "x", "cursor": "not-a-cursor"})
+
+    message = str(exc_info.value)
+    assert "cursor" in message.lower()
+    assert "omit the cursor" in message
+
+
+# ---------------------------------------------------------------------------
+# Description tuning (#138 acceptance criterion)
+# ---------------------------------------------------------------------------
+
+
+async def test_search_description_teaches_query_language(ctx: AppContext) -> None:
+    """The search description must teach an LLM the inline operators, quoting,
+    prefix mode, warnings semantics and cursor etiquette."""
+    async with Client(create_mcp(ctx)) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    description = tools["search"].description or ""
+    for operator in ("from:", "source:", "kind:", "after:", "before:"):
+        assert operator in description, f"missing operator {operator}"
+    assert '"' in description  # quoted-value example
+    assert "prefix" in description.lower()
+    assert "warnings" in description.lower()
+    assert "cursor" in description.lower()
+    assert "same query" in description.lower()  # cursor etiquette
+
+
+async def test_list_items_description_contrasts_with_search(ctx: AppContext) -> None:
+    async with Client(create_mcp(ctx)) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    description = tools["list_items"].description or ""
+    assert "search" in description.lower()
+    assert "get_item" in description
