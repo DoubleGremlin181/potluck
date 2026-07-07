@@ -249,6 +249,7 @@ curl -s --get http://127.0.0.1:8765/api/search \
       "title": "Re: harbor Q2 budget",
       "title_highlight": "Re: [harbor] Q2 [budget]",
       "snippet": "…the [harbor] [budget] figures are attached…",
+      "ts": "2024-05-14T09:12:33+00:00",
       "score": -3.41
     }
   ],

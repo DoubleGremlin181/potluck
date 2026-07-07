@@ -277,7 +277,7 @@ function StartImportCard({
               ref={fileInputRef}
               data-testid="upload-input"
               type="file"
-              accept=".zip,.tgz,.gz,.tar"
+              accept=".zip,.tgz,.gz"
               aria-label="Upload an archive"
               className="sr-only"
               onChange={(e) => {
