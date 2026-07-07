@@ -40,6 +40,8 @@ from potluck.storage.db import Database
 from potluck.testing.generators import WORDS, synthetic_notes
 from potluck.testing.keep import write_keep_takeout
 from potluck.testing.mbox import TAIL_WORDS, synthetic_email_drafts, write_gmail_takeout
+from potluck.testing.server import free_port, spawn_serve, wait_for_health
+from potluck.testing.spa import referenced_assets, write_spa_dist
 
 _NOTE_COUNT = 5000
 
@@ -302,6 +304,54 @@ def _api_search_run(workdir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P3: serve cold start + SPA cold load (#141)
+# ---------------------------------------------------------------------------
+
+
+def _serve_cold_start_run(workdir: Path) -> None:
+    """Real ``potluck serve`` subprocess: spawn -> first 200 from /api/health.
+
+    This is the beta.1 quickstart moment (interpreter start, imports, DB
+    open, uvicorn bind), so it must be a process, not an in-process app.
+    Teardown is a hard kill on purpose: nothing is being written (fresh empty
+    DB, no import running) and SIGKILL + wait costs ~1 ms, so graceful
+    shutdown time never pollutes the cold-start measurement.
+    """
+    port = free_port()
+    proc = spawn_serve(workdir, port)
+    try:
+        wait_for_health(port, proc)
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def _spa_cold_load_setup(workdir: Path) -> None:
+    write_spa_dist(workdir / "dist")
+
+
+def _spa_cold_load_run(workdir: Path) -> None:
+    """Fetch / plus every JS/CSS asset index.html references — the requests a
+    browser must complete before first render, over the synthetic build that
+    mirrors the real bundle's weight (see testing/spa.py).  In-process ASGI
+    like the api_search scenarios: server time without socket noise (the
+    nightly budget test re-measures over a real localhost socket)."""
+    ctx = create_context(Settings(db_path=workdir / "bench.db", web_dist=workdir / "dist"))
+    try:
+        with TestClient(create_app(ctx)) as client:
+            index = client.get("/")
+            index.raise_for_status()
+            assets = referenced_assets(index.text)
+            if len(assets) != 2:
+                raise RuntimeError(f"expected 2 referenced assets, found {assets}")
+            for asset in assets:
+                resp = client.get(asset)
+                resp.raise_for_status()
+    finally:
+        ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
 # Scenario registry
 # ---------------------------------------------------------------------------
 
@@ -383,5 +433,16 @@ ALL_SCENARIOS = [
         item_count=_SEARCH_QUERY_COUNT,
         setup=_email_corpus_setup(10_000),
         run=_api_search_run,
+    ),
+    # P3 quickstart budgets (#141): item_count=1 for both, so
+    # throughput_items_s reads as cold starts (loads) per second.  Budgets
+    # (serve < 2 s, SPA load < 1 s) are asserted in test_p3_budgets.py.
+    Scenario(name="serve_cold_start", tier="smoke", item_count=1, run=_serve_cold_start_run),
+    Scenario(
+        name="spa_cold_load",
+        tier="smoke",
+        item_count=1,
+        setup=_spa_cold_load_setup,
+        run=_spa_cold_load_run,
     ),
 ]

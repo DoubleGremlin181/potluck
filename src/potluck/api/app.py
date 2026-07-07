@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from potluck import __version__
 from potluck.api.errors import register_error_handlers
@@ -26,11 +26,40 @@ from potluck.mcp.server import create_mcp
 from potluck.services.context import AppContext, create_context
 from potluck.services.imports import recover_interrupted_imports
 
-_SPA_MISSING = (
-    "Potluck API is running, but the SPA build was not found.\n"
-    "Build it with: cd web && npm ci && npm run build\n"
-    "API docs are at /api/docs\n"
-)
+# Served at "/" when no SPA build exists — the normal state of a
+# source install (`uvx --from git+…`), whose wheel is built on the user's
+# machine where web/dist never exists (#141). Everything but the web app
+# works, so the page says exactly that and routes people to the API docs, the
+# MCP endpoint, and the two ways to get the full web app.
+_SPA_MISSING_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Potluck — web app not bundled</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 40rem;
+             margin: 4rem auto; padding: 0 1rem; line-height: 1.6; }
+      code { background: #8881; border-radius: 4px; padding: 0.1rem 0.3rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Potluck is running</h1>
+    <p>The REST API and MCP server are up — but this install has no web app
+    build. Installs from source (<code>uvx --from git+https://…</code>) don't
+    ship it.</p>
+    <ul>
+      <li><a href="/api/docs">Interactive API docs</a></li>
+      <li>MCP endpoint for AI clients: <code>/mcp</code></li>
+    </ul>
+    <p>To get the web app, install from a
+    <a href="https://github.com/DoubleGremlin181/potluck/releases">release</a>
+    instead — release wheels and the Docker image embed it. Working from a
+    checkout? Build it with <code>cd web &amp;&amp; npm ci &amp;&amp; npm run
+    build</code> and restart.</p>
+  </body>
+</html>
+"""
 
 # Bounded grace for a finishing background import at shutdown: clean exits
 # settle the ledger row; a long-running import still exceeds this and leans
@@ -95,8 +124,8 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
         app.mount("/", SPAStaticFiles(directory=web_dist, html=True), name="spa")
     else:
 
-        @app.get("/", response_class=PlainTextResponse, include_in_schema=False)
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         def spa_missing() -> str:
-            return _SPA_MISSING
+            return _SPA_MISSING_HTML
 
     return app

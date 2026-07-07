@@ -67,11 +67,17 @@ def test_openapi_and_docs_served(api_client: TestClient) -> None:
     assert api_client.get("/api/docs").status_code == 200
 
 
-def test_root_fallback_message_without_spa_build(api_client: TestClient) -> None:
+def test_root_fallback_page_without_spa_build(api_client: TestClient) -> None:
+    """Source installs (uvx --from git+…) have no web build (#141): "/" must
+    serve an HTML page that says the server works and routes the user to the
+    API docs, the MCP endpoint, and the release install that bundles the SPA."""
     resp = api_client.get("/")
     assert resp.status_code == 200
-    assert "SPA build" in resp.text
-    assert "npm" in resp.text
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "/api/docs" in resp.text
+    assert "/mcp" in resp.text
+    assert "https://github.com/DoubleGremlin181/potluck/releases" in resp.text
+    assert "npm run" in resp.text  # checkout users still get the build hint
 
 
 def _spa_client(tmp_path: Path) -> tuple[TestClient, AppContext]:

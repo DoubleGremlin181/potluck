@@ -1,6 +1,6 @@
 [project]
 name = "potluck"
-version = "1.0.0a3"
+version = "1.0.0b1"
 description = "Privacy-first personal knowledge database for your AI — local-first, MCP-native"
 readme = "README.md"
 license = { text = "MIT" }
@@ -18,6 +18,10 @@ dependencies = [
     "platformdirs>=4.3",
     "python-multipart>=0.0.20",  # FastAPI multipart form parsing (POST /api/imports/upload)
     "httpx>=0.28",
+    # starlette 1.x TestClient backend: the shipped bench scenarios import
+    # fastapi.testclient, and with only httpx 0.x installed every CLI
+    # invocation of a non-dev install printed a deprecation warning (#141).
+    "httpx2>=2",
     "rich>=13",
 ]
 
@@ -41,7 +45,6 @@ dev = [
     "mypy>=1.14",
     "pre-commit>=4",
     "import-linter>=2",
-    "httpx2>=2",  # starlette 1.x TestClient deprecates httpx 0.x at test time
     "pytest-asyncio>=0.25",
     "pytest-xdist>=3.6",
     "pytest-playwright>=0.6",
