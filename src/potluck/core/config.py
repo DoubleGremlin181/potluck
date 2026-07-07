@@ -13,7 +13,12 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
-from potluck.core.paths import config_dir, default_attachments_dir, default_db_path
+from potluck.core.paths import (
+    config_dir,
+    default_attachments_dir,
+    default_db_path,
+    default_uploads_dir,
+)
 
 
 class Settings(BaseSettings):
@@ -29,6 +34,12 @@ class Settings(BaseSettings):
     # blob extraction to attachments_dir is opt-in.
     extract_attachments: bool = False
     attachments_dir: Path = Field(default_factory=default_attachments_dir)
+    # Managed landing directory for archives uploaded via the API (#132).
+    uploads_dir: Path = Field(default_factory=default_uploads_dir)
+    # Upload size cap for POST /api/imports/upload: the copy into uploads_dir
+    # stops (and the partial file is removed) beyond this. 10 GiB default —
+    # real Takeout exports split into 2/4/10 GB parts.
+    max_upload_bytes: int = 10 * 1024**3
     # MIME parse worker processes (#199): 0 = auto (min(4, cpu_count) —
     # measured flat beyond 4 workers); 1 = sequential, no pool.
     ingest_workers: int = 0

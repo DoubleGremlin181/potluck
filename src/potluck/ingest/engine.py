@@ -229,11 +229,19 @@ def run_import(
     file_hash: str | None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     extract_attachments: bool = False,
+    items_total: int | None = None,
 ) -> int:
     """Drive a full import; returns import_id.
 
     The ledger row is the source of truth: status is 'completed' on success,
     'failed' (with error text) on any exception, which is then re-raised.
+
+    Progress (#132) rides the existing per-batch cadence: record_batch bumps
+    the row's counters inside each batch's commit — one small UPDATE per
+    batch, never per item — so a poller always sees the last committed batch.
+    items_total is stored as the expected denominator when the caller can
+    know it cheaply; None means unknown (the engine never pre-scans a stream
+    just to count).
 
     Identity and counters: drafts with an external_id have one logical row per
     (source, external_id) — a draft matching an existing row updates it in
@@ -256,6 +264,7 @@ def run_import(
             file_hash=file_hash,
             parser_version=parser_version,
             extract_attachments=extract_attachments,
+            items_total=items_total,
         )
         return sid, iid
 

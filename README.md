@@ -14,7 +14,7 @@ telemetry: nothing leaves your machine.
 | P0 Reset & Walking Skeleton | `potluck serve` zero-config: SPA shell; CLI/API/MCP answer stats from one service layer; bench rig + CI | ✅ `v1.0.0-alpha.1` |
 | P1 Storage Core & First Ingest | Google Keep from a Takeout archive (zip/tgz/dir); FTS search via CLI + MCP | ✅ `v1.0.0-alpha.2` |
 | P2 Gmail at Scale & Search v1 | Multi-GB mbox ingested incrementally; filtered/snippeted search | ✅ `v1.0.0-alpha.3` |
-| P3 MVP Interfaces | Real search/item/imports UI, MCP toolset v1 — **beta.1 = MVP** | — |
+| P3 MVP Interfaces | Real search/item/imports UI, MCP toolset v1 — **beta.1 = MVP** | ✅ `v1.0.0-beta.1` |
 | P4 Source Expansion & Automation | Remaining planned sources, watch-folder, scheduled GDrive pull | — |
 | P5 Semantic Search | Unified embedding space, HNSW index, hybrid RRF | — |
 | P6 Vision & Media Enrichment | OCR, image embeddings, faces, media gallery | — |
@@ -25,30 +25,48 @@ Full plan, architecture, and locked decisions: pinned
 [issue #98](https://github.com/DoubleGremlin181/potluck/issues/98). v0 is archived at
 [`archive/v0`](https://github.com/DoubleGremlin181/potluck/tree/archive/v0).
 
-## Quickstart
+## Quickstart — 60 seconds to running
 
 Requires [uv](https://docs.astral.sh/uv/) (Python is fetched automatically).
 
-Run straight from GitHub — CLI, API, and MCP work; the web UI needs a built SPA, which this
-form does not include:
+**1 — Start the server.** Straight from GitHub:
 
 ```bash
 uvx --from git+https://github.com/DoubleGremlin181/potluck potluck serve
 ```
 
-Release wheels ship with the web app embedded:
+CLI, API, and MCP are fully functional in this form; only the web app is not
+bundled (the page at `/` says so and points at the API docs). Release wheels
+ship with the web app embedded:
 
 ```bash
-uvx --from https://github.com/DoubleGremlin181/potluck/releases/download/v1.0.0-alpha.1/potluck-1.0.0a1-py3-none-any.whl potluck serve
+uvx --from https://github.com/DoubleGremlin181/potluck/releases/download/v1.0.0-beta.1/potluck-1.0.0b1-py3-none-any.whl potluck serve
 ```
 
-Or Docker (data persists in the `potluck-data` volume):
+Or Docker (web app included; data persists in the `potluck-data` volume):
 
 ```bash
-docker run -p 127.0.0.1:8765:8765 -v potluck-data:/data ghcr.io/doublegremlin181/potluck:1.0.0-alpha.1
+docker run -p 127.0.0.1:8765:8765 -v potluck-data:/data ghcr.io/doublegremlin181/potluck:1.0.0-beta.1
 ```
 
-Then open <http://127.0.0.1:8765>.
+**2 — Import your data.** Feed it a [Google Takeout](https://takeout.google.com/)
+export (Keep + Gmail today; zip, tgz, or unpacked dir) — reuse the same
+`uvx --from … potluck` prefix for every command, or upload from the web app's
+Imports page:
+
+```bash
+uvx --from git+https://github.com/DoubleGremlin181/potluck potluck import ~/Downloads/takeout-20260707T120000Z-001.zip
+```
+
+**3 — Search it.**
+
+```bash
+uvx --from git+https://github.com/DoubleGremlin181/potluck potluck search "garden fence"
+```
+
+The web app lives at <http://127.0.0.1:8765> — `potluck serve` opens it for
+you. Search and browse everything, start imports, and watch their progress
+live.
 
 > [!WARNING]
 > Potluck is localhost-only by design — there is no authentication in v1. Do not expose it
@@ -69,12 +87,16 @@ stdio (Claude Desktop, Claude Code, …):
 }
 ```
 
-Streamable HTTP instead: `potluck mcp --http` (default `127.0.0.1:8766`).
+Streamable HTTP instead: `potluck serve` exposes the same tools at
+`http://127.0.0.1:8765/mcp` — one server surface for web app, API and MCP.
 
 Toolset: `search` (keyword search with ranked, snippeted hits), `list_items`
 (browse/filter without a query), `get_item` (full content by id), `get_thread`
 (the whole email conversation around an item), `get_stats` (database
-overview). Richer MCP surface lands with P3.
+overview), `list_sources` (what this build can ingest).
+
+**Setup guides — Claude Desktop, Claude Code, OpenClaw, Hermes, direct REST
+without MCP, and troubleshooting: [docs/ai-integration.md](docs/ai-integration.md).**
 
 ## CLI
 
@@ -84,8 +106,8 @@ potluck search Q     full-text search (--kind, --prefix, --cursor, --limit, --js
 potluck list         browse items without a query (--kind, --source, --since, --sort, --json)
 potluck show ID      full item content + metadata (--thread: the whole conversation)
 potluck status       database overview + per-import stats
-potluck serve        web app + API on one port (opens your browser)
-potluck mcp          MCP server (stdio; --http for streamable HTTP)
+potluck serve        web app + API + MCP (/mcp) on one port (opens your browser)
+potluck mcp          MCP server on stdio (HTTP lives at /mcp on the serve port)
 potluck bench run    benchmark harness (smoke/full tiers)
 potluck dev          source-plugin scaffolding (new-source / check-source)
 ```

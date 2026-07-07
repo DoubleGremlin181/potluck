@@ -18,6 +18,7 @@ from potluck.services.context import AppContext, create_context
 from potluck.services.imports import import_path
 from potluck.services.search import search as real_search
 from potluck.testing.keep import write_keep_takeout
+from potluck.testing.spa import referenced_assets, write_spa_dist
 
 runner = CliRunner()
 
@@ -208,3 +209,54 @@ def test_registry_has_sequential_gmail_ab_variant() -> None:
     full = {s.name for s in scenarios_for("full", ALL_SCENARIOS)}
     assert "ingest_gmail_8k" in full
     assert "ingest_gmail_8k_seq" in full
+
+
+def test_registry_has_api_search_scenarios() -> None:
+    """#131: end-to-end REST search is benched at both tiers — the nightly
+    100k budget anchor plus a cheap 10k PR-CI tracking variant."""
+    smoke = {s.name for s in scenarios_for("smoke", ALL_SCENARIOS)}
+    full = {s.name for s in scenarios_for("full", ALL_SCENARIOS)}
+    assert "api_search_10k" in smoke
+    assert "api_search_p95_100k" in full - smoke
+
+    by_name = {s.name: s for s in ALL_SCENARIOS}
+    # item_count = query count for both, so throughput_items_s = queries/s.
+    assert by_name["api_search_10k"].item_count == by_name["api_search_p95_100k"].item_count == 100
+
+
+def test_registry_has_quickstart_scenarios() -> None:
+    """#141: the beta.1 quickstart budgets are tracked from PR CI — serve
+    cold start and SPA cold load ride the smoke tier."""
+    smoke = {s.name for s in scenarios_for("smoke", ALL_SCENARIOS)}
+    assert "serve_cold_start" in smoke
+    assert "spa_cold_load" in smoke
+
+
+def test_synthetic_spa_dist_mirrors_vite_build_shape(tmp_path: Path) -> None:
+    """The generator must emit exactly what the cold-load scenario fetches:
+    index.html referencing one JS module + one stylesheet, at sizes mirroring
+    the real bundle (so the bench measures a realistic payload)."""
+    dist = write_spa_dist(tmp_path / "dist")
+    index = (dist / "index.html").read_text()
+    assets = referenced_assets(index)
+    assert assets == ["/assets/index-synth.js", "/assets/index-synth.css"]
+    assert (dist / "assets" / "index-synth.js").stat().st_size == 650_000
+    assert (dist / "assets" / "index-synth.css").stat().st_size == 52_000
+    # the same parser must also read a real Vite index.html
+    real_shaped = (
+        '<script type="module" crossorigin src="/assets/index-CCfKwpwm.js"></script>\n'
+        '<link rel="stylesheet" crossorigin href="/assets/index-tkRNzc0x.css">'
+    )
+    assert referenced_assets(real_shaped) == [
+        "/assets/index-CCfKwpwm.js",
+        "/assets/index-tkRNzc0x.css",
+    ]
+
+
+def test_spa_cold_load_scenario_fetches_index_and_assets(tmp_path: Path) -> None:
+    """One in-process pass of the scenario: setup writes the synthetic dist,
+    run must complete (it raises internally on missing assets or non-200s)."""
+    (scenario,) = [s for s in ALL_SCENARIOS if s.name == "spa_cold_load"]
+    assert scenario.setup is not None
+    scenario.setup(tmp_path)
+    scenario.run(tmp_path)

@@ -126,8 +126,9 @@ def test_search_json(tmp_path: Path) -> None:
     assert "hits" in data
     assert len(data["hits"]) >= 1
     hit = data["hits"][0]
-    for key in ("id", "kind", "title", "snippet", "score", "ts"):
+    for key in ("id", "kind", "source", "title", "snippet", "score", "ts"):
         assert key in hit, f"missing key {key!r} in hit"
+    assert hit["source"] == "google_keep"
 
 
 def test_search_no_results(tmp_path: Path) -> None:

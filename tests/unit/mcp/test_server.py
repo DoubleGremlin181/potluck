@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from fastmcp import Client, FastMCP
 
-from potluck.mcp.server import create_mcp, run_http, run_stdio
+import potluck.mcp.server
+from potluck.mcp.server import create_mcp, run_stdio
 from potluck.services.context import AppContext
 
 
@@ -25,7 +26,7 @@ async def test_get_stats_description_written_for_ai(ctx: AppContext) -> None:
     assert "knowledge database" in description
 
 
-def test_run_helpers_wire_transports(ctx: AppContext, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_stdio_wires_transport(ctx: AppContext, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
 
     def fake_run(self: FastMCP, transport: str | None = None, **kwargs: Any) -> None:
@@ -33,8 +34,10 @@ def test_run_helpers_wire_transports(ctx: AppContext, monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(FastMCP, "run", fake_run)
     run_stdio(ctx)
-    run_http(ctx, host="127.0.0.1", port=8766)
-    assert calls[0]["transport"] == "stdio"
-    assert calls[1]["transport"] == "http"
-    assert calls[1]["host"] == "127.0.0.1"
-    assert calls[1]["port"] == 8766
+    assert calls == [{"transport": "stdio", "show_banner": False}]
+
+
+def test_separate_http_port_path_removed() -> None:
+    """The pre-#138 separate-port HTTP server (8766) is gone: streamable HTTP
+    is served only as the /mcp mount inside the main app."""
+    assert not hasattr(potluck.mcp.server, "run_http")

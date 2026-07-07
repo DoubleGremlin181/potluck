@@ -29,5 +29,17 @@ class ItemNotFoundError(PotluckError):
     """No item with the given id exists in the database."""
 
 
+class ImportNotFoundError(PotluckError):
+    """No import run with the given id exists in the ledger."""
+
+
+class ImportInProgressError(PotluckError):
+    """A background import is already running; only one runs at a time (#132)."""
+
+
+class UploadTooLargeError(PotluckError):
+    """An uploaded archive exceeds the configured max_upload_bytes limit."""
+
+
 class InvalidCursorError(PotluckError):
     """The search pagination cursor is malformed or of an unsupported version."""

@@ -61,7 +61,9 @@ def _filter_predicates(
 
     The kind/source/date fragments come from storage.items (which owns items
     SQL); this module adds only the search-specific parts — the joins those
-    fragments need here and the emails-satellite from: filter. Returns
+    fragments need here and the emails-satellite from: filter. The
+    ``sources AS s`` join the source-name filter relies on is always present
+    (both SELECT variants render it for the ``source`` column). Returns
     (predicates, params, joins).
     """
     predicates, params = item_filter_predicates(
@@ -69,8 +71,6 @@ def _filter_predicates(
     )
     joins: list[str] = []
 
-    if sources:
-        joins.append("JOIN sources AS s ON s.id = i.source_id")
     if from_addrs:
         joins.append("JOIN emails AS e ON e.item_id = i.id")
         alternatives: list[str] = []
@@ -103,7 +103,9 @@ def build_search_sql(
 ) -> tuple[str, list[object]]:
     """Render one search SELECT.
 
-    Columns: id, kind, title, title_highlight, ts, snippet, score.
+    Columns: id, kind, title, title_highlight, ts, snippet, score, source.
+    Both variants join ``sources AS s`` for the source name — a tiny table
+    reached by integer PK, so the per-candidate cost is negligible.
 
     With *match*: BM25-ranked FTS5 search, filters as AND predicates, plus an
     optional keyset cursor — ``max_id`` freezes the candidate set (concurrent
@@ -139,8 +141,9 @@ def build_search_sql(
             "SELECT i.id, i.kind, i.title, "
             "highlight(items_fts, 0, '[', ']') AS title_highlight, i.ts, "
             "snippet(items_fts, -1, '[', ']', '…', 12) AS snippet, "
-            "bm25(items_fts, ?, ?) AS score "
-            "FROM items_fts JOIN items AS i ON i.id = items_fts.rowid"
+            "bm25(items_fts, ?, ?) AS score, s.name AS source "
+            "FROM items_fts JOIN items AS i ON i.id = items_fts.rowid "
+            "JOIN sources AS s ON s.id = i.source_id"
             f"{join_sql} WHERE items_fts MATCH ?{where_sql}{cursor_sql} "
             "ORDER BY score, i.id LIMIT ? OFFSET ?"
         )
@@ -151,8 +154,9 @@ def build_search_sql(
         sql = (
             "SELECT i.id, i.kind, i.title, NULL AS title_highlight, i.ts, "
             f"COALESCE({TEXT_PREVIEW_SQL}, '') AS snippet, "
-            "0.0 AS score "
-            f"FROM items AS i{join_sql} WHERE 1=1{where_sql} "
+            "0.0 AS score, s.name AS source "
+            f"FROM items AS i JOIN sources AS s ON s.id = i.source_id{join_sql} "
+            f"WHERE 1=1{where_sql} "
             f"ORDER BY {LIST_ORDER[ItemSort.TS_DESC]} LIMIT ? OFFSET ?"
         )
         all_params = list(params)

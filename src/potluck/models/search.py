@@ -58,6 +58,7 @@ class SearchHit(BaseModel):
 
     id: int
     kind: ItemKind
+    source: str = Field(description="Name of the source the item was ingested from (sources.name).")
     title: str | None
     title_highlight: str | None = Field(
         default=None,

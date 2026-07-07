@@ -26,6 +26,9 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from potluck.api.app import create_app
 from potluck.bench.registry import Scenario, Tier
 from potluck.core.config import Settings
 from potluck.ingest.engine import run_import
@@ -37,6 +40,8 @@ from potluck.storage.db import Database
 from potluck.testing.generators import WORDS, synthetic_notes
 from potluck.testing.keep import write_keep_takeout
 from potluck.testing.mbox import TAIL_WORDS, synthetic_email_drafts, write_gmail_takeout
+from potluck.testing.server import free_port, spawn_serve, wait_for_health
+from potluck.testing.spa import referenced_assets, write_spa_dist
 
 _NOTE_COUNT = 5000
 
@@ -278,6 +283,75 @@ def _keep_prefix_run(workdir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P3: end-to-end REST search (#131)
+# ---------------------------------------------------------------------------
+
+
+def _api_search_run(workdir: Path) -> None:
+    """Drive GET /api/search through starlette's TestClient — in-process
+    ASGI, so the measurement is server time (routing + param validation +
+    search service + JSON serialization) without network-socket noise.
+    Reuses _FTS_SCALE_QUERIES: the same realistic-selectivity workload the
+    service-level fts scenarios measure, over the same email corpus."""
+    ctx = _make_ctx(workdir)
+    try:
+        with TestClient(create_app(ctx)) as client:
+            for q in _FTS_SCALE_QUERIES:
+                resp = client.get("/api/search", params={"q": q})
+                resp.raise_for_status()
+    finally:
+        ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
+# P3: serve cold start + SPA cold load (#141)
+# ---------------------------------------------------------------------------
+
+
+def _serve_cold_start_run(workdir: Path) -> None:
+    """Real ``potluck serve`` subprocess: spawn -> first 200 from /api/health.
+
+    This is the beta.1 quickstart moment (interpreter start, imports, DB
+    open, uvicorn bind), so it must be a process, not an in-process app.
+    Teardown is a hard kill on purpose: nothing is being written (fresh empty
+    DB, no import running) and SIGKILL + wait costs ~1 ms, so graceful
+    shutdown time never pollutes the cold-start measurement.
+    """
+    port = free_port()
+    proc = spawn_serve(workdir, port)
+    try:
+        wait_for_health(port, proc)
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def _spa_cold_load_setup(workdir: Path) -> None:
+    write_spa_dist(workdir / "dist")
+
+
+def _spa_cold_load_run(workdir: Path) -> None:
+    """Fetch / plus every JS/CSS asset index.html references — the requests a
+    browser must complete before first render, over the synthetic build that
+    mirrors the real bundle's weight (see testing/spa.py).  In-process ASGI
+    like the api_search scenarios: server time without socket noise (the
+    nightly budget test re-measures over a real localhost socket)."""
+    ctx = create_context(Settings(db_path=workdir / "bench.db", web_dist=workdir / "dist"))
+    try:
+        with TestClient(create_app(ctx)) as client:
+            index = client.get("/")
+            index.raise_for_status()
+            assets = referenced_assets(index.text)
+            if len(assets) != 2:
+                raise RuntimeError(f"expected 2 referenced assets, found {assets}")
+            for asset in assets:
+                resp = client.get(asset)
+                resp.raise_for_status()
+    finally:
+        ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
 # Scenario registry
 # ---------------------------------------------------------------------------
 
@@ -343,5 +417,32 @@ ALL_SCENARIOS = [
         item_count=_SEARCH_QUERY_COUNT,
         setup=_imported_keep_10k_setup,
         run=_keep_prefix_run,
+    ),
+    # P3 REST search end-to-end (#131): nightly 100k budget anchor (p95
+    # < 100 ms, asserted in test_p3_budgets.py) + smoke 10k PR-CI tracker
+    Scenario(
+        name="api_search_p95_100k",
+        tier="full",
+        item_count=_SEARCH_QUERY_COUNT,
+        setup=_email_corpus_setup(100_000),
+        run=_api_search_run,
+    ),
+    Scenario(
+        name="api_search_10k",
+        tier="smoke",
+        item_count=_SEARCH_QUERY_COUNT,
+        setup=_email_corpus_setup(10_000),
+        run=_api_search_run,
+    ),
+    # P3 quickstart budgets (#141): item_count=1 for both, so
+    # throughput_items_s reads as cold starts (loads) per second.  Budgets
+    # (serve < 2 s, SPA load < 1 s) are asserted in test_p3_budgets.py.
+    Scenario(name="serve_cold_start", tier="smoke", item_count=1, run=_serve_cold_start_run),
+    Scenario(
+        name="spa_cold_load",
+        tier="smoke",
+        item_count=1,
+        setup=_spa_cold_load_setup,
+        run=_spa_cold_load_run,
     ),
 ]

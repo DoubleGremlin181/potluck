@@ -164,6 +164,6 @@ def test_migration_idempotent_at_v3(tmp_path: Path) -> None:
     try:
         with db.read() as conn:
             version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-        assert version == 9
+        assert version == 10
     finally:
         db.close()

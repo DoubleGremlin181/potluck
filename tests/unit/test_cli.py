@@ -41,20 +41,26 @@ def test_serve_wires_uvicorn_with_overrides(monkeypatch: pytest.MonkeyPatch) -> 
     assert captured["port"] == 9999
 
 
-def test_mcp_command_runs_stdio_then_http(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_mcp_command_runs_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[Any] = []
 
     def fake_stdio(ctx: Any) -> None:
         calls.append("stdio")
 
-    def fake_http(ctx: Any, *, host: str, port: int) -> None:
-        calls.append(("http", host, port))
-
     monkeypatch.setattr("potluck.cli.app.run_stdio", fake_stdio)
-    monkeypatch.setattr("potluck.cli.app.run_http", fake_http)
     assert runner.invoke(app, ["mcp"]).exit_code == 0
-    assert runner.invoke(app, ["mcp", "--http", "--port", "9000"]).exit_code == 0
-    assert calls == ["stdio", ("http", "127.0.0.1", 9000)]
+    assert calls == ["stdio"]
+
+
+def test_mcp_command_has_no_separate_http_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The separate-port --http path (8766) is gone (#138): streamable HTTP is
+    the /mcp mount on the serve port."""
+    # Belt-and-braces: if the option were ever reintroduced, fail the assert
+    # below instead of starting a real server inside the test run.
+    monkeypatch.setattr("potluck.cli.app.run_stdio", lambda ctx: None, raising=False)
+    monkeypatch.setattr("potluck.cli.app.run_http", lambda ctx, **kw: None, raising=False)
+    assert runner.invoke(app, ["mcp", "--http"]).exit_code != 0
+    assert runner.invoke(app, ["mcp", "--port", "8766"]).exit_code != 0
 
 
 def test_bench_run_prints_summary() -> None:
