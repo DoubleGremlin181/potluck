@@ -5,9 +5,11 @@ Budgets (4-core CPU CI-class):
 - no-op re-run of the same archive < 60 s (ledger short-circuit)
 - superset re-import ingests only the delta at 10k -> 12k
 
-The import runs in a SUBPROCESS so ru_maxrss reflects the import alone, and
-the no-op re-run pays the honest cost (interpreter start, file hash of the
-full archive) in a fresh process.
+The import runs in a SUBPROCESS so its peak RSS is measured alone — via
+VmHWM, not ru_maxrss, because a child's ru_maxrss is polluted by the
+spawning pytest process's resident set (mechanism documented in
+test_p2_mbox_rss.py) — and the no-op re-run pays the honest cost
+(interpreter start, file hash of the full archive) in a fresh process.
 """
 
 import os
@@ -28,7 +30,7 @@ _RSS_BUDGET_KB = 1_572_864  # 1.5 GB
 _NOOP_BUDGET_S = 60
 
 _DRIVER = """
-import resource, sys, time
+import sys, time
 from pathlib import Path
 from potluck.services.context import create_context
 from potluck.services.imports import import_path
@@ -38,7 +40,10 @@ started = time.perf_counter()
 runs = import_path(ctx, Path(sys.argv[1]))
 elapsed = time.perf_counter() - started
 ctx.db.close()
-rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # KB on Linux
+# VmHWM (KB), not ru_maxrss — a child's ru_maxrss is polluted by the spawning
+# pytest process's resident set (mechanism in test_p2_mbox_rss.py).
+with open("/proc/self/status") as f:
+    rss_kb = next(int(line.split()[1]) for line in f if line.startswith("VmHWM:"))
 [run] = runs
 print(f"{run.id} {run.items_new} {run.items_duplicate} {elapsed:.2f} {rss_kb}")
 """
