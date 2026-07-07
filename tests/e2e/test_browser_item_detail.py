@@ -38,6 +38,11 @@ THREAD_TAIL = 5  # mirrors the UI's long-thread collapse window
 
 CHECKLIST_TEXT = "Trailhead notes for the *big* trip.\n\n- [x] tent\n- [ ] stove\n- [x] lantern\n"
 
+# Real-data defect: a 998-char unbroken Gmail subject overflowed the detail
+# page sideways. One ~500-char unbroken token reproduces it.
+UNBROKEN_SUBJECT = "Zq" * 250
+UNBROKEN_BODY_TOKEN = "kryptonwall"
+
 
 @pytest.fixture(scope="module")
 def detail_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
@@ -123,7 +128,18 @@ def detail_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
             text=CHECKLIST_TEXT,
             ts=_T0 + timedelta(days=2),
         )
-        ingest_email_drafts(ctx, *short_thread, *long_thread, note, source_name="gmail")
+        pathological = email_draft(
+            40,
+            thread_key="wall@potluck.test",
+            message_id="wall@potluck.test",
+            ts=_T0 + timedelta(days=3),
+            title=UNBROKEN_SUBJECT,
+            text=f"{UNBROKEN_BODY_TOKEN} probe body for the overflow guard.",
+            from_addr="eve@potluck.test",
+        )
+        ingest_email_drafts(
+            ctx, *short_thread, *long_thread, note, pathological, source_name="gmail"
+        )
     finally:
         ctx.db.close()
     with serve_app(db_path, root / "config") as url:
@@ -335,3 +351,30 @@ def test_missing_item_shows_not_found_state(detail_server: str, page: Page) -> N
     expect(not_found).to_contain_text("Item not found")
     not_found.get_by_role("link", name="Back to search").click()
     expect(page.get_by_test_id("empty-idle")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# Pathological titles: giant unbroken subjects wrap instead of overflowing
+# ---------------------------------------------------------------------------
+
+NO_H_OVERFLOW = "el => el.scrollWidth <= el.clientWidth"
+
+
+def test_unbroken_long_subject_does_not_overflow(detail_server: str, page: Page) -> None:
+    """Real-data defect: a ~1000-char unbroken subject scrolled the detail
+    page sideways (scrollWidth 4987px vs a 720px container). The results row
+    and the detail title must both contain a 500-char unbroken token."""
+    page.goto(f"{detail_server}/?q={UNBROKEN_BODY_TOKEN}")
+    row = page.get_by_test_id("result-row").first
+    expect(row).to_be_visible()
+    expect(row).to_contain_text(UNBROKEN_SUBJECT[:40])
+    assert row.evaluate(NO_H_OVERFLOW), "search result row overflows horizontally"
+
+    row.click()
+    title = page.get_by_test_id("item-title")
+    expect(title).to_have_text(UNBROKEN_SUBJECT)
+    assert title.evaluate(NO_H_OVERFLOW), "item title overflows horizontally"
+    # The whole detail page keeps a single vertical scroll axis.
+    assert page.get_by_test_id("item-page").evaluate(NO_H_OVERFLOW), (
+        "detail page overflows horizontally"
+    )

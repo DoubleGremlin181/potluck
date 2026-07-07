@@ -101,7 +101,12 @@ export function ItemPage() {
                 </Badge>
                 {item.ts && <span data-testid="item-date">{formatDate(item.ts)}</span>}
               </div>
-              <h2 data-testid="item-title" className="text-xl font-semibold tracking-tight">
+              {/* break-words: real Gmail subjects reach ~1000 unbroken chars
+                  and must wrap instead of scrolling the page sideways. */}
+              <h2
+                data-testid="item-title"
+                className="text-xl font-semibold tracking-tight break-words"
+              >
                 {item.title ?? 'Untitled'}
               </h2>
             </header>
@@ -266,7 +271,15 @@ function ThreadMessage({
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-baseline gap-3 rounded-lg px-4 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className={cn('shrink-0 truncate text-sm font-medium', expanded && 'break-all')}>
+        {/* Collapsed: one ellipsized line, width-capped so a pathological
+            sender can't push the row wide. Expanded: wraps fully — truncate's
+            nowrap would defeat break-all, so it only applies collapsed. */}
+        <span
+          className={cn(
+            'text-sm font-medium',
+            expanded ? 'min-w-0 break-all' : 'max-w-[60%] shrink-0 truncate',
+          )}
+        >
           {from}
         </span>
         {!expanded && (

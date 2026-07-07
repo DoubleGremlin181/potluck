@@ -39,7 +39,9 @@ export function ResultRow({ hit }: { hit: SearchHit }) {
             )}
           </span>
         </span>
-        <span className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+        {/* break-words: an unbroken pathological token wraps into the two
+            clamped lines instead of rendering as a single clipped line. */}
+        <span className="mt-0.5 line-clamp-2 text-sm break-words text-muted-foreground">
           {parseHighlight(hit.snippet)}
         </span>
       </span>
