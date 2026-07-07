@@ -47,7 +47,13 @@ print(f"{run.id} {run.items_new} {run.items_duplicate} {elapsed:.2f} {rss_kb}")
 def _import_subprocess(
     archive: Path, data_home: Path, extra_env: dict[str, str] | None = None
 ) -> tuple[int, int, int, float, int]:
-    env = dict(os.environ, XDG_DATA_HOME=str(data_home), XDG_CONFIG_HOME=str(data_home / "cfg"))
+    # Scrub inherited POTLUCK_* (matching tests/e2e/conftest.py): the autouse
+    # isolated_dirs fixture pins POTLUCK_DB_PATH in the pytest process, and env
+    # beats the XDG-derived default — without this, every subprocess of one
+    # test would share a single database regardless of its data_home, and
+    # cross-import content dedup would corrupt the counts being asserted.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("POTLUCK_")}
+    env.update(XDG_DATA_HOME=str(data_home), XDG_CONFIG_HOME=str(data_home / "cfg"))
     env.update(extra_env or {})
     proc = subprocess.run(
         [sys.executable, "-c", _DRIVER, str(archive)],
