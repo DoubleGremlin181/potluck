@@ -4,6 +4,18 @@ Nightly tier (@pytest.mark.bench): generates ~1 GB in tmp, parses it in a
 SUBPROCESS (ru_maxrss is a process-lifetime high-water mark — sibling tests
 would pollute an in-process measurement), and asserts peak RSS stays far below
 the corpus size. Nothing large is ever committed.
+
+A subprocess alone is NOT enough, and ru_maxrss must not be the metric: the
+fork/vfork child starts with the parent's mm (shared or copied), and execve
+folds that pre-exec mm's high-water mark into the child's signal->maxrss —
+which getrusage reports and nothing (not even /proc/self/clear_refs) can
+reset. A fresh child's ru_maxrss is therefore max(parent RSS at spawn, own
+true peak); in the full bench tier that parent is the pytest runner sitting
+at ~455 MB after the in-process 250k-FTS-corpus test, which is exactly what
+the nightly measured (452-455 MB, deterministic, four nights) while the
+parse itself peaks at ~90 MB. The driver reads VmHWM from /proc/self/status
+instead: that reads only the CURRENT mm's watermark, which execve starts
+fresh (verified: 500 MB parent -> child VmHWM 16 MB, child ru_maxrss 518 MB).
 """
 
 import subprocess
@@ -20,7 +32,7 @@ _BODY_KB = 500
 _MAX_RSS_MB = 300
 
 _DRIVER = """
-import resource, sys
+import sys
 from potluck.ingest.mbox import iter_mbox_messages, parse_email
 
 count = 0
@@ -29,7 +41,10 @@ with open(sys.argv[1], "rb") as f:
         parsed = parse_email(raw)
         count += 1
 
-rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # KB on Linux
+# VmHWM (KB), not ru_maxrss — see module docstring: a child's ru_maxrss is
+# floored at the spawning process's resident set as of fork/vfork.
+with open("/proc/self/status") as f:
+    rss_kb = next(int(line.split()[1]) for line in f if line.startswith("VmHWM:"))
 print(f"{count} {rss_kb}")
 """
 
