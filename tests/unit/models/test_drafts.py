@@ -1,10 +1,17 @@
-"""EmailDraft DTO (#123) and MessageDraft DTO (#142)."""
+"""EmailDraft DTO (#123), MessageDraft DTO (#142), PostDraft/BookmarkDraft (#143)."""
 
 import pytest
 from pydantic import ValidationError
 
 from potluck.ingest.hashing import content_hash
-from potluck.models.drafts import EmailAttachment, EmailDraft, MessageDraft, MessageMedia
+from potluck.models.drafts import (
+    BookmarkDraft,
+    EmailAttachment,
+    EmailDraft,
+    MessageDraft,
+    MessageMedia,
+    PostDraft,
+)
 from potluck.models.items import ItemKind
 
 
@@ -62,6 +69,37 @@ def test_message_draft_is_frozen() -> None:
     draft = MessageDraft(chat_key="chat")
     with pytest.raises(ValidationError):
         draft.sender = "Ada Example"
+
+
+def test_post_draft_defaults_and_kind() -> None:
+    draft = PostDraft(title="a title", text="a body")
+    assert draft.kind is ItemKind.POST
+    assert draft.external_id is None
+    assert draft.meta == {}
+    assert draft.extra_hash_parts() == ()
+
+
+def test_bookmark_draft_defaults_and_kind() -> None:
+    draft = BookmarkDraft(title="a saved thing")
+    assert draft.kind is ItemKind.BOOKMARK
+    assert draft.ts is None
+    assert draft.text is None
+    assert draft.extra_hash_parts() == ()
+
+
+def test_post_and_bookmark_drafts_are_frozen() -> None:
+    post = PostDraft(text="x")
+    bookmark = BookmarkDraft(title="y")
+    with pytest.raises(ValidationError):
+        post.text = "changed"
+    with pytest.raises(ValidationError):
+        bookmark.title = "changed"
+
+
+def test_kind_disambiguates_content_hash() -> None:
+    """Same base fields under different kinds must never hash-collide (the
+    kind is part of the canonical identity)."""
+    assert content_hash(PostDraft(text="same")) != content_hash(BookmarkDraft(text="same"))
 
 
 def test_message_extra_hash_parts_cover_every_satellite_field() -> None:

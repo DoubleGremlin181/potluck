@@ -39,6 +39,31 @@ class NoteDraft(BaseDraft):
     kind: Literal[ItemKind.NOTE] = ItemKind.NOTE
 
 
+class PostDraft(BaseDraft):
+    """Draft for a social post item (authored posts, comments, follows).
+
+    Everything lives in the base fields: title = post title (None for
+    comments), text = body, ts = creation time; source-specific context
+    (community, permalink, parent pointers) rides in meta. No satellite
+    table, so no extra_hash_parts — meta changes reconcile through the
+    engine's identity path.
+    """
+
+    kind: Literal[ItemKind.POST] = ItemKind.POST
+
+
+class BookmarkDraft(BaseDraft):
+    """Draft for a saved-link/bookmark item.
+
+    A bookmark records THAT something was saved, not the saved content
+    itself (exports carry the pointer only). text is typically None; the
+    exact link belongs in meta, with title carrying whatever human-readable
+    name the source provides or the link implies.
+    """
+
+    kind: Literal[ItemKind.BOOKMARK] = ItemKind.BOOKMARK
+
+
 class EmailAttachment(BaseModel):
     """Attachment metadata carried on an EmailDraft; bodies never enter the DB."""
 
@@ -142,4 +167,4 @@ class MessageDraft(BaseDraft):
         )
 
 
-type ItemDraft = NoteDraft | EmailDraft | MessageDraft
+type ItemDraft = NoteDraft | EmailDraft | MessageDraft | PostDraft | BookmarkDraft
