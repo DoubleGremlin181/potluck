@@ -60,7 +60,7 @@ DIFFERENT chats imported as separate raw iOS zips both anchor to ``_chat``
 anchor, byte-identical message blocks across the two conversations collide
 on external_id and the second chat's copy silently dedups away (data loss,
 not just cosmetics). Until the Archive seam exposes a source display name
-(follow-up issue), extract such zips into their named folders before
+(#210), extract such zips into their named folders before
 importing. Messages are deliberately not parent_id-chained — chats are
 linear.
 """
@@ -211,7 +211,7 @@ def _chat_identity(member_name: str) -> tuple[str, str]:
     byte-identical messages to cross-chat external_id collisions (the
     fingerprint embeds this anchor). Full consequence + workaround in the
     module docstring; fixing it needs the Archive seam to expose a source
-    display name.
+    display name (#210).
     """
     parts = member_name.split("/")
     base = parts[-1]
