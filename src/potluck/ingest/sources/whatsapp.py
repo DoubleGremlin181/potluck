@@ -73,6 +73,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from potluck.ingest.identity import occurrence_suffix
 from potluck.ingest.plugins import Glob, ParseContext, source
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import MessageDraft, MessageMedia
@@ -266,8 +267,7 @@ def _build_draft(
     text = "\n".join(pieces).strip() or None
 
     fingerprint = _fingerprint(chat_key, "\n".join(raw_lines))
-    occurrence = counters[fingerprint] = counters.get(fingerprint, 0) + 1
-    suffix = "" if occurrence == 1 else f"#{occurrence}"
+    suffix = occurrence_suffix(counters, fingerprint)
 
     return MessageDraft(
         external_id=f"wa:{fingerprint}{suffix}",

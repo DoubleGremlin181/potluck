@@ -84,6 +84,20 @@ class MessageDetail(BaseModel):
     media: list[AttachmentDetail]
 
 
+class TransactionDetail(BaseModel):
+    """Transactions-satellite fields surfaced on item detail (#144).
+
+    amount_milliunits is the exact signed amount in integer milliunits
+    (1/1000 currency unit; outflows negative) — money is never a float.
+    """
+
+    amount_milliunits: int
+    account: str | None
+    payee: str | None
+    category: str | None
+    category_group: str | None
+
+
 class Item(BaseModel):
     """A fully-hydrated item row returned from the storage layer."""
 
@@ -103,6 +117,7 @@ class Item(BaseModel):
     # Satellite detail (#200): hydrated only for kinds with a SATELLITE_READER.
     email: EmailDetail | None = None
     message: MessageDetail | None = None
+    transaction: TransactionDetail | None = None
 
 
 class ItemSort(StrEnum):

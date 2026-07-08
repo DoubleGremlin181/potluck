@@ -12,7 +12,7 @@ from tests.conftest import email_draft, ingest_email_drafts, ingest_keep_corpus
 def test_get_stats_zero_counts_on_empty_db(ctx: AppContext) -> None:
     stats = get_stats(ctx)
     assert stats.version == __version__
-    assert stats.schema_version == 11
+    assert stats.schema_version == 12
     assert stats.items == 0
     assert stats.items_by_kind == {}
     assert stats.sources == 0

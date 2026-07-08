@@ -1,4 +1,5 @@
-"""EmailDraft DTO (#123), MessageDraft DTO (#142), PostDraft/BookmarkDraft (#143)."""
+"""EmailDraft DTO (#123), MessageDraft DTO (#142), PostDraft/BookmarkDraft
+(#143), TransactionDraft (#144)."""
 
 import pytest
 from pydantic import ValidationError
@@ -11,6 +12,7 @@ from potluck.models.drafts import (
     MessageDraft,
     MessageMedia,
     PostDraft,
+    TransactionDraft,
 )
 from potluck.models.items import ItemKind
 
@@ -121,6 +123,56 @@ def test_message_extra_hash_parts_cover_every_satellite_field() -> None:
         base.model_copy(update={"is_media": False}),
         base.model_copy(update={"media": (MessageMedia(filename="b.jpg"),)}),
         base.model_copy(update={"media": (MessageMedia(filename="a.jpg", mime="image/png"),)}),
+    ]
+    hashes = {content_hash(d) for d in [base, *variants]}
+    assert len(hashes) == len(variants) + 1
+
+
+def test_transaction_draft_defaults_and_kind() -> None:
+    draft = TransactionDraft(amount_milliunits=-4990)
+    assert draft.kind is ItemKind.TRANSACTION
+    assert draft.account is None
+    assert draft.payee is None
+    assert draft.category is None
+    assert draft.category_group is None
+
+
+def test_transaction_draft_is_frozen() -> None:
+    draft = TransactionDraft(amount_milliunits=-4990)
+    with pytest.raises(ValidationError):
+        draft.amount_milliunits = -5000
+
+
+def test_transaction_amount_is_required_and_never_a_float() -> None:
+    """Integer milliunits are the money discipline (#144): a missing amount
+    or a float amount must be unconstructable, even an integral float."""
+    with pytest.raises(ValidationError):
+        TransactionDraft()  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        TransactionDraft.model_validate({"amount_milliunits": 4990.0})
+    with pytest.raises(ValidationError):
+        TransactionDraft.model_validate({"amount_milliunits": 49.9})
+
+
+def test_transaction_extra_hash_parts_cover_every_satellite_field() -> None:
+    """The extra_hash_parts invariant: any change to a satellite-persisted
+    field (transactions row) must change the content hash, or re-ingests
+    would dedup the change away as 'unchanged'."""
+    base = TransactionDraft(
+        amount_milliunits=-17500,
+        account="Synth Checking",
+        payee="Corner Bakery",
+        category="Dining Out",
+        category_group="Fun Money",
+        text="team breakfast",
+    )
+    variants = [
+        base.model_copy(update={"amount_milliunits": -17510}),
+        base.model_copy(update={"amount_milliunits": 17500}),  # sign flip
+        base.model_copy(update={"account": "Synth Savings"}),
+        base.model_copy(update={"payee": "Corner Cafe"}),
+        base.model_copy(update={"category": "Groceries"}),
+        base.model_copy(update={"category_group": "Bills"}),
     ]
     hashes = {content_hash(d) for d in [base, *variants]}
     assert len(hashes) == len(variants) + 1

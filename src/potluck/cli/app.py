@@ -304,7 +304,25 @@ def show(
         if msg.is_media:
             media = ", ".join(m.filename for m in msg.media)
             t.add_row("media", escape(media) if media else "(omitted from export)")
+    if item.transaction is not None:
+        txn = item.transaction
+        t.add_row("amount", _milliunits(txn.amount_milliunits))
+        t.add_row("account", escape(txn.account) if txn.account else "-")
+        t.add_row("payee", escape(txn.payee) if txn.payee else "-")
+        category = ": ".join(p for p in (txn.category_group, txn.category) if p)
+        t.add_row("category", escape(category) if category else "-")
     console.print(t)
+
+
+def _milliunits(amount: int) -> str:
+    """Exact decimal rendering of integer milliunits — int math only, the
+    sub-cent digit shown only when the amount actually carries one. No
+    currency symbol: the register stores none (a budget-level setting)."""
+    sign = "-" if amount < 0 else ""
+    units, frac = divmod(abs(amount), 1000)
+    if frac % 10:
+        return f"{sign}{units}.{frac:03d}"
+    return f"{sign}{units}.{frac // 10:02d}"
 
 
 def _mailbox(addr: str | None, name: str | None) -> str:

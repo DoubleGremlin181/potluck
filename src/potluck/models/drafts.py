@@ -123,6 +123,37 @@ class EmailDraft(BaseDraft):
         )
 
 
+class TransactionDraft(BaseDraft):
+    """Draft for a financial transaction; satellite fields land in the
+    transactions table.
+
+    Money discipline (#144): ``amount_milliunits`` is the exact signed amount
+    in integer milliunits (1/1000 of the budget's currency unit; outflows
+    negative). ``strict=True`` rejects float input outright — no float ever
+    carries money through the pipeline. title = payee, text = searchable
+    memo/category composition, ts = transaction date; the register carries no
+    currency column (it is a budget-level setting), so none is stored.
+    """
+
+    kind: Literal[ItemKind.TRANSACTION] = ItemKind.TRANSACTION
+    amount_milliunits: int = Field(strict=True)
+    account: str | None = None
+    payee: str | None = None
+    category: str | None = None
+    category_group: str | None = None
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (transactions row) — see
+        # BaseDraft.extra_hash_parts. All parts are fixed-position scalars.
+        return (
+            str(self.amount_milliunits),
+            self.account or "",
+            self.payee or "",
+            self.category or "",
+            self.category_group or "",
+        )
+
+
 class MessageMedia(BaseModel):
     """Media reference carried on a MessageDraft; metadata only, never bytes.
 
@@ -167,4 +198,6 @@ class MessageDraft(BaseDraft):
         )
 
 
-type ItemDraft = NoteDraft | EmailDraft | MessageDraft | PostDraft | BookmarkDraft
+type ItemDraft = (
+    NoteDraft | EmailDraft | MessageDraft | PostDraft | BookmarkDraft | TransactionDraft
+)

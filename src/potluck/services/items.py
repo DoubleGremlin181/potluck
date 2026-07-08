@@ -9,6 +9,7 @@ from potluck.models.items import (
     ListItemsRequest,
     ListItemsResponse,
     MessageDetail,
+    TransactionDetail,
 )
 from potluck.services.context import AppContext
 from potluck.storage.items import dt_to_iso, get_item_row, iso_to_dt, list_item_rows, row_to_item
@@ -24,8 +25,8 @@ def get_item(ctx: AppContext, item_id: int) -> Item:
 
     Returns:
         A fully-hydrated :class:`~potluck.models.items.Item` DTO. Kinds with
-        a satellite reader (#200) carry their detail block (``email`` or
-        ``message``); all other kinds leave both None.
+        a satellite reader (#200) carry their detail block (``email``,
+        ``message`` or ``transaction``); all other kinds leave them None.
 
     Raises:
         ItemNotFoundError: If no item with *item_id* exists.
@@ -43,6 +44,8 @@ def get_item(ctx: AppContext, item_id: int) -> Item:
                 item.email = detail
             elif isinstance(detail, MessageDetail):
                 item.message = detail
+            elif isinstance(detail, TransactionDetail):
+                item.transaction = detail
     return item
 
 

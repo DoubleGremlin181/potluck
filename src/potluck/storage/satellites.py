@@ -15,8 +15,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 
-from potluck.models.drafts import EmailDraft, ItemDraft, MessageDraft
-from potluck.models.items import AttachmentDetail, EmailDetail, ItemKind, MessageDetail
+from potluck.models.drafts import EmailDraft, ItemDraft, MessageDraft, TransactionDraft
+from potluck.models.items import (
+    AttachmentDetail,
+    EmailDetail,
+    ItemKind,
+    MessageDetail,
+    TransactionDetail,
+)
 from potluck.storage.emails import (
     draft_to_email_row,
     get_email_row,
@@ -30,6 +36,11 @@ from potluck.storage.files import (
     list_files_for_item,
 )
 from potluck.storage.messages import draft_to_message_row, get_message_row, insert_messages
+from potluck.storage.transactions import (
+    draft_to_transaction_row,
+    get_transaction_row,
+    insert_transactions,
+)
 
 
 @dataclass(frozen=True)
@@ -95,9 +106,18 @@ def _write_message_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDraft, 
     insert_files(conn, file_rows)
 
 
+def _write_transaction_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDraft, int]]) -> None:
+    # Register rows (#144): one satellite row per transaction, rewritten in
+    # place on update (INSERT OR REPLACE on the item_id PK). No files, no
+    # finalize: a register is flat, nothing to reconcile at end of run.
+    txns = [(draft, item_id) for draft, item_id in pairs if isinstance(draft, TransactionDraft)]
+    insert_transactions(conn, [draft_to_transaction_row(draft, item_id) for draft, item_id in txns])
+
+
 SATELLITE_WRITERS: Final[dict[ItemKind, SatelliteWriter]] = {
     ItemKind.EMAIL: SatelliteWriter(write_batch=_write_email_batch, finalize=_finalize_emails),
     ItemKind.MESSAGE: SatelliteWriter(write_batch=_write_message_batch),
+    ItemKind.TRANSACTION: SatelliteWriter(write_batch=_write_transaction_batch),
 }
 
 
@@ -152,10 +172,28 @@ def _read_message_detail(conn: sqlite3.Connection, item_id: int) -> MessageDetai
     )
 
 
+def _read_transaction_detail(conn: sqlite3.Connection, item_id: int) -> TransactionDetail | None:
+    """Hydrate the transactions row for one item (#144)."""
+    row = get_transaction_row(conn, item_id)
+    if row is None:
+        return None
+    return TransactionDetail(
+        amount_milliunits=row["amount_milliunits"],
+        account=row["account"],
+        payee=row["payee"],
+        category=row["category"],
+        category_group=row["category_group"],
+    )
+
+
 # Detail DTO union grows with reader kinds; the service assigns by type.
 SATELLITE_READERS: Final[
-    dict[ItemKind, Callable[[sqlite3.Connection, int], EmailDetail | MessageDetail | None]]
+    dict[
+        ItemKind,
+        Callable[[sqlite3.Connection, int], EmailDetail | MessageDetail | TransactionDetail | None],
+    ]
 ] = {
     ItemKind.EMAIL: _read_email_detail,
     ItemKind.MESSAGE: _read_message_detail,
+    ItemKind.TRANSACTION: _read_transaction_detail,
 }
