@@ -78,6 +78,11 @@ def _drafts(csv_text: str, member: str = _MEMBER) -> list[TransactionDraft]:
         # Signs: leading minus, before or after the symbol.
         ("-$5.00", -5000),
         ("$-5.00", -5000),
+        # Unicode minus/dash glyphs are SIGNS, never dressing — stripping
+        # them would silently flip a negative positive.
+        ("−5.00", -5000),  # U+2212 MINUS SIGN
+        ("–5.00", -5000),  # U+2013 EN DASH
+        ("€−1,234.56", -1234560),
         # Blank cells are zero (older exports leave zero amounts empty).
         ("", 0),
         ("   ", 0),
@@ -88,9 +93,12 @@ def _drafts(csv_text: str, member: str = _MEMBER) -> list[TransactionDraft]:
         ("7", 7000),
         # Milliunit precision: YNAB is exact to 3 decimal places.
         ("$1.234", 1234),
-        # Other currency symbols and space/NBSP separators vanish in the strip.
+        # Other currency symbols and space/NBSP separators vanish in the strip
+        # — including letter-shaped symbols (kr, Kč) and alphabetic codes.
         ("€3.50", 3500),
         ("₹99.00", 99000),
+        ("kr 5,00", 5000),
+        ("USD 7.25", 7250),
         ("1 234,56", 1234560),
         # European style: both separators present makes the decimal comma
         # unambiguous; comma with a non-3-digit tail can only be a decimal.
@@ -121,6 +129,10 @@ def test_parse_milliunits_exact(raw: str, expected: int) -> None:
         "1-2",  # interior minus
         "5.00-",  # trailing minus
         "(1.23)",  # accounting negative: never guess a sign
+        "5.00 DR",  # debit marker: sign-bearing letters, never dressing
+        "5.00 CR",  # credit marker, ditto
+        "cr 5.00",  # ditto in any case or position ("kr" stays a currency)
+        "5.00db",  # ditto without a space
         "1..2",  # doubled separator
         "12,34,56",  # 2-digit groups without a 3-digit tail are no known format
         "$1.2345",  # >3 decimal places cannot be stored exactly
@@ -145,6 +157,13 @@ def test_zero_amount_row_is_kept() -> None:
     """Starting-balance style rows carry $0.00 both ways and are real rows."""
     [d] = _drafts(_HEADER + _row(outflow="$0.00", inflow="$0.00"))
     assert d.amount_milliunits == 0
+
+
+def test_both_flows_populated_net_to_one_signed_amount() -> None:
+    """Never observed in the real export (0 of 4051 rows), but defined:
+    amount = Inflow − Outflow, exact to the milliunit."""
+    [d] = _drafts(_HEADER + _row(outflow="$5.00", inflow="$2.00"))
+    assert d.amount_milliunits == -3000
 
 
 def test_unparseable_amount_skips_row_with_warning(caplog: pytest.LogCaptureFixture) -> None:
@@ -269,7 +288,7 @@ def test_identical_rows_get_first_seen_suffixes() -> None:
     row = _row()
     drafts = _drafts(_HEADER + row + row + row)
     eids = [d.external_id or "" for d in drafts]
-    assert eids[0].endswith(eids[0].rsplit(":", 1)[-1])  # bare fingerprint
+    assert "#" not in eids[0]  # first sighting is the bare fingerprint
     assert eids[1] == eids[0] + "#2"
     assert eids[2] == eids[0] + "#3"
 

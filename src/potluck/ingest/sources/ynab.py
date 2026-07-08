@@ -23,9 +23,11 @@ to one signed amount, transfers keep their ``Transfer : …`` payee verbatim):
 
 Money discipline (#144's acceptance criterion): amounts parse to integer
 milliunits with pure string/int math — no float, no rounding, ever. A cell
-that cannot be represented exactly (>3 decimal places, foreign shapes like
-accounting parentheses) makes the ROW skip with a warning: a transaction with
-a guessed amount is worse than a missing one. Locale shapes accepted beyond
+that cannot be represented exactly (>3 decimal places) or whose sign cannot
+be trusted (accounting parentheses, DR/CR/DB markers) makes the ROW skip with
+a warning: a transaction with a guessed amount — or a silently flipped sign —
+is worse than a missing one. Unicode minus/dash glyphs count as the sign they
+are, never as strippable dressing. Locale shapes accepted beyond
 the verified ``$1,234.56``: any currency symbol/space strips away; European
 ``1.234,56`` (decimal comma unambiguous when both separators appear, or when
 a comma tail isn't 3 digits); multi-dot grouping ``1.234.567``; lakh grouping
@@ -99,6 +101,16 @@ _DATE_FORMATS: Final = ("%m/%d/%Y", "%Y-%m-%d")
 # thousands separators).
 _CURRENCY_DRESSING_RE = re.compile(r"[^0-9.,\-]")
 
+# Sign-bearing glyphs the dressing strip must NOT eat. Unicode minus/dashes
+# (U+2010–2015 dashes, U+2212 MINUS SIGN, small/fullwidth forms) normalize to
+# ASCII '-' BEFORE the strip; accounting debit/credit letter markers make the
+# cell unparseable — either would otherwise flip a negative positive silently.
+# Any other letter run is currency dressing (codes like "USD", letter-shaped
+# symbols like "kr"/"Kč") and strips away as before.
+_SIGN_DASH_RE = re.compile(r"[\u2010-\u2015\u2212\ufe63\uff0d]")
+_LETTER_RUN_RE = re.compile(r"[^\W\d_]+")
+_SIGN_MARKERS: Final = frozenset({"dr", "cr", "db"})
+
 
 def _valid_grouping(parts: list[str]) -> bool:
     """True when *parts* (an integer split on its group separator) form a
@@ -152,14 +164,18 @@ def _parse_milliunits(raw: str) -> int | None:
     Pure string/int math — no float, no Decimal, no rounding. A blank cell is
     zero (older exports leave zero amounts empty; the real 2026 export renders
     ``$0.00``). More than 3 fraction digits cannot be stored exactly and is
-    unparseable by definition; accounting parentheses are rejected rather than
-    risking a silently wrong sign.
+    unparseable by definition. Sign carriers are never guessed away: unicode
+    minus/dash glyphs count as ``-``, while accounting negatives — parentheses
+    or DR/CR/DB letter markers — reject the cell outright (a silently flipped
+    sign is worse than a skipped row).
     """
     if not raw.strip():
         return 0
     if "(" in raw or ")" in raw:
         return None
-    text = _CURRENCY_DRESSING_RE.sub("", raw)
+    if any(run.lower() in _SIGN_MARKERS for run in _LETTER_RUN_RE.findall(raw)):
+        return None
+    text = _CURRENCY_DRESSING_RE.sub("", _SIGN_DASH_RE.sub("-", raw))
     negative = text.startswith("-")
     if negative:
         text = text[1:]
