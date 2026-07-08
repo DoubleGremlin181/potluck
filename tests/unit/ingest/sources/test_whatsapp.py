@@ -25,6 +25,8 @@ from potluck.ingest.sources.whatsapp import (
 )
 from potluck.models.drafts import MessageDraft
 from potluck.models.items import ItemKind
+from potluck.services.context import AppContext
+from potluck.services.imports import import_path
 from potluck.testing.archives import write_archive
 
 _MEMBER = "WhatsApp Chat with Ada Example.txt"
@@ -97,7 +99,7 @@ def test_year_first_dates_are_unambiguous() -> None:
 
 
 def test_ios_bracket_with_seconds_narrow_nbsp_and_lrm() -> None:
-    line = "‎[3/17/23, 9:05:42 AM] Ada Example: from an iphone\n"
+    line = "‎[3/17/23, 9:05:42\u202fAM] Ada Example: from an iphone\n"
     drafts = _drafts(line, member="WhatsApp Chat - Ada Example/_chat.txt")
     assert len(drafts) == 1
     d = drafts[0]
@@ -158,10 +160,10 @@ def test_ios_sender_attributed_encryption_notice_is_skipped() -> None:
     """iOS attributes the encryption notice to a sender with a leading LRM —
     the body pattern must still classify it as system chrome."""
     text = (
-        "[3/17/23, 9:00:01 AM] Ada Example: ‎Messages and calls are "
+        "[3/17/23, 9:00:01\u202fAM] Ada Example: ‎Messages and calls are "
         "end-to-end encrypted. No one outside of this chat, not even "
         "WhatsApp, can read or listen to them.\n"
-        "[3/17/23, 9:01:00 AM] Ada Example: real content\n"
+        "[3/17/23, 9:01:00\u202fAM] Ada Example: real content\n"
     )
     drafts = _drafts(text)
     assert [d.text for d in drafts] == ["real content"]
@@ -224,10 +226,10 @@ def test_media_caption_on_continuation_lines_becomes_text() -> None:
 
 def test_ios_attached_and_omitted_variants() -> None:
     text = (
-        "[3/17/23, 9:05:00 AM] Ada Example: ‎<attached: "
+        "[3/17/23, 9:05:00\u202fAM] Ada Example: ‎<attached: "
         "00000012-PHOTO-2023-03-17-09-05-00.jpg>\n"
-        "[3/17/23, 9:06:00 AM] Ada Example: ‎image omitted\n"
-        "[3/17/23, 9:07:00 AM] Ada Example: ‎video omitted\n"
+        "[3/17/23, 9:06:00\u202fAM] Ada Example: ‎image omitted\n"
+        "[3/17/23, 9:07:00\u202fAM] Ada Example: ‎video omitted\n"
     )
     drafts = _drafts(text)
     assert [d.is_media for d in drafts] == [True, True, True]
@@ -288,6 +290,43 @@ def test_invalid_date_skips_message_with_warning(caplog: pytest.LogCaptureFixtur
         drafts = _drafts(text)
     assert [d.text for d in drafts] == ["fine"]
     assert any("skipping" in r.message for r in caplog.records)
+
+
+def test_unrecognized_dialect_warns_and_yields_nothing(
+    ctx: AppContext, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A detected chat file whose lines match no timestamp dialect (e.g. a
+    French "17/03/2023 à 14:05 -" export) must log one WARNING naming the
+    member — never a silent zero-item import — and the run still completes."""
+    french = "17/03/2023 à 14:05 - Ada Example: bonjour\n17/03/2023 à 14:06 - Bo Sample: salut\n"
+    with caplog.at_level(logging.WARNING):
+        drafts = _drafts(french)
+    assert drafts == []
+    assert any("no line has a recognizable timestamp header" in r.message for r in caplog.records)
+
+    archive = write_archive(
+        tmp_path / "export.zip", {"WhatsApp Chat with Ada Example.txt": french.encode()}, "zip"
+    )
+    [run] = import_path(ctx, archive)
+    assert run.status == "completed"
+    assert run.items_new == 0
+
+
+def test_empty_detected_member_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING):
+        assert _drafts("") == []
+        assert _drafts("\n\n") == []
+    assert not caplog.records
+
+
+def test_nbsp_in_first_line_body_is_preserved() -> None:
+    """The prefix matches on a space-normalized copy, but rest slices from
+    the original line: a body NBSP must survive on the first line exactly as
+    it would on a continuation line."""
+    text = "3/17/23, 9:05\u202fAM - Ada Example: price 10\u00a0EUR\nline\u00a0two\n"
+    d = _drafts(text)[0]
+    assert d.text == "price 10\u00a0EUR\nline\u00a0two"
+    assert d.sender == "Ada Example"
 
 
 def test_bom_and_crlf_are_handled() -> None:
@@ -363,7 +402,9 @@ def test_detection_matches_export_shapes_precisely(tmp_path: Path) -> None:
 def test_parse_reads_only_chat_members(tmp_path: Path) -> None:
     members = {
         "WhatsApp Chat with Ada Example.txt": b"3/17/23, 9:05 AM - Ada Example: hi\n",
-        "WhatsApp Chat - Bo Sample/_chat.txt": ("[3/17/23, 9:06:00 AM] Bo Sample: yo\n".encode()),
+        "WhatsApp Chat - Bo Sample/_chat.txt": (
+            "[3/17/23, 9:06:00\u202fAM] Bo Sample: yo\n".encode()
+        ),
         "WhatsApp Chat - Bo Sample/00000001-PHOTO-2023-03-17-09-06-00.jpg": b"\xff\xd8\xff",
         "notes.txt": b"3/17/23, 9:07 AM - Decoy Person: never parsed\n",
     }

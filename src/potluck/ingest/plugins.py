@@ -51,8 +51,10 @@ class Glob:
 
     ``|`` separates alternative patterns, matched any-of (fnmatch itself has
     no alternation, and export layouts legitimately vary — e.g. WhatsApp's
-    Android vs iOS naming). ``|`` never appears in real member names, and a
-    plugin needing a literal one can use the ``[|]`` character class.
+    Android vs iOS naming). ``|`` is reserved as the separator: a literal
+    ``|`` cannot be matched — splitting happens before fnmatch, so even a
+    ``[|]`` character class is split apart. Real archive member names never
+    contain one.
     """
 
     pattern: str

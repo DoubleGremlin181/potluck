@@ -24,8 +24,14 @@ stored exactly as exported):
   system line whose free text contains ``": "`` is indistinguishable from a
   message and comes through as one; the format gives no stronger anchor.
 - Continuation lines (no timestamp prefix) belong to the previous message
-  and concatenate with newlines. Non-English media/system placeholder texts
-  are not recognised (they come through as plain messages).
+  and concatenate with newlines. The converse ambiguity is inherent to the
+  line-oriented format: a continuation line that itself matches the
+  ``date, time - `` shape splits the message there, and a sender-less
+  remainder is then dropped as system chrome. Non-English media/system
+  placeholder texts are not recognised (they come through as plain
+  messages); a detected chat file whose lines match NO timestamp dialect at
+  all yields zero drafts and logs one WARNING naming the member — never a
+  silent empty import.
 
 Locale policy: day/month order is inferred once per file — the first date
 with a component > 12 decides; a fully ambiguous file falls back by clock
@@ -48,8 +54,14 @@ Threading: every message in one chat shares chat_key — the chat file anchor
 (basename for Android, parent directory for iOS ``_chat.txt``), so zip and
 extracted-directory layouts agree. A root-level ``_chat.txt`` (the raw iOS
 zip, whose chat name lives only in the zip's own filename, which plugins
-never see) falls back to the generic ``_chat`` anchor: identity is stable
-per layout. Messages are deliberately not parent_id-chained — chats are
+never see) falls back to the generic ``_chat`` anchor. CONSEQUENCE: two
+DIFFERENT chats imported as separate raw iOS zips both anchor to ``_chat``
+— their threads merge, and because the identity fingerprint embeds the
+anchor, byte-identical message blocks across the two conversations collide
+on external_id and the second chat's copy silently dedups away (data loss,
+not just cosmetics). Until the Archive seam exposes a source display name
+(follow-up issue), extract such zips into their named folders before
+importing. Messages are deliberately not parent_id-chained — chats are
 linear.
 """
 
@@ -127,9 +139,18 @@ def _clean(line: str) -> str:
 
 
 def _match_prefix(line: str) -> _Prefix | None:
-    m = _BRACKET_RE.match(line) or _DASH_RE.match(line)
+    """Match *line*'s timestamp prefix against its cleaned copy.
+
+    rest is sliced from the ORIGINAL line: _clean's space substitutions are
+    1:1 in length, so only the leading-mark strip shifts offsets — body
+    NBSPs are content and must survive on the first line exactly as
+    continuation lines keep theirs.
+    """
+    cleaned = _clean(line)
+    m = _BRACKET_RE.match(cleaned) or _DASH_RE.match(cleaned)
     if m is None:
         return None
+    offset = len(line) - len(cleaned)
     return _Prefix(
         d1=int(m["d1"]),
         d2=int(m["d2"]),
@@ -138,7 +159,7 @@ def _match_prefix(line: str) -> _Prefix | None:
         mm=int(m["mm"]),
         ss=int(m["ss"] or 0),
         ampm=(m["ampm"] or "").upper() or None,
-        rest=m["rest"],
+        rest=line[m.start("rest") + offset :],
     )
 
 
@@ -152,7 +173,7 @@ def _infer_day_first(lines: list[str]) -> bool:
     """
     saw_ampm = False
     for line in lines:
-        p = _match_prefix(_clean(line))
+        p = _match_prefix(line)
         if p is None or p.d1 >= 100:  # year-first dates are order-unambiguous
             continue
         if p.d1 > 12 >= p.d2:
@@ -183,7 +204,15 @@ def _resolve_ts(p: _Prefix, day_first: bool) -> datetime:
 
 
 def _chat_identity(member_name: str) -> tuple[str, str]:
-    """(chat_key, chat_name) from the member path — see module docstring."""
+    """(chat_key, chat_name) from the member path — see module docstring.
+
+    The ``_chat`` fallback for a root-level ``_chat.txt`` is a shared anchor:
+    different chats imported that way merge threads AND can lose
+    byte-identical messages to cross-chat external_id collisions (the
+    fingerprint embeds this anchor). Full consequence + workaround in the
+    module docstring; fixing it needs the Archive seam to expose a source
+    display name.
+    """
     parts = member_name.split("/")
     base = parts[-1]
     if base == "_chat.txt":
@@ -291,7 +320,12 @@ def _flush(
 def _parse_chat(data: bytes, member_name: str, counters: dict[str, int]) -> Iterator[MessageDraft]:
     """Yield drafts from one chat file. *counters* is the run-wide occurrence
     map for the ``#N`` identity suffixes (fingerprints embed the chat key, so
-    sharing one map across chats is safe)."""
+    sharing one map across chats is safe).
+
+    A non-empty member where no line matches any timestamp dialect logs one
+    WARNING (same containment policy as invalid dates): a detected export in
+    an unsupported dialect must never import as zero items silently.
+    """
     text = data.decode("utf-8", errors="replace")
     lines = [line.rstrip("\r") for line in text.split("\n")]
     if lines and lines[-1] == "":
@@ -301,13 +335,15 @@ def _parse_chat(data: bytes, member_name: str, counters: dict[str, int]) -> Iter
     chat_key, chat_name = _chat_identity(member_name)
 
     block: _Block | None = None
+    matched_any = False
     for line in lines:
-        prefix = _match_prefix(_clean(line))
+        prefix = _match_prefix(line)
         if prefix is None:
             if block is not None:  # pre-header junk has no block to join
                 block.raw_lines.append(line)
                 block.body_lines.append(line.lstrip(_MARKS))
             continue
+        matched_any = True
         if block is not None:
             yield from _flush(
                 block,
@@ -326,6 +362,12 @@ def _parse_chat(data: bytes, member_name: str, counters: dict[str, int]) -> Iter
             chat_name=chat_name,
             day_first=day_first,
             counters=counters,
+        )
+    if not matched_any and any(line.strip() for line in lines):
+        _logger.warning(
+            "whatsapp: %r matched detection but no line has a recognizable "
+            "timestamp header (unsupported dialect?) — 0 messages imported",
+            member_name,
         )
 
 
