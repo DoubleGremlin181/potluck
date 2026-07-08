@@ -60,6 +60,21 @@ def test_glob_matches() -> None:
     assert g.matches("Other/a.json") is False
 
 
+def test_glob_alternation_matches_any_of() -> None:
+    """'|' separates alternative patterns (#142): export layouts legitimately
+    vary per platform (WhatsApp Android vs iOS naming)."""
+    from potluck.ingest.plugins import Glob
+
+    g = Glob("*WhatsApp Chat*.txt|_chat.txt|*/_chat.txt")
+    assert g.matches("WhatsApp Chat with Ada.txt") is True
+    assert g.matches("_chat.txt") is True
+    assert g.matches("WhatsApp Chat - Ada/_chat.txt") is True
+    assert g.matches("my_chat.txt") is False
+    assert g.matches("notes.txt") is False
+    # single-pattern globs behave exactly as before
+    assert Glob("*.json").matches("a.json") is True
+
+
 def test_glob_matches_case_sensitive_on_every_platform(monkeypatch: pytest.MonkeyPatch) -> None:
     """Archive member names are virtual posix paths: matching must not pick up
     the host platform's case folding (os.path.normcase lowercases on Windows,

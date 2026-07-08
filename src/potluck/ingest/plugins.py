@@ -47,13 +47,19 @@ type ParseFn = Callable[[Archive, ParseContext], Iterator[ItemDraft]]
 @dataclass(frozen=True)
 class Glob:
     """Detection pattern; fnmatch semantics ('*' crosses '/'), case-sensitive
-    on every platform — archive member names are virtual posix paths."""
+    on every platform — archive member names are virtual posix paths.
+
+    ``|`` separates alternative patterns, matched any-of (fnmatch itself has
+    no alternation, and export layouts legitimately vary — e.g. WhatsApp's
+    Android vs iOS naming). ``|`` never appears in real member names, and a
+    plugin needing a literal one can use the ``[|]`` character class.
+    """
 
     pattern: str
 
     def matches(self, name: str) -> bool:
-        """Return True if *name* matches this glob pattern."""
-        return fnmatch.fnmatchcase(name, self.pattern)
+        """Return True if *name* matches any of this glob's alternatives."""
+        return any(fnmatch.fnmatchcase(name, alt) for alt in self.pattern.split("|"))
 
 
 @dataclass(frozen=True)

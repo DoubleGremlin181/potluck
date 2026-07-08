@@ -296,6 +296,14 @@ def show(
                     )
                 ),
             )
+    if item.message is not None:
+        msg = item.message
+        t.add_row("chat", escape(msg.chat_name or msg.chat_key))
+        t.add_row("chat_key", escape(msg.chat_key))
+        t.add_row("sender", escape(msg.sender) if msg.sender else "-")
+        if msg.is_media:
+            media = ", ".join(m.filename for m in msg.media)
+            t.add_row("media", escape(media) if media else "(omitted from export)")
     console.print(t)
 
 

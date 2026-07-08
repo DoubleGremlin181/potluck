@@ -42,6 +42,7 @@ from potluck.testing.keep import write_keep_takeout
 from potluck.testing.mbox import TAIL_WORDS, synthetic_email_drafts, write_gmail_takeout
 from potluck.testing.server import free_port, spawn_serve, wait_for_health
 from potluck.testing.spa import referenced_assets, write_spa_dist
+from potluck.testing.whatsapp import write_whatsapp_export
 
 _NOTE_COUNT = 5000
 
@@ -283,6 +284,40 @@ def _keep_prefix_run(workdir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P4: WhatsApp ingest scenarios (#142)
+# ---------------------------------------------------------------------------
+
+
+def _whatsapp_ingest_scenario(name: str, tier: Tier, per_chat: int, chats: int) -> Scenario:
+    """Factory for WhatsApp chat-export ingest scenarios (zip; real txt parse).
+
+    *chats* spreads the corpus over ("us", "eu") locale dialects so both
+    timestamp paths are always measured; item_count = per_chat x chats
+    (logical export lines — the parser skips the 5% system lines).
+    """
+
+    def setup(workdir: Path) -> None:
+        archive = write_whatsapp_export(
+            workdir / "archives",
+            per_chat,
+            seed=42,
+            locales=("us", "eu"),
+            chats_per_locale=chats // 2,
+        )
+        if archive != workdir / "archives" / "whatsapp-synth-001.zip":
+            raise RuntimeError(f"whatsapp generator naming changed: {archive}")
+
+    def run(workdir: Path) -> None:
+        ctx = _make_ctx(workdir)
+        try:
+            import_path(ctx, workdir / "archives" / "whatsapp-synth-001.zip")
+        finally:
+            ctx.db.close()
+
+    return Scenario(name=name, tier=tier, item_count=per_chat * chats, setup=setup, run=run)
+
+
+# ---------------------------------------------------------------------------
 # P3: end-to-end REST search (#131)
 # ---------------------------------------------------------------------------
 
@@ -418,6 +453,11 @@ ALL_SCENARIOS = [
         setup=_imported_keep_10k_setup,
         run=_keep_prefix_run,
     ),
+    # P4 WhatsApp ingest (#142): smoke tracker + the full-tier 100k corpus.
+    # The < 2 min hard budget is asserted nightly in test_p4_budgets.py
+    # (1 rep, subprocess); the full-tier scenario tracks the trend.
+    _whatsapp_ingest_scenario("ingest_whatsapp_5k", "smoke", 2_500, 2),
+    _whatsapp_ingest_scenario("ingest_whatsapp_100k", "full", 25_000, 4),
     # P3 REST search end-to-end (#131): nightly 100k budget anchor (p95
     # < 100 ms, asserted in test_p3_budgets.py) + smoke 10k PR-CI tracker
     Scenario(

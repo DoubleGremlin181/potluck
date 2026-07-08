@@ -98,4 +98,48 @@ class EmailDraft(BaseDraft):
         )
 
 
-type ItemDraft = NoteDraft | EmailDraft
+class MessageMedia(BaseModel):
+    """Media reference carried on a MessageDraft; metadata only, never bytes.
+
+    Chat exports name the media file but expose neither size nor content at
+    parse time (pixels are deferred to P6), so this is deliberately thinner
+    than EmailAttachment.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    filename: str
+    mime: str | None = None
+
+
+class MessageDraft(BaseDraft):
+    """Draft for a chat message; satellite fields land in the messages table.
+
+    text = message body (None for bare media placeholders), ts = message
+    timestamp, title unused. chat_key is the deterministic conversation key —
+    every message in one chat shares it (chats are linear; no parent_id
+    chaining). sender is the display name exactly as exported (contact name
+    or phone string).
+    """
+
+    kind: Literal[ItemKind.MESSAGE] = ItemKind.MESSAGE
+    chat_key: str
+    chat_name: str | None = None
+    sender: str | None = None
+    is_media: bool = False
+    media: tuple[MessageMedia, ...] = ()
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (messages row + media files
+        # rows) — see BaseDraft.extra_hash_parts. Same separator scheme as
+        # EmailDraft: \x1f between media entries, \x1d within one entry.
+        return (
+            self.chat_key,
+            self.chat_name or "",
+            self.sender or "",
+            "1" if self.is_media else "0",
+            "\x1f".join(f"{m.filename}\x1d{m.mime or ''}" for m in self.media),
+        )
+
+
+type ItemDraft = NoteDraft | EmailDraft | MessageDraft

@@ -70,6 +70,20 @@ class EmailDetail(BaseModel):
     attachments: list[AttachmentDetail]
 
 
+class MessageDetail(BaseModel):
+    """Messages-satellite fields surfaced on item detail (#142).
+
+    media lists metadata-only references to the chat's exported media files —
+    no sizes or hashes until pixel ingestion lands (P6).
+    """
+
+    chat_key: str
+    chat_name: str | None
+    sender: str | None
+    is_media: bool
+    media: list[AttachmentDetail]
+
+
 class Item(BaseModel):
     """A fully-hydrated item row returned from the storage layer."""
 
@@ -88,6 +102,7 @@ class Item(BaseModel):
     meta: dict[str, JsonValue]
     # Satellite detail (#200): hydrated only for kinds with a SATELLITE_READER.
     email: EmailDetail | None = None
+    message: MessageDetail | None = None
 
 
 class ItemSort(StrEnum):

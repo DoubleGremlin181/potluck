@@ -15,8 +15,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 
-from potluck.models.drafts import EmailDraft, ItemDraft
-from potluck.models.items import AttachmentDetail, EmailDetail, ItemKind
+from potluck.models.drafts import EmailDraft, ItemDraft, MessageDraft
+from potluck.models.items import AttachmentDetail, EmailDetail, ItemKind, MessageDetail
 from potluck.storage.emails import (
     draft_to_email_row,
     get_email_row,
@@ -29,6 +29,7 @@ from potluck.storage.files import (
     insert_files,
     list_files_for_item,
 )
+from potluck.storage.messages import draft_to_message_row, get_message_row, insert_messages
 
 
 @dataclass(frozen=True)
@@ -71,8 +72,32 @@ def _finalize_emails(conn: sqlite3.Connection, source_id: int) -> None:
     resolve_email_parents(conn, source_id)
 
 
+def _write_message_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDraft, int]]) -> None:
+    messages = [(draft, item_id) for draft, item_id in pairs if isinstance(draft, MessageDraft)]
+    insert_messages(conn, [draft_to_message_row(draft, item_id) for draft, item_id in messages])
+
+    # Media references (#142): metadata-only files rows (chat exports name the
+    # file but expose no size/bytes — pixels are deferred to P6), replaced
+    # wholesale on update exactly like email attachments. No finalize: chats
+    # are linear, nothing to reconcile at end of run.
+    delete_files_for_items(conn, [item_id for _, item_id in messages])
+    file_rows = [
+        FileRow(
+            item_id=item_id,
+            member_path=medium.filename,
+            mime=medium.mime,
+            size_bytes=None,
+            sha256=None,
+        )
+        for draft, item_id in messages
+        for medium in draft.media
+    ]
+    insert_files(conn, file_rows)
+
+
 SATELLITE_WRITERS: Final[dict[ItemKind, SatelliteWriter]] = {
     ItemKind.EMAIL: SatelliteWriter(write_batch=_write_email_batch, finalize=_finalize_emails),
+    ItemKind.MESSAGE: SatelliteWriter(write_batch=_write_message_batch),
 }
 
 
@@ -105,9 +130,32 @@ def _read_email_detail(conn: sqlite3.Connection, item_id: int) -> EmailDetail | 
     )
 
 
-# Detail DTO union grows with reader kinds; the service assigns by kind.
+def _read_message_detail(conn: sqlite3.Connection, item_id: int) -> MessageDetail | None:
+    """Hydrate the messages row + media references for one item (#142)."""
+    row = get_message_row(conn, item_id)
+    if row is None:
+        return None
+    return MessageDetail(
+        chat_key=row["chat_key"],
+        chat_name=row["chat_name"],
+        sender=row["sender"],
+        is_media=bool(row["is_media"]),
+        media=[
+            AttachmentDetail(
+                filename=f["member_path"],
+                mime=f["mime"],
+                size_bytes=f["size_bytes"],
+                sha256=f["sha256"],
+            )
+            for f in list_files_for_item(conn, item_id)
+        ],
+    )
+
+
+# Detail DTO union grows with reader kinds; the service assigns by type.
 SATELLITE_READERS: Final[
-    dict[ItemKind, Callable[[sqlite3.Connection, int], EmailDetail | None]]
+    dict[ItemKind, Callable[[sqlite3.Connection, int], EmailDetail | MessageDetail | None]]
 ] = {
     ItemKind.EMAIL: _read_email_detail,
+    ItemKind.MESSAGE: _read_message_detail,
 }
