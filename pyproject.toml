@@ -23,6 +23,7 @@ dependencies = [
     # invocation of a non-dev install printed a deprecation warning (#141).
     "httpx2>=2",
     "rich>=13",
+    "icalendar>=6.1",
 ]
 
 [project.scripts]

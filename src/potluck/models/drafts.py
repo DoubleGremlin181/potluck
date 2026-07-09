@@ -77,6 +77,22 @@ class ActivityDraft(BaseDraft):
     kind: Literal[ItemKind.ACTIVITY] = ItemKind.ACTIVITY
 
 
+class EventDraft(BaseDraft):
+    """Draft for a calendar event item.
+
+    Everything lives in the base fields: title = summary, text = the
+    searchable description + location composition, ts = the event start
+    (DTSTART) in UTC; source-specific context (calendar name, status, end
+    instant, all-day flag, recurrence rule/counts, attendee count) rides in
+    meta. No satellite table, so no extra_hash_parts — meta changes reconcile
+    through the engine's identity path. Recurring series are ONE draft per
+    VEVENT (master + explicit overrides), never expanded occurrences — see
+    potluck.ingest.sources.calendar for the policy.
+    """
+
+    kind: Literal[ItemKind.EVENT] = ItemKind.EVENT
+
+
 class EmailAttachment(BaseModel):
     """Attachment metadata carried on an EmailDraft; bodies never enter the DB."""
 
@@ -219,4 +235,5 @@ type ItemDraft = (
     | BookmarkDraft
     | TransactionDraft
     | ActivityDraft
+    | EventDraft
 )

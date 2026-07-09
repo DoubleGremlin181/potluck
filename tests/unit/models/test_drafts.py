@@ -1,5 +1,5 @@
 """EmailDraft DTO (#123), MessageDraft DTO (#142), PostDraft/BookmarkDraft
-(#143), TransactionDraft (#144)."""
+(#143), TransactionDraft (#144), EventDraft (#146)."""
 
 import pytest
 from pydantic import ValidationError
@@ -9,6 +9,7 @@ from potluck.models.drafts import (
     BookmarkDraft,
     EmailAttachment,
     EmailDraft,
+    EventDraft,
     MessageDraft,
     MessageMedia,
     PostDraft,
@@ -96,6 +97,21 @@ def test_post_and_bookmark_drafts_are_frozen() -> None:
         post.text = "changed"
     with pytest.raises(ValidationError):
         bookmark.title = "changed"
+
+
+def test_event_draft_defaults_and_kind() -> None:
+    draft = EventDraft(title="a meeting")
+    assert draft.kind is ItemKind.EVENT
+    assert draft.external_id is None
+    assert draft.ts is None
+    assert draft.meta == {}
+    assert draft.extra_hash_parts() == ()  # no satellite — base fields only
+
+
+def test_event_draft_is_frozen() -> None:
+    draft = EventDraft(title="a meeting")
+    with pytest.raises(ValidationError):
+        draft.title = "changed"
 
 
 def test_kind_disambiguates_content_hash() -> None:
