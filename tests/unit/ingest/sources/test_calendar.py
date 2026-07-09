@@ -13,6 +13,7 @@ event content is synthetic).
 from __future__ import annotations
 
 import logging
+import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from potluck.ingest.readers import open_archive
 from potluck.ingest.sources.calendar import _parse_calendar, parse
 from potluck.models.drafts import EventDraft
 from potluck.models.items import ItemKind
+from potluck.services.context import AppContext
+from potluck.services.imports import import_path
 from potluck.testing.archives import write_archive
 
 _MEMBER = "Takeout/Calendar/Synthetic Calendar.ics"
@@ -217,12 +220,16 @@ def test_timed_event_has_no_all_day_flag() -> None:
     assert "all_day" not in d.meta
 
 
-def test_event_without_dtstart_is_kept_undated() -> None:
+def test_event_without_dtstart_is_kept_undated_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """UID is the identity, DTSTART is content — a broken event without one
-    still imports (undated) rather than vanishing."""
-    [d] = _drafts(_ics(_vevent("SUMMARY:No start")))
+    still imports (undated) rather than vanishing, and says so."""
+    with caplog.at_level(logging.WARNING):
+        [d] = _drafts(_ics(_vevent("SUMMARY:No start")))
     assert d.ts is None
     assert d.external_id == "ics:ev-1@potluck.test"
+    assert any("DTSTART" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -484,6 +491,34 @@ def test_same_uid_across_members_shares_identity(tmp_path: Path) -> None:
     assert len({d.external_id for d in drafts}) == 1
 
 
+def test_drifted_copy_adjudication_last_member_wins(ctx: AppContext, tmp_path: Path) -> None:
+    """Cross-member copies whose CONTENT drifted (the real export: 162 of
+    1159 duplicate copies had a refreshed DESCRIPTION) still collapse to ONE
+    item, and the adjudication is deterministic: the LAST member in archive
+    order wins through the engine's identity path."""
+    old = _ics(
+        _vevent("DTSTART:20240605T140000Z", "SUMMARY:Shared", "DESCRIPTION:stale copy text"),
+        calname="Synthetic Rota",
+    )
+    new = _ics(
+        _vevent("DTSTART:20240605T140000Z", "SUMMARY:Shared", "DESCRIPTION:refreshed copy text"),
+        calname="Synthetic Rota",
+    )
+    members = {  # write_archive sorts member names: "A …" precedes "B …"
+        "Takeout/Calendar/A Synthetic Rota.ics": old,
+        "Takeout/Calendar/B Synthetic Rota.ics": new,
+    }
+    archive = write_archive(tmp_path / "export.zip", members, "zip")
+    [run] = import_path(ctx, archive)
+    assert run.items_new == 1
+    assert run.items_duplicate == 1  # the displaced first copy
+    with ctx.db.read() as conn:
+        [(text,)] = conn.execute(
+            "SELECT text FROM items WHERE external_id = ?", ("ics:ev-1@potluck.test",)
+        ).fetchall()
+    assert text == "refreshed copy text"
+
+
 def test_event_without_uid_is_skipped_with_warning(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         drafts = _drafts(
@@ -511,13 +546,34 @@ def test_empty_calendar_is_silent(caplog: pytest.LogCaptureFixture) -> None:
     assert not caplog.records
 
 
-def test_undecodable_dtstart_keeps_event_undated(caplog: pytest.LogCaptureFixture) -> None:
+def test_undecodable_dtstart_keeps_event_undated_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """icalendar tolerates a garbage DTSTART (the real export ships events
-    libical already flagged with X-LIC-ERROR) — the event imports undated."""
+    libical already flagged with X-LIC-ERROR) — the event imports undated,
+    with one WARNING naming the member."""
     with caplog.at_level(logging.WARNING):
         [d] = _drafts(_ics(_vevent("DTSTART:garbage", "SUMMARY:Broken start")))
     assert d.ts is None
     assert d.title == "Broken start"
+    assert any("DTSTART" in r.message and _MEMBER in r.message for r in caplog.records)
+
+
+def test_vtodo_and_vjournal_components_are_ignored(caplog: pytest.LogCaptureFixture) -> None:
+    """Only VEVENTs are personal calendar records here — VTODO/VJOURNAL
+    components (other products' territory) are deliberately skipped, silently."""
+    todo = (
+        "BEGIN:VTODO\r\nUID:todo-decoy@potluck.test\r\nDTSTAMP:20240605T000000Z\r\n"
+        "SUMMARY:todo decoy\r\nEND:VTODO\r\n"
+    )
+    journal = (
+        "BEGIN:VJOURNAL\r\nUID:journal-decoy@potluck.test\r\nDTSTAMP:20240605T000000Z\r\n"
+        "SUMMARY:journal decoy\r\nEND:VJOURNAL\r\n"
+    )
+    with caplog.at_level(logging.WARNING):
+        drafts = _drafts(_ics(todo, _vevent("DTSTART:20240605T140000Z", "SUMMARY:Kept"), journal))
+    assert [d.title for d in drafts] == ["Kept"]
+    assert not caplog.records
 
 
 # ---------------------------------------------------------------------------
@@ -582,3 +638,20 @@ def test_parse_handles_nested_layout(tmp_path: Path) -> None:
 def test_parse_empty_archive_yields_nothing(tmp_path: Path) -> None:
     archive = write_archive(tmp_path / "empty.zip", {"decoy/readme.md": b"x"}, "zip")
     assert list(parse(open_archive(archive), ParseContext())) == []
+
+
+# ---------------------------------------------------------------------------
+# Dependency floor
+# ---------------------------------------------------------------------------
+
+
+def test_icalendar_floor_matches_import_requirements() -> None:
+    """This module imports BrokenCalendarProperty at top of file, which only
+    exists from icalendar 7.0.0. With a lower floor a downstream install
+    could resolve 6.x, where discover() logs-and-skips the failing module
+    and the calendar source SILENTLY vanishes — so the declared floor must
+    be the real import gate."""
+    pyproject = Path(__file__).resolve().parents[4] / "pyproject.toml"
+    dependencies = tomllib.loads(pyproject.read_text())["project"]["dependencies"]
+    [spec] = [dep for dep in dependencies if dep.startswith("icalendar")]
+    assert spec == "icalendar>=7"

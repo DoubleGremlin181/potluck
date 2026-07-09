@@ -1184,7 +1184,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "httpx2", specifier = ">=2" },
-    { name = "icalendar", specifier = ">=6.1" },
+    { name = "icalendar", specifier = ">=7" },
     { name = "platformdirs", specifier = ">=4.3" },
     { name = "pydantic", specifier = ">=2.10" },
     { name = "pydantic-settings", specifier = ">=2.7" },

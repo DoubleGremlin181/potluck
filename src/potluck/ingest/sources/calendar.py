@@ -26,15 +26,19 @@ unbounded rules never materialize, and the P7 timeline UI is where
 occurrences matter — it can expand ``meta.rrule`` on read without any
 schema change.
 
-Kind mapping: calendar events → ``kind=event``. No satellite: ``title`` is
-SUMMARY; ``text`` is DESCRIPTION + LOCATION (newline-joined, both
-FTS-searchable); ``ts`` is DTSTART converted to UTC. meta carries the
-calendar display name (X-WR-CALNAME, falling back to the member stem),
-STATUS verbatim, the end instant (``meta.end``, ISO UTC), ``meta.all_day``
-on DATE-valued events, and the recurrence fields above. Exporter
-bookkeeping (DTSTAMP/CREATED/LAST-MODIFIED/SEQUENCE/TRANSP) is dropped: the
-real export's duplicate calendar copies differ ONLY in those fields, so
-storing them would defeat cross-member dedup.
+Kind mapping: calendar events → ``kind=event``; VTODO/VJOURNAL components
+are deliberately ignored (not calendar records; Google exports tasks and
+notes through other products). No satellite: ``title`` is SUMMARY; ``text``
+is DESCRIPTION + LOCATION (newline-joined, both FTS-searchable); ``ts`` is
+DTSTART converted to UTC. meta carries the calendar display name
+(X-WR-CALNAME, falling back to the member stem), STATUS verbatim, the end
+instant (``meta.end``, ISO UTC — stored with the export's RFC 5545
+EXCLUSIVE-end semantics, so an all-day event's ``meta.end`` is the NEXT
+day's midnight; P7 display must render ranges accordingly),
+``meta.all_day`` on DATE-valued events, and the recurrence fields above.
+Exporter bookkeeping (DTSTAMP/CREATED/LAST-MODIFIED/SEQUENCE/TRANSP) is
+dropped: the real export's duplicate calendar copies differ ONLY in those
+fields, so storing them would defeat cross-member dedup.
 
 PII posture: ATTENDEE/ORGANIZER values are mailto: addresses of OTHER
 people — stored as ``meta.attendee_count`` + ``meta.has_organizer`` only,
@@ -52,7 +56,13 @@ export's four copies of one subscription share 386 of 387 UIDs per copy
 member. Copies are therefore deduped globally, not namespaced per calendar
 — per-member namespacing would mint ~1160 phantom duplicates. Copies whose
 content drifted (the exporter refreshed a DESCRIPTION between copies)
-reconcile through the engine's identity path as updates.
+reconcile through the engine's identity path as updates, adjudicated
+deterministically: the LAST member in archive order wins. Accepted
+residual: two genuinely DIFFERENT events from unrelated third-party feeds
+that reuse one UID would silently merge under that same last-wins rule.
+RFC 5545 declares UIDs globally unique and Google's exporter honors that,
+so the collision cost (one visible update) is taken over namespacing's
+guaranteed ~1160 phantoms.
 
 Timezone discipline: TZID-aware and UTC datetimes convert to UTC exactly
 (zoneinfo owns DST); floating datetimes (no TZID) are treated AS UTC — the
@@ -62,9 +72,9 @@ midnight + ``meta.all_day=true``.
 
 Containment: a member icalendar cannot parse logs one WARNING and is
 skipped (other members still import); a VEVENT without a UID logs one
-WARNING and is skipped (identity needs it); an undecodable DTSTART keeps
-the event, undated. An empty calendar is a legitimate export and stays
-silent.
+WARNING and is skipped (identity needs it); a missing or undecodable
+DTSTART logs one WARNING and keeps the event, undated. An empty calendar
+is a legitimate export and stays silent.
 
 Detection is anchored on the ``Calendar/`` parent segment: bare ``*.ics``
 (a generic extension, the #150 generic ingesters' territory) never matches.
@@ -247,7 +257,14 @@ def _parse_calendar(data: bytes, member_name: str) -> Iterator[EventDraft]:
                 member_name,
             )
             continue
-        yield _build_draft(event, uid, calendar_name)
+        draft = _build_draft(event, uid, calendar_name)
+        if draft.ts is None:
+            _logger.warning(
+                "calendar: event %d in %r has no readable DTSTART — imported undated",
+                ordinal,
+                member_name,
+            )
+        yield draft
 
 
 @source(
