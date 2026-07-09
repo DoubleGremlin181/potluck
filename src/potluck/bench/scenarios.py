@@ -37,6 +37,7 @@ from potluck.services.context import AppContext, create_context
 from potluck.services.imports import import_path
 from potluck.services.search import search
 from potluck.storage.db import Database
+from potluck.testing.chrome import write_chrome_takeout
 from potluck.testing.generators import WORDS, synthetic_notes
 from potluck.testing.keep import write_keep_takeout
 from potluck.testing.mbox import TAIL_WORDS, synthetic_email_drafts, write_gmail_takeout
@@ -318,6 +319,31 @@ def _whatsapp_ingest_scenario(name: str, tier: Tier, per_chat: int, chats: int) 
 
 
 # ---------------------------------------------------------------------------
+# P4: Chrome history ingest scenarios (#145)
+# ---------------------------------------------------------------------------
+
+
+def _chrome_ingest_scenario(name: str, tier: Tier, count: int) -> Scenario:
+    """Factory for Chrome Takeout history ingest scenarios (zip; real
+    incremental-JSON parse); item_count = history records (every record
+    imports — verbatim duplicates land via #N identity suffixes)."""
+
+    def setup(workdir: Path) -> None:
+        archive = write_chrome_takeout(workdir / "archives", count, seed=42)
+        if archive != workdir / "archives" / "chrome-synth-001.zip":
+            raise RuntimeError(f"chrome generator naming changed: {archive}")
+
+    def run(workdir: Path) -> None:
+        ctx = _make_ctx(workdir)
+        try:
+            import_path(ctx, workdir / "archives" / "chrome-synth-001.zip")
+        finally:
+            ctx.db.close()
+
+    return Scenario(name=name, tier=tier, item_count=count, setup=setup, run=run)
+
+
+# ---------------------------------------------------------------------------
 # P3: end-to-end REST search (#131)
 # ---------------------------------------------------------------------------
 
@@ -458,6 +484,12 @@ ALL_SCENARIOS = [
     # (1 rep, subprocess); the full-tier scenario tracks the trend.
     _whatsapp_ingest_scenario("ingest_whatsapp_5k", "smoke", 2_500, 2),
     _whatsapp_ingest_scenario("ingest_whatsapp_100k", "full", 25_000, 4),
+    # P4 Chrome history ingest (#145): smoke tracker + the full-tier 200k
+    # corpus. The < 2 min hard budget is asserted nightly in
+    # test_p4_budgets.py (1 rep, subprocess, peak-RSS gate); the full-tier
+    # scenario tracks the trend.
+    _chrome_ingest_scenario("ingest_chrome_10k", "smoke", 10_000),
+    _chrome_ingest_scenario("ingest_chrome_200k", "full", 200_000),
     # P3 REST search end-to-end (#131): nightly 100k budget anchor (p95
     # < 100 ms, asserted in test_p3_budgets.py) + smoke 10k PR-CI tracker
     Scenario(

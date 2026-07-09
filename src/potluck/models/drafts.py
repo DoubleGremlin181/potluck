@@ -64,6 +64,19 @@ class BookmarkDraft(BaseDraft):
     kind: Literal[ItemKind.BOOKMARK] = ItemKind.BOOKMARK
 
 
+class ActivityDraft(BaseDraft):
+    """Draft for a usage-activity item (browser history, app usage).
+
+    Everything lives in the base fields: title = page/app title, text = the
+    searchable title + URL composition, ts = when the visit happened;
+    source-specific context (transition type, device client id) rides in
+    meta. No satellite table, so no extra_hash_parts — meta changes reconcile
+    through the engine's identity path.
+    """
+
+    kind: Literal[ItemKind.ACTIVITY] = ItemKind.ACTIVITY
+
+
 class EmailAttachment(BaseModel):
     """Attachment metadata carried on an EmailDraft; bodies never enter the DB."""
 
@@ -199,5 +212,11 @@ class MessageDraft(BaseDraft):
 
 
 type ItemDraft = (
-    NoteDraft | EmailDraft | MessageDraft | PostDraft | BookmarkDraft | TransactionDraft
+    NoteDraft
+    | EmailDraft
+    | MessageDraft
+    | PostDraft
+    | BookmarkDraft
+    | TransactionDraft
+    | ActivityDraft
 )
