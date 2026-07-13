@@ -1,0 +1,20 @@
+{
+  "name": "Synthetic Fixture Crew",
+  "members": [
+    {
+      "name": "Ada Example",
+      "email": "ada@potluck.test",
+      "user_type": "Human"
+    },
+    {
+      "name": "Bo Sample",
+      "email": "bo@potluck.test",
+      "user_type": "Human"
+    },
+    {
+      "name": "Cy Test",
+      "email": "cy@potluck.test",
+      "user_type": "Human"
+    }
+  ]
+}

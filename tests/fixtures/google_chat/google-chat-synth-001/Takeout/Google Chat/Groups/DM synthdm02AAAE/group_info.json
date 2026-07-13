@@ -1,0 +1,14 @@
+{
+  "members": [
+    {
+      "name": "Ada Example",
+      "email": "ada@potluck.test",
+      "user_type": "Human"
+    },
+    {
+      "name": "Bo Sample",
+      "email": "bo@potluck.test",
+      "user_type": "Human"
+    }
+  ]
+}

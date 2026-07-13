@@ -1,0 +1,17 @@
+{
+  "user": {
+    "name": "Ada Example",
+    "email": "ada@potluck.test",
+    "user_type": "Human"
+  },
+  "membership_info": [
+    {
+      "group_id": "DM synthdm01AAAE",
+      "membership_state": "MEMBER_JOINED"
+    },
+    {
+      "group_id": "Space AAAAsynthsp1",
+      "membership_state": "MEMBER_JOINED"
+    }
+  ]
+}
