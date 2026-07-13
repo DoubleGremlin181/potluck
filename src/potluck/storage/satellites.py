@@ -15,11 +15,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 
-from potluck.models.drafts import EmailDraft, ItemDraft, MessageDraft, TransactionDraft
+from potluck.models.drafts import (
+    EmailDraft,
+    ItemDraft,
+    LocationDraft,
+    MessageDraft,
+    TransactionDraft,
+)
 from potluck.models.items import (
     AttachmentDetail,
     EmailDetail,
     ItemKind,
+    LocationDetail,
     MessageDetail,
     TransactionDetail,
 )
@@ -34,6 +41,11 @@ from potluck.storage.files import (
     delete_files_for_items,
     insert_files,
     list_files_for_item,
+)
+from potluck.storage.locations import (
+    draft_to_location_row,
+    get_location_row,
+    insert_locations,
 )
 from potluck.storage.messages import draft_to_message_row, get_message_row, insert_messages
 from potluck.storage.transactions import (
@@ -114,10 +126,19 @@ def _write_transaction_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDra
     insert_transactions(conn, [draft_to_transaction_row(draft, item_id) for draft, item_id in txns])
 
 
+def _write_location_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDraft, int]]) -> None:
+    # Timeline rows (#148): one satellite row per location item, rewritten in
+    # place on update (INSERT OR REPLACE on the item_id PK). No files, no
+    # finalize: a timeline is flat, nothing to reconcile at end of run.
+    locs = [(draft, item_id) for draft, item_id in pairs if isinstance(draft, LocationDraft)]
+    insert_locations(conn, [draft_to_location_row(draft, item_id) for draft, item_id in locs])
+
+
 SATELLITE_WRITERS: Final[dict[ItemKind, SatelliteWriter]] = {
     ItemKind.EMAIL: SatelliteWriter(write_batch=_write_email_batch, finalize=_finalize_emails),
     ItemKind.MESSAGE: SatelliteWriter(write_batch=_write_message_batch),
     ItemKind.TRANSACTION: SatelliteWriter(write_batch=_write_transaction_batch),
+    ItemKind.LOCATION: SatelliteWriter(write_batch=_write_location_batch),
 }
 
 
@@ -186,14 +207,34 @@ def _read_transaction_detail(conn: sqlite3.Connection, item_id: int) -> Transact
     )
 
 
+def _read_location_detail(conn: sqlite3.Connection, item_id: int) -> LocationDetail | None:
+    """Hydrate the locations row for one item (#148)."""
+    row = get_location_row(conn, item_id)
+    if row is None:
+        return None
+    return LocationDetail(
+        lat=row["lat"],
+        lon=row["lon"],
+        end_lat=row["end_lat"],
+        end_lon=row["end_lon"],
+        place_id=row["place_id"],
+        semantic_type=row["semantic_type"],
+        distance_m=row["distance_m"],
+    )
+
+
 # Detail DTO union grows with reader kinds; the service assigns by type.
 SATELLITE_READERS: Final[
     dict[
         ItemKind,
-        Callable[[sqlite3.Connection, int], EmailDetail | MessageDetail | TransactionDetail | None],
+        Callable[
+            [sqlite3.Connection, int],
+            EmailDetail | MessageDetail | TransactionDetail | LocationDetail | None,
+        ],
     ]
 ] = {
     ItemKind.EMAIL: _read_email_detail,
     ItemKind.MESSAGE: _read_message_detail,
     ItemKind.TRANSACTION: _read_transaction_detail,
+    ItemKind.LOCATION: _read_location_detail,
 }

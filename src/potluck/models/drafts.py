@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from potluck.models.items import ItemKind
 
@@ -183,6 +183,48 @@ class TransactionDraft(BaseDraft):
         )
 
 
+class LocationDraft(BaseDraft):
+    """Draft for a location item (timeline visit / route / raw position);
+    satellite fields land in the locations table.
+
+    The base lat/lon fields are narrowed to REQUIRED, strict, range-validated
+    floats: a location item without coordinates is meaningless, and a parsing
+    bug (degree-sign string passed through unparsed, impossible latitude)
+    must die at the DTO boundary instead of entering storage. Routes carry
+    both end coordinates or neither (lat/lon = start, end_lat/end_lon = end);
+    title is the human place/activity name, ts the visit/route start; the
+    meta.type discriminator (visit | route | position) separates the flavors.
+    """
+
+    kind: Literal[ItemKind.LOCATION] = ItemKind.LOCATION
+    lat: float = Field(strict=True, ge=-90.0, le=90.0)
+    lon: float = Field(strict=True, ge=-180.0, le=180.0)
+    end_lat: float | None = Field(default=None, strict=True, ge=-90.0, le=90.0)
+    end_lon: float | None = Field(default=None, strict=True, ge=-180.0, le=180.0)
+    place_id: str | None = None
+    semantic_type: str | None = None
+    distance_m: float | None = Field(default=None, strict=True, ge=0.0)
+
+    @model_validator(mode="after")
+    def _ends_come_paired(self) -> "LocationDraft":
+        if (self.end_lat is None) != (self.end_lon is None):
+            raise ValueError("end_lat and end_lon must be set together (route ends are pairs)")
+        return self
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (locations row) — see
+        # BaseDraft.extra_hash_parts. lat/lon are base fields, already inside
+        # the base hash; only the satellite-only columns need covering here.
+        # repr() matches the base hash's float encoding.
+        return (
+            repr(self.end_lat) if self.end_lat is not None else "",
+            repr(self.end_lon) if self.end_lon is not None else "",
+            self.place_id or "",
+            self.semantic_type or "",
+            repr(self.distance_m) if self.distance_m is not None else "",
+        )
+
+
 class MessageMedia(BaseModel):
     """Media reference carried on a MessageDraft; metadata only, never bytes.
 
@@ -236,4 +278,5 @@ type ItemDraft = (
     | TransactionDraft
     | ActivityDraft
     | EventDraft
+    | LocationDraft
 )

@@ -98,6 +98,24 @@ class TransactionDetail(BaseModel):
     category_group: str | None
 
 
+class LocationDetail(BaseModel):
+    """Locations-satellite fields surfaced on item detail (#148).
+
+    lat/lon mirror the item's own columns (the satellite owns the NOT NULL
+    invariant); end_lat/end_lon are the route end point (None for visits and
+    raw positions); place_id/semantic_type/distance_m are verbatim export
+    values.
+    """
+
+    lat: float
+    lon: float
+    end_lat: float | None
+    end_lon: float | None
+    place_id: str | None
+    semantic_type: str | None
+    distance_m: float | None
+
+
 class Item(BaseModel):
     """A fully-hydrated item row returned from the storage layer."""
 
@@ -118,6 +136,7 @@ class Item(BaseModel):
     email: EmailDetail | None = None
     message: MessageDetail | None = None
     transaction: TransactionDetail | None = None
+    location: LocationDetail | None = None
 
 
 class ItemSort(StrEnum):

@@ -1,6 +1,8 @@
 """Streaming archive readers for Google Takeout exports.
 
-Supports zip, tgz (tar.gz), extracted directories, and multi-part sets.
+Supports zip, tgz (tar.gz), extracted directories, multi-part sets, and bare
+single-file exports (plugins only speak Archive, so a lone export file is
+exposed as a one-member archive).
 
 Design contract: iteration is streaming / sequential.
 - tar.gz is single-cursor sequential access: each yielded stream is valid only
@@ -188,6 +190,39 @@ class DirArchive:
 
 
 # ---------------------------------------------------------------------------
+# SingleFileArchive
+# ---------------------------------------------------------------------------
+
+
+class SingleFileArchive:
+    """A bare (non-archive) export file as a one-member archive.
+
+    Some products export a single plain file — the Android on-device
+    Timeline.json, a lone WhatsApp chat .txt — and plugins only speak
+    Archive, so the reader seam adapts. The sole member's name is the file's
+    basename; detection globs therefore need a root-relative alternative to
+    match it.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def iter_names(self) -> Iterator[str]:
+        """The single member name: the file's basename."""
+        yield self._path.name
+
+    def iter_members(self, pattern: str) -> Iterator[tuple[Member, IO[bytes]]]:
+        """The (Member, stream) pair when the basename matches *pattern*.
+
+        A fresh handle per call — each iteration is independent, the same
+        contract the other implementations honour.
+        """
+        if fnmatch.fnmatchcase(self._path.name, pattern):
+            with self._path.open("rb") as f:
+                yield Member(name=self._path.name, size=self._path.stat().st_size), f
+
+
+# ---------------------------------------------------------------------------
 # MultiPartArchive
 # ---------------------------------------------------------------------------
 
@@ -227,17 +262,19 @@ def _make_single_archive(path: Path) -> "ZipArchive | TarArchive":
 
 
 def open_archive(path: Path) -> Archive:
-    """Detect and open a zip / .tgz / .tar.gz / directory archive.
+    """Detect and open a zip / .tgz / .tar.gz / directory / plain-file archive.
 
     Multi-part sets — old naming (``takeout-20240115T123456Z-001.tgz``,
     ``…-002.tgz``, …) and real current Takeout naming
     (``takeout-20251212T171747Z-9-001.tgz``, ``…-12-001.tgz``, …) — are
     detected by filename pattern and automatically combined into a
     :class:`MultiPartArchive`, ordered numerically by (file, part). Opening
-    any part of the set loads the whole set.
+    any part of the set loads the whole set. An existing file without an
+    archive extension opens as a :class:`SingleFileArchive` — bare
+    single-file exports are real import shapes (#148's Timeline.json).
 
-    Raises :class:`~potluck.core.errors.UnsupportedArchiveError` for unrecognised
-    extensions or paths that do not exist.
+    Raises :class:`~potluck.core.errors.UnsupportedArchiveError` for paths
+    that do not exist.
     """
     if path.is_dir():
         return DirArchive(path)
@@ -269,5 +306,9 @@ def open_archive(path: Path) -> Archive:
         # Only one file in the "set" → treat as plain archive
         return _make_single_archive(path)
 
-    # Non-multi-part filename: detect by extension
-    return _make_single_archive(path)
+    # Non-multi-part filename: archives by extension; any other existing
+    # plain file is a single-member archive (its basename the sole member).
+    # The not-exists check above keeps typo'd paths failing fast.
+    if path.name.endswith((".zip", ".tgz", ".tar.gz")):
+        return _make_single_archive(path)
+    return SingleFileArchive(path)

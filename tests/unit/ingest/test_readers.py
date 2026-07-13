@@ -171,15 +171,69 @@ def test_open_archive_detects(tmp_path: Path, fmt: Literal["zip", "tgz", "dir"])
 # ---------------------------------------------------------------------------
 
 
-def test_open_archive_unknown_raises(tmp_path: Path) -> None:
-    """UnsupportedArchiveError raised for .txt files and nonexistent paths."""
-    txt_file = tmp_path / "data.txt"
-    txt_file.write_bytes(b"hello")
-    with pytest.raises(UnsupportedArchiveError):
-        open_archive(txt_file)
-
+def test_open_archive_nonexistent_raises(tmp_path: Path) -> None:
+    """UnsupportedArchiveError still fails fast on typo'd paths."""
     with pytest.raises(UnsupportedArchiveError):
         open_archive(tmp_path / "nonexistent.xyz")
+
+
+# ---------------------------------------------------------------------------
+# SingleFileArchive: bare (non-archive) export files
+# ---------------------------------------------------------------------------
+
+
+def test_open_archive_plain_file_is_single_member_archive(tmp_path: Path) -> None:
+    """An existing plain file opens as a one-member archive whose member name
+    is the file's basename — bare single-file exports (the Android
+    Timeline.json, a lone WhatsApp chat .txt) are real import shapes."""
+    plain = tmp_path / "Timeline.json"
+    plain.write_bytes(b'{"semanticSegments": []}')
+    archive = open_archive(plain)
+    assert list(archive.iter_names()) == ["Timeline.json"]
+
+
+def test_single_file_archive_iter_members_matches_pattern(tmp_path: Path) -> None:
+    plain = tmp_path / "WhatsApp Chat with Bo Sample.txt"
+    plain.write_bytes(b"3/17/23, 9:00 AM - Bo Sample: synthetic hello\n")
+    archive = open_archive(plain)
+
+    matched = [(m.name, stream.read()) for m, stream in archive.iter_members("*.txt")]
+    assert matched == [
+        ("WhatsApp Chat with Bo Sample.txt", b"3/17/23, 9:00 AM - Bo Sample: synthetic hello\n")
+    ]
+    assert list(archive.iter_members("*.json")) == []
+
+
+def test_single_file_archive_member_size(tmp_path: Path) -> None:
+    plain = tmp_path / "data.csv"
+    plain.write_bytes(b"a,b\n1,2\n")
+    archive = open_archive(plain)
+    sizes = [member.size for member, _ in archive.iter_members("*.csv")]
+    assert sizes == [8]
+
+
+def test_single_file_archive_iterations_are_independent(tmp_path: Path) -> None:
+    """Each iter_members call opens a fresh handle (the per-call contract the
+    other Archive implementations honour) — two-pass parsers re-read."""
+    plain = tmp_path / "Timeline.json"
+    plain.write_bytes(b"{}")
+    archive = open_archive(plain)
+    for _ in range(2):
+        contents = [stream.read() for _, stream in archive.iter_members("Timeline.json")]
+        assert contents == [b"{}"]
+
+
+def test_plain_file_beside_multipart_set_stays_separate(tmp_path: Path) -> None:
+    """A bare file never joins an adjacent multi-part set, and opening a real
+    part still loads the whole set (multi-part detection is unaffected)."""
+    write_archive(tmp_path / "takeout-20240115T123456Z-001.zip", {"a.txt": b"a"}, "zip")
+    write_archive(tmp_path / "takeout-20240115T123456Z-002.zip", {"b.txt": b"b"}, "zip")
+    plain = tmp_path / "takeout-20240115T123456Z-notes.txt"
+    plain.write_bytes(b"plain")
+
+    assert list(open_archive(plain).iter_names()) == ["takeout-20240115T123456Z-notes.txt"]
+    names = list(open_archive(tmp_path / "takeout-20240115T123456Z-001.zip").iter_names())
+    assert names == ["a.txt", "b.txt"]
 
 
 # ---------------------------------------------------------------------------
