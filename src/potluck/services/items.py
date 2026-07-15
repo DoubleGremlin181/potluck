@@ -9,6 +9,7 @@ from potluck.models.items import (
     ListItemsRequest,
     ListItemsResponse,
     LocationDetail,
+    MediaDetail,
     MessageDetail,
     TransactionDetail,
 )
@@ -27,8 +28,8 @@ def get_item(ctx: AppContext, item_id: int) -> Item:
     Returns:
         A fully-hydrated :class:`~potluck.models.items.Item` DTO. Kinds with
         a satellite reader (#200) carry their detail block (``email``,
-        ``message``, ``transaction`` or ``location``); all other kinds leave
-        them None.
+        ``message``, ``transaction``, ``location`` or ``media``); all other
+        kinds leave them None.
 
     Raises:
         ItemNotFoundError: If no item with *item_id* exists.
@@ -50,6 +51,8 @@ def get_item(ctx: AppContext, item_id: int) -> Item:
                 item.transaction = detail
             elif isinstance(detail, LocationDetail):
                 item.location = detail
+            elif isinstance(detail, MediaDetail):
+                item.media = detail
     return item
 
 

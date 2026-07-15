@@ -10,6 +10,8 @@ Rules, enforced by `scripts/check_fixtures.py` in pre-commit and CI:
 - Email addresses only under `@potluck.test` or `@example.com`
 - No phone-number-shaped strings
 - No files over 1 MiB
+- Binary members (generated media) are scanned too: their printable-ASCII
+  runs — embedded EXIF/XMP-style metadata — get the same email/phone rules
 - Raw export shapes (`Takeout/`, `*.mbox`, `*.zip` outside this tree) are
   gitignored as a second line of defense
 

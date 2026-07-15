@@ -1,0 +1,29 @@
+{
+  "title": "synthetic-photo-0003-ppp.jpg",
+  "description": "ember hazel kelp nutmeg",
+  "imageViews": "1",
+  "creationTime": {
+    "timestamp": "1709388051",
+    "formatted": "Mar 02, 2024, 02:00:51 PM UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1709301651",
+    "formatted": "Mar 01, 2024, 02:00:51 PM UTC"
+  },
+  "geoData": {
+    "latitude": 40.019,
+    "longitude": -75.029,
+    "altitude": 13.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "url": "https://photos.google.com/photo/synthetic-0003",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceFolder": {
+        "localFolderName": "Camera"
+      },
+      "deviceType": "ANDROID_PHONE"
+    }
+  }
+}

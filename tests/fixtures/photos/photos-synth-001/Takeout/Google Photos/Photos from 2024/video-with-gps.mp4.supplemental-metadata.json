@@ -1,0 +1,29 @@
+{
+  "title": "video-with-gps.mp4",
+  "description": "",
+  "imageViews": "1",
+  "creationTime": {
+    "timestamp": "1709457300",
+    "formatted": "Mar 03, 2024, 09:15:00 AM UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1709370900",
+    "formatted": "Mar 02, 2024, 09:15:00 AM UTC"
+  },
+  "geoData": {
+    "latitude": 40.4,
+    "longitude": -75.4,
+    "altitude": 21.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "url": "https://photos.google.com/photo/synthetic",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceFolder": {
+        "localFolderName": "Camera"
+      },
+      "deviceType": "ANDROID_PHONE"
+    }
+  }
+}

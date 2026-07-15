@@ -21,9 +21,9 @@ def _table_exists(path: Path, name: str) -> bool:
 def test_builtin_migrations_apply_then_rerun_is_noop(tmp_path: Path) -> None:
     conn = connect(tmp_path / "m.db")
     try:
-        assert apply_migrations(conn) == 13
+        assert apply_migrations(conn) == 14
         assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'meta'").fetchone()
-        assert apply_migrations(conn) == 13  # idempotent no-op
+        assert apply_migrations(conn) == 14  # idempotent no-op
     finally:
         conn.close()
 

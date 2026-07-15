@@ -20,6 +20,7 @@ from potluck.models.drafts import (
     ItemDraft,
     LocationDraft,
     MessageDraft,
+    PhotoDraft,
     TransactionDraft,
 )
 from potluck.models.items import (
@@ -27,6 +28,7 @@ from potluck.models.items import (
     EmailDetail,
     ItemKind,
     LocationDetail,
+    MediaDetail,
     MessageDetail,
     TransactionDetail,
 )
@@ -47,6 +49,7 @@ from potluck.storage.locations import (
     get_location_row,
     insert_locations,
 )
+from potluck.storage.media import draft_to_media_row, get_media_row, insert_media
 from potluck.storage.messages import draft_to_message_row, get_message_row, insert_messages
 from potluck.storage.transactions import (
     draft_to_transaction_row,
@@ -134,11 +137,21 @@ def _write_location_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDraft,
     insert_locations(conn, [draft_to_location_row(draft, item_id) for draft, item_id in locs])
 
 
+def _write_media_batch(conn: sqlite3.Connection, pairs: list[tuple[ItemDraft, int]]) -> None:
+    # Photo rows (#149): one satellite row per photo/video item, rewritten in
+    # place on update (INSERT OR REPLACE on the item_id PK). No files rows
+    # (the item IS its file — see migration 014), no finalize: an album tree
+    # is flat, nothing to reconcile at end of run.
+    photos = [(draft, item_id) for draft, item_id in pairs if isinstance(draft, PhotoDraft)]
+    insert_media(conn, [draft_to_media_row(draft, item_id) for draft, item_id in photos])
+
+
 SATELLITE_WRITERS: Final[dict[ItemKind, SatelliteWriter]] = {
     ItemKind.EMAIL: SatelliteWriter(write_batch=_write_email_batch, finalize=_finalize_emails),
     ItemKind.MESSAGE: SatelliteWriter(write_batch=_write_message_batch),
     ItemKind.TRANSACTION: SatelliteWriter(write_batch=_write_transaction_batch),
     ItemKind.LOCATION: SatelliteWriter(write_batch=_write_location_batch),
+    ItemKind.PHOTO: SatelliteWriter(write_batch=_write_media_batch),
 }
 
 
@@ -223,13 +236,30 @@ def _read_location_detail(conn: sqlite3.Connection, item_id: int) -> LocationDet
     )
 
 
+def _read_media_detail(conn: sqlite3.Connection, item_id: int) -> MediaDetail | None:
+    """Hydrate the media row for one item (#149)."""
+    row = get_media_row(conn, item_id)
+    if row is None:
+        return None
+    return MediaDetail(
+        width=row["width"],
+        height=row["height"],
+        camera_make=row["camera_make"],
+        camera_model=row["camera_model"],
+        gps_alt=row["gps_alt"],
+        mime=row["mime"],
+        size_bytes=row["size_bytes"],
+        sha256=row["sha256"],
+    )
+
+
 # Detail DTO union grows with reader kinds; the service assigns by type.
 SATELLITE_READERS: Final[
     dict[
         ItemKind,
         Callable[
             [sqlite3.Connection, int],
-            EmailDetail | MessageDetail | TransactionDetail | LocationDetail | None,
+            EmailDetail | MessageDetail | TransactionDetail | LocationDetail | MediaDetail | None,
         ],
     ]
 ] = {
@@ -237,4 +267,5 @@ SATELLITE_READERS: Final[
     ItemKind.MESSAGE: _read_message_detail,
     ItemKind.TRANSACTION: _read_transaction_detail,
     ItemKind.LOCATION: _read_location_detail,
+    ItemKind.PHOTO: _read_media_detail,
 }

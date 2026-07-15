@@ -62,6 +62,36 @@ def test_timestamps_and_plain_ints_do_not_trip_phone_rule(tmp_path: Path) -> Non
     assert code == 0, out
 
 
+def test_binary_member_with_embedded_email_caught(tmp_path: Path) -> None:
+    """Binary fixtures (generated media, #149) are not skipped wholesale:
+    printable-ASCII runs inside them (EXIF/XMP-style metadata) are scanned
+    with the same email/phone rules."""
+    payload = b"\xff\xd8\xff\xe1\x00\x40Exif\x00\x00someone@gmail.com\x00" + b"\x81" * 16
+    (tmp_path / "bad.jpg").write_bytes(payload)
+    code, out = _run(tmp_path)
+    assert code == 1
+    assert "disallowed email" in out
+
+
+def test_binary_member_with_embedded_phone_caught(tmp_path: Path) -> None:
+    payload = b"\xff\xd8\xff\xe1\x00\x40Exif\x00\x00call +14155550123 now\x00" + b"\x81" * 16
+    (tmp_path / "bad2.jpg").write_bytes(payload)
+    code, out = _run(tmp_path)
+    assert code == 1
+    assert "phone" in out
+
+
+def test_clean_binary_member_passes(tmp_path: Path) -> None:
+    """Synthetic generated media (allowed-domain strings, camera tags) pass."""
+    payload = (
+        b"\xff\xd8\xff\xe1\x00\x40Exif\x00\x00SynthCam SC-1000 2024:03:01 08:30:00\x00"
+        b"ada@potluck.test\x00" + b"\x81\xfe\x03" * 64
+    )
+    (tmp_path / "ok.jpg").write_bytes(payload)
+    code, out = _run(tmp_path)
+    assert code == 0, out
+
+
 def test_missing_dir_passes(tmp_path: Path) -> None:
     code, _ = _run(tmp_path / "does-not-exist")
     assert code == 0

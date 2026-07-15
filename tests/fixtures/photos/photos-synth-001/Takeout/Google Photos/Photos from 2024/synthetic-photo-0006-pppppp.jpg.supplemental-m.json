@@ -1,0 +1,35 @@
+{
+  "title": "synthetic-photo-0006-pppppp.jpg",
+  "description": "",
+  "imageViews": "1",
+  "creationTime": {
+    "timestamp": "1709409642",
+    "formatted": "Mar 02, 2024, 08:00:42 PM UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1709323242",
+    "formatted": "Mar 01, 2024, 08:00:42 PM UTC"
+  },
+  "geoData": {
+    "latitude": 40.028,
+    "longitude": -75.038,
+    "altitude": 16.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "people": [
+    {
+      "name": "Ada Example"
+    }
+  ],
+  "url": "https://photos.google.com/photo/synthetic-0006",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceFolder": {
+        "localFolderName": "Camera"
+      },
+      "deviceType": "ANDROID_PHONE"
+    }
+  },
+  "favorited": true
+}

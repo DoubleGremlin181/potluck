@@ -116,6 +116,26 @@ class LocationDetail(BaseModel):
     distance_m: float | None
 
 
+class MediaDetail(BaseModel):
+    """Media-satellite fields surfaced on item detail (#149).
+
+    Byte facts (size_bytes, sha256) always exist — they come from the
+    streamed media bytes; probe facts (dimensions, camera, altitude) are
+    None for videos and unprobeable images. sha256 is the durable locator
+    for P6 pixel ingestion (archive paths are transient across re-exports
+    and deliberately not stored).
+    """
+
+    width: int | None
+    height: int | None
+    camera_make: str | None
+    camera_model: str | None
+    gps_alt: float | None
+    mime: str | None
+    size_bytes: int
+    sha256: str
+
+
 class Item(BaseModel):
     """A fully-hydrated item row returned from the storage layer."""
 
@@ -137,6 +157,7 @@ class Item(BaseModel):
     message: MessageDetail | None = None
     transaction: TransactionDetail | None = None
     location: LocationDetail | None = None
+    media: MediaDetail | None = None
 
 
 class ItemSort(StrEnum):

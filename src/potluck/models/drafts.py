@@ -225,6 +225,55 @@ class LocationDraft(BaseDraft):
         )
 
 
+class PhotoDraft(BaseDraft):
+    """Draft for a photo/video item; satellite fields land in the media table.
+
+    Photos AND videos are ``kind=photo`` with a ``meta.type`` discriminator
+    (photo | video) — the locked 12-kind vocabulary has no VIDEO kind (the
+    Reddit post/comment resolution). title = the export's original filename,
+    text = description + people names, ts = capture time (photoTakenTime →
+    EXIF DateTimeOriginal → creationTime), lat/lon = resolved GPS (geoData →
+    geoDataExif → EXIF), range-validated so a broken GPS parse dies at the
+    DTO boundary. sha256/size_bytes are derived from the streamed media
+    bytes and are required; the probe facts (dimensions, camera, altitude)
+    are optional. No archive path rides the draft — byte identity makes
+    paths transient detail (see migration 014).
+    """
+
+    kind: Literal[ItemKind.PHOTO] = ItemKind.PHOTO
+    lat: float | None = Field(default=None, strict=True, ge=-90.0, le=90.0)
+    lon: float | None = Field(default=None, strict=True, ge=-180.0, le=180.0)
+    width: int | None = Field(default=None, strict=True, gt=0)
+    height: int | None = Field(default=None, strict=True, gt=0)
+    camera_make: str | None = None
+    camera_model: str | None = None
+    gps_alt: float | None = Field(default=None, strict=True)
+    mime: str | None = None
+    size_bytes: int = Field(strict=True, ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _dimensions_come_paired(self) -> "PhotoDraft":
+        if (self.width is None) != (self.height is None):
+            raise ValueError("width and height must be set together (probed images have both)")
+        return self
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (media row) — see
+        # BaseDraft.extra_hash_parts. All parts are fixed-position scalars;
+        # repr() matches the base hash's float encoding.
+        return (
+            str(self.width) if self.width is not None else "",
+            str(self.height) if self.height is not None else "",
+            self.camera_make or "",
+            self.camera_model or "",
+            repr(self.gps_alt) if self.gps_alt is not None else "",
+            self.mime or "",
+            str(self.size_bytes),
+            self.sha256,
+        )
+
+
 class MessageMedia(BaseModel):
     """Media reference carried on a MessageDraft; metadata only, never bytes.
 
@@ -279,4 +328,5 @@ type ItemDraft = (
     | ActivityDraft
     | EventDraft
     | LocationDraft
+    | PhotoDraft
 )

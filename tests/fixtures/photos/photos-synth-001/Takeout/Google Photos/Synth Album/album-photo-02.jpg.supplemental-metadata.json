@@ -1,0 +1,29 @@
+{
+  "title": "album-photo-02.jpg",
+  "description": "synthetic caption",
+  "imageViews": "1",
+  "creationTime": {
+    "timestamp": "1709457500",
+    "formatted": "Mar 03, 2024, 09:18:20 AM UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1709371100",
+    "formatted": "Mar 02, 2024, 09:18:20 AM UTC"
+  },
+  "geoData": {
+    "latitude": 0.0,
+    "longitude": 0.0,
+    "altitude": 0.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "url": "https://photos.google.com/photo/synthetic",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceFolder": {
+        "localFolderName": "Camera"
+      },
+      "deviceType": "ANDROID_PHONE"
+    }
+  }
+}

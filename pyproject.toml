@@ -28,6 +28,14 @@ dependencies = [
     # plugin discovery skips modules that fail to import — a 6.x resolution
     # would silently drop the whole calendar source.
     "icalendar>=7",
+    # 10.4 floor, proven empirically (uv run --with pillow==10.4.0 exercising
+    # every API sources/photos.py + testing/photos.py use: lazy Image.open on
+    # a stream, .size, getexif(), Exif.get_ifd(IFD.Exif / IFD.GPSInfo), the
+    # ExifTags enums, Image.MIME, save(exif=) whole-IFD round-trip): 10.4.0
+    # is the first release shipping cp313 wheels, so with requires-python
+    # >=3.13 any lower resolution fails to install and plugin discovery would
+    # silently drop the whole photos source.
+    "pillow>=10.4",
 ]
 
 [project.scripts]
