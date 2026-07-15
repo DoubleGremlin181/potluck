@@ -19,9 +19,16 @@ verified against a real 2025-12 Takeout part-12, shape only — 2,783 media +
   pairing coverage on the real export, zero ambiguity). The ``(N)``
   pathology: ``X.jpg.supplemental-metadata(1).json`` belongs to ``X(1).jpg``
   — the (N) transfers to just before the media extension (3 real cases, all
-  resolving this way). ``X-edited.jpg`` variants never prefix-match the base
-  sidecar and import sidecar-less (zero -edited files in the real export;
-  the parser does not guess at sharing).
+  resolving this way). Truncation COLLISIONS (two media sharing the first 46
+  chars of their target, so both sidecars collapse to one stem and only the
+  second sidecar's *filename* gets an ``(N)``): the sidecar ``title`` field
+  — the untruncated original filename — disambiguates within a stem group
+  before the (N)-slot rule, and a sidecar claimed by a second distinct
+  basename warns ("metadata may be mis-assigned") instead of mis-pairing
+  silently (zero real instances; review fix cycle 1). ``X-edited.jpg``
+  variants never prefix-match the base sidecar and import sidecar-less
+  (zero -edited files in the real export; the parser does not guess at
+  sharing).
 - Sidecar schema (stable across all 2,783): ``title`` (original filename),
   ``description`` (always empty in the real export), ``imageViews``,
   ``creationTime``/``photoTakenTime`` (epoch-string blocks), ``geoData``
@@ -150,7 +157,8 @@ class _Sidecar:
     url: str | None = None
     device_folder: str | None = None
     app_source: str | None = None
-    claimed: bool = False
+    n: int | None = None  # the sidecar filename's own (N), before .json
+    claimed_by: str | None = None  # first media basename that paired with it
 
 
 @dataclass(slots=True)
@@ -168,9 +176,15 @@ class _Probe:
 
 @dataclass(slots=True)
 class _DirState:
-    """Per-directory pass-2 state: the sidecar lookup + warning latch."""
+    """Per-directory pass-2 state: the sidecar lookup + warning latch.
 
-    sidecars: dict[tuple[str, int | None], _Sidecar] = field(default_factory=dict)
+    sidecars is keyed by STEM alone, each group holding every (N) variant of
+    that stem: truncation collisions collapse two DIFFERENT media's sidecars
+    onto one 46-char stem (review fix cycle 1), so the (N) variants must be
+    selectable together, not only through the media name's own (N).
+    """
+
+    sidecars: dict[str, list[_Sidecar]] = field(default_factory=dict)
     orphan_warned: bool = False
 
 
@@ -297,29 +311,53 @@ def _parse_album_title(data: bytes, member_name: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _lookup_prefix(
-    sidecars: dict[tuple[str, int | None], _Sidecar], target: str, n: int | None
-) -> _Sidecar | None:
-    """Longest stem that is a prefix of *target* with the given (N), walking
-    lengths downward — length-agnostic, so any truncation depth pairs (the
-    46-char cap is an observation, not an assumption)."""
+def _lookup_prefix_group(sidecars: dict[str, list[_Sidecar]], target: str) -> list[_Sidecar] | None:
+    """The longest stem that is a prefix of *target* — its whole (N)-variant
+    group — walking lengths downward. Length-agnostic, so any truncation
+    depth pairs (the 46-char cap is an observation, not an assumption)."""
     for length in range(len(target), 0, -1):
-        sidecar = sidecars.get((target[:length], n))
-        if sidecar is not None:
+        group = sidecars.get(target[:length])
+        if group:
+            return group
+    return None
+
+
+def _select_sidecar(group: list[_Sidecar], media_basename: str, n: int | None) -> _Sidecar | None:
+    """Pick one sidecar from a stem group for *media_basename* (whose own
+    (N) is *n*, None for plain names).
+
+    Title first (review fix cycle 1): the sidecar ``title`` field carries the
+    UNTRUNCATED original filename, so a title equal to the media basename is
+    exact evidence — it narrows the pool before the (N)-slot rule. Within
+    the pool the sidecar whose own (N) matches the media's wins (the
+    canonical slot: None for plain names, N for transfer). A single
+    title-narrowed leftover wins even from the "wrong" slot — that is
+    exactly the 46-char collision, where media B's sidecar sits in the (1)
+    slot while B's name carries no (N).
+    """
+    titled = [s for s in group if s.title == media_basename]
+    for sidecar in titled or group:
+        if sidecar.n == n:
             return sidecar
+    if len(titled) == 1:
+        return titled[0]
     return None
 
 
 def _match_sidecar(state: _DirState, media_basename: str) -> _Sidecar | None:
     """The pairing rule (module docstring): direct prefix match first, then
     the (N) transfer for ``X(1).jpg`` ← ``X.jpg.supplemental-metadata(1)``."""
-    direct = _lookup_prefix(state.sidecars, media_basename + _SIDECAR_SUFFIX, None)
-    if direct is not None:
-        return direct
+    group = _lookup_prefix_group(state.sidecars, media_basename + _SIDECAR_SUFFIX)
+    if group is not None:
+        direct = _select_sidecar(group, media_basename, None)
+        if direct is not None:
+            return direct
     m = _MEDIA_N_RE.match(media_basename)
     if m is not None:
         base = m.group("root") + m.group("ext")
-        return _lookup_prefix(state.sidecars, base + _SIDECAR_SUFFIX, int(m.group("n")))
+        base_group = _lookup_prefix_group(state.sidecars, base + _SIDECAR_SUFFIX)
+        if base_group is not None:
+            return _select_sidecar(base_group, media_basename, int(m.group("n")))
     return None
 
 
@@ -557,7 +595,16 @@ def _collect_sidecars(archive: Archive) -> tuple[dict[str, _DirState], dict[str,
             continue
         sidecar = _parse_sidecar(stream.read(), member.name)
         if sidecar is not None:
-            dirs.setdefault(directory, _DirState()).sidecars[(stem, n)] = sidecar
+            sidecar.n = n
+            group = dirs.setdefault(directory, _DirState()).sidecars.setdefault(stem, [])
+            # A same-(stem, N) re-listing (multi-part re-export overlap)
+            # replaces in place — never a phantom group member.
+            for index, existing in enumerate(group):
+                if existing.n == n:
+                    group[index] = sidecar
+                    break
+            else:
+                group.append(sidecar)
     return dirs, album_titles
 
 
@@ -565,12 +612,13 @@ def _warn_unclaimed(dirs: dict[str, _DirState]) -> None:
     """A sidecar no media file claimed references a photo the export failed
     to include — that is signal, not noise (real export: zero)."""
     for state in dirs.values():
-        for sidecar in state.sidecars.values():
-            if not sidecar.claimed:
-                _logger.warning(
-                    "photos: sidecar %r references media the export does not contain — no item",
-                    sidecar.member_name,
-                )
+        for group in state.sidecars.values():
+            for sidecar in group:
+                if sidecar.claimed_by is None:
+                    _logger.warning(
+                        "photos: sidecar %r references media the export does not contain — no item",
+                        sidecar.member_name,
+                    )
 
 
 @source(
@@ -604,7 +652,19 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[PhotoDraft]:
         state = dirs.get(directory)
         sidecar = _match_sidecar(state, basename) if state is not None else None
         if sidecar is not None:
-            sidecar.claimed = True
+            if sidecar.claimed_by is not None and sidecar.claimed_by != basename:
+                # Truncation collision without a resolving (N) variant: two
+                # distinct media prefix-match one sidecar. Best-effort pair,
+                # but NEVER silently (review fix cycle 1).
+                _logger.warning(
+                    "photos: sidecar %r matched by both %r and %r — truncated "
+                    "name collision, metadata may be mis-assigned",
+                    sidecar.member_name,
+                    sidecar.claimed_by,
+                    basename,
+                )
+            else:
+                sidecar.claimed_by = basename
         elif state is None or not state.orphan_warned:
             _logger.warning(
                 "photos: %r has no sidecar — imported from file facts alone "

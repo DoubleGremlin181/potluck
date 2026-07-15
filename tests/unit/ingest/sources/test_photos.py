@@ -124,6 +124,62 @@ def test_n_variant_pairs_with_n_suffixed_media(tmp_path: Path) -> None:
     assert set(by_text) == {"base copy", "n copy"}
 
 
+def test_46char_collision_disambiguates_by_title(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Review fix cycle 1 (I1): two media names sharing their first 46 chars
+    collapse both truncated sidecar stems to the SAME 46-char stem — Takeout
+    disambiguates the second sidecar's *filename* with ``(1)`` while neither
+    media name carries an (N). The sidecar ``title`` (the untruncated
+    original filename) is the disambiguator: each photo must get ITS OWN
+    title, timestamp, and GPS — never the neighbour's."""
+    media_a = "c" * 46 + "1.jpg"
+    media_b = "c" * 46 + "2.jpg"
+    stem = ("c" * 46 + "1.jpg.supplemental-metadata")[:46]  # == "c" * 46
+    members = {
+        f"{_ALBUM}/{media_a}": tiny_image(color=(10, 10, 10)),
+        f"{_ALBUM}/{media_b}": tiny_image(color=(20, 20, 20)),
+        f"{_ALBUM}/{stem}.json": sidecar_json(media_a, taken_epoch=_EPOCH, geo=(40.1, -75.1, 10.0)),
+        f"{_ALBUM}/{stem}(1).json": sidecar_json(
+            media_b, taken_epoch=_EPOCH + 600, geo=(40.2, -75.2, 20.0)
+        ),
+    }
+    with caplog.at_level(logging.WARNING):
+        drafts = {d.title: d for d in _drafts(tmp_path, members)}
+    assert set(drafts) == {media_a, media_b}
+    assert drafts[media_a].ts == _TAKEN
+    assert (drafts[media_a].lat, drafts[media_a].lon) == (40.1, -75.1)
+    assert drafts[media_b].ts == datetime.fromtimestamp(_EPOCH + 600, tz=UTC)
+    assert (drafts[media_b].lat, drafts[media_b].lon) == (40.2, -75.2)
+    # Title evidence fully resolves the collision — no ambiguity remains.
+    assert not _potluck_warnings(caplog)
+
+
+def test_46char_collision_without_variant_sidecar_warns(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The residual collision: only ONE truncated sidecar exists for two
+    colliding media names (its title names media A). Media B still
+    prefix-matches it — a best-effort pair — but the double claim must WARN
+    naming both files: ambiguity may mis-assign metadata, and silence is
+    the one forbidden outcome (review bar)."""
+    media_a = "c" * 46 + "1.jpg"
+    media_b = "c" * 46 + "2.jpg"
+    members = {
+        f"{_ALBUM}/{media_a}": tiny_image(color=(10, 10, 10)),
+        f"{_ALBUM}/{media_b}": tiny_image(color=(20, 20, 20)),
+        f"{_ALBUM}/{'c' * 46}.json": sidecar_json(
+            media_a, taken_epoch=_EPOCH, geo=(40.1, -75.1, 10.0)
+        ),
+    }
+    with caplog.at_level(logging.WARNING):
+        drafts = _drafts(tmp_path, members)
+    assert len(drafts) == 2
+    warnings = _potluck_warnings(caplog)
+    assert len(warnings) == 1
+    assert media_a in warnings[0] and media_b in warnings[0]
+
+
 def test_unclaimed_sidecar_warns_and_yields_nothing(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
