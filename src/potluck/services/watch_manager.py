@@ -28,9 +28,14 @@ The state machine, per archive *set* (a multi-part drop grouped by
   churn the imports page for nothing.
 
 Reaction time: an atomic drop is first seen within one interval and claimed
-one interval later — within 2 cycles of the drop, and within 1 cycle
-(< 30 s at the default interval, the #98 budget) of the debounce confirming
-stability.
+one interval later — within 2 cycles of the drop, i.e. ≤ 20 s at the shipped
+10 s default. That meets #151's acceptance ("import starts < 30 s") and the
+#98 budget under their plain reading, with margin.
+
+``last_error`` reports the most recent failed auto-import and clears itself
+when the set that produced it recovers — a later successful import of that
+set, or a re-drop (fingerprint change) invalidating the recorded failure.
+Another set's success never masks it.
 
 Non-goals (documented decisions, not oversights): inotify/watchdog (the
 issue mandates stdlib polling), bare non-archive files (manual import covers
@@ -55,8 +60,8 @@ _logger = logging.getLogger(__name__)
 # Candidate extensions — exactly what open_archive accepts for archive files.
 _ARCHIVE_SUFFIXES = (".zip", ".tgz", ".tar.gz")
 
-# Backoff ceiling: failure n skips min(2**(n-1), 32) cycles (~16 min at the
-# default 30 s interval) — a corrupt drop retries a few times then goes
+# Backoff ceiling: failure n skips min(2**(n-1), 32) cycles (~5 min at the
+# default 10 s interval) — a corrupt drop retries a few times then goes
 # quiet, visible in status, without hammering the import pipeline.
 _MAX_BACKOFF_CYCLES = 32
 
@@ -109,13 +114,17 @@ class FolderWatcher:
         self._stop = threading.Event()
         self._configured = False
         self._folders: tuple[Path, ...] = ()
-        self._interval_s = 30.0
+        self._interval_s = 10.0  # placeholder; configure() binds the real value
         self._enabled: Callable[[], bool] = lambda: False
         self._submit: SubmitFn = _submit_unconfigured
         self._states: dict[_SetKey, _SetState] = {}
         self._missing_warned: set[Path] = set()
         self._last_scan_at: datetime | None = None
+        # The most recent failure and WHICH set produced it — the key lets a
+        # later recovery of that same set clear the error (review I2). None
+        # key = a set-unattributable cycle error (only a new error replaces it).
         self._last_error: str | None = None
+        self._last_error_key: _SetKey | None = None
 
     def configure(
         self,
@@ -164,12 +173,14 @@ class FolderWatcher:
                 if fingerprint != state.fingerprint:
                     # Still changing (mid-copy / part arriving / re-drop):
                     # restart the debounce and treat it as a fresh attempt —
-                    # a fixed file must not inherit the corrupt file's backoff.
+                    # a fixed file must not inherit the corrupt file's backoff,
+                    # and the re-drop invalidates its recorded failure too.
                     state.fingerprint = fingerprint
                     state.stable_scans = 1
                     state.imported = False
                     state.failures = 0
                     state.skip_remaining = 0
+                    self._clear_error_for(key)
                     continue
                 state.stable_scans += 1
                 if state.inflight or state.imported:
@@ -204,6 +215,13 @@ class FolderWatcher:
                     if state is not None:
                         state.inflight = False
                     self._last_error = f"{representative}: {exc}"
+                    self._last_error_key = key
+
+    def _clear_error_for(self, key: _SetKey) -> None:
+        """Drop last_error if *key* is the set that produced it (lock held)."""
+        if self._last_error_key == key:
+            self._last_error = None
+            self._last_error_key = None
 
     def _scan_folders(self) -> _Scan:
         """Group the folders' archive files into sets with fingerprints."""
@@ -270,10 +288,14 @@ class FolderWatcher:
                     state.imported = True
                     state.failures = 0
                     state.skip_remaining = 0
+                    # The producing set recovered: a healthy system must not
+                    # keep showing its stale failure (review I2).
+                    self._clear_error_for(key)
                 else:
                     state.failures += 1
                     state.skip_remaining = min(2 ** (state.failures - 1), _MAX_BACKOFF_CYCLES)
                     self._last_error = f"{state.representative}: {error}"
+                    self._last_error_key = key
                     _logger.warning(
                         "watch import failed (%s), retrying in %d cycle(s): %s",
                         state.representative,
@@ -331,6 +353,7 @@ class FolderWatcher:
                 _logger.exception("watch cycle failed")
                 with self._lock:
                     self._last_error = str(exc) or type(exc).__name__
+                    self._last_error_key = None  # not attributable to one set
             if self._stop.wait(self._interval_s):
                 return
 

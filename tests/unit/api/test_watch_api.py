@@ -18,7 +18,7 @@ def test_get_watch_default_shape(api_client: TestClient) -> None:
     body = resp.json()
     assert body["enabled"] is True
     assert body["effective_enabled_source"] == "config"
-    assert body["interval_s"] == 30.0
+    assert body["interval_s"] == 10.0  # shipped default: 2 intervals = 20 s react < 30 s (I1)
     assert body["folders"] == []
     assert body["last_scan_at"] is None
     assert body["pending"] == []

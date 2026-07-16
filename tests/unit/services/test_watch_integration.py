@@ -4,9 +4,8 @@ shortened interval, real imports through the background manager.
 Acceptance arithmetic (the issue's "import starts < 30 s", asserted
 structurally — never by sleeping 30 s): the two-scan debounce claims a set on
 the SECOND consecutive scan seeing an unchanged fingerprint, i.e. within
-2 polling intervals of an atomic drop and within 1 interval of the debounce
-confirming stability. At the default 30 s interval that is a < 30 s react
-after debounce (and ≤ 60 s from the drop itself — the confirming scan IS the
+2 polling intervals of an atomic drop — ≤ 20 s at the shipped 10 s default,
+meeting the plain acceptance reading with margin (the confirming scan IS the
 debounce). These tests run the identical code path at a 0.05 s interval, so
 the observed react is tens of milliseconds; the deadline-bounded polls below
 would fail long before 30 s if the watcher missed a cycle.

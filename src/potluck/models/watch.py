@@ -54,7 +54,9 @@ class WatchStatus(BaseModel):
     )
     pending: list[WatchPendingSet] = Field(default_factory=list)
     last_error: str | None = Field(
-        default=None, description="Most recent watcher-submitted import failure."
+        default=None,
+        description="Most recent watcher-submitted import failure; clears when "
+        "the failing set later imports successfully or is re-dropped.",
     )
 
 

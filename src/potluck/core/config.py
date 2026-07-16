@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     # a runtime toggle persisted in the database (app_settings KV, settable
     # from the UI/API) overrides it when present.
     watch_folders: list[Path] = Field(default_factory=list)
-    watch_interval_s: float = 30.0
+    # 10 s ships the #151 acceptance ("drop zip → import starts < 30 s") with
+    # margin: the two-scan debounce claims within 2 intervals of an atomic
+    # drop (= 20 s worst case). A cycle costs one os.scandir per folder plus
+    # one single-row KV read — negligible at this cadence.
+    watch_interval_s: float = 10.0
     watch_enabled: bool = True
 
     @classmethod

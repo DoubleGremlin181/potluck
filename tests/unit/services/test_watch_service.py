@@ -19,6 +19,20 @@ def _watch_ctx(ctx: AppContext, tmp_path: Path, *folders: Path) -> AppContext:
 
 
 # ---------------------------------------------------------------------------
+# Shipped defaults
+# ---------------------------------------------------------------------------
+
+
+def test_default_interval_meets_the_acceptance_budget(ctx: AppContext) -> None:
+    """#151 acceptance ('drop zip → import starts < 30 s') at SHIPPED
+    defaults: the two-scan debounce claims within 2 intervals of an atomic
+    drop, so the default interval must satisfy 2 × interval < 30 s. 10 s
+    gives a 20 s worst case with margin (review I1)."""
+    assert ctx.settings.watch_interval_s == 10.0
+    assert 2 * ctx.settings.watch_interval_s < 30.0
+
+
+# ---------------------------------------------------------------------------
 # Effective enabled: KV override if present, else the config default
 # ---------------------------------------------------------------------------
 

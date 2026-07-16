@@ -11,10 +11,10 @@ asserted structurally here instead of sleeping): a set is submitted on the
 SECOND consecutive scan observing an unchanged fingerprint. A drop that
 finishes between scans is therefore first seen on the next scan (≤ 1
 interval) and submitted one scan later (≤ 1 more interval) — submission
-happens within 2 cycles of the drop, and within 1 cycle (< 30 s at the
-default 30 s interval) of the debounce confirming stability. The shortened
-intervals used by the integration tier make the observed wall-clock react
-well under the 30 s acceptance bound.
+happens within 2 cycles of the drop, i.e. ≤ 20 s at the shipped default
+interval of 10 s, meeting the issue's plain "import starts < 30 s" reading
+with margin. The shortened intervals used by the integration tier make the
+observed wall-clock react milliseconds.
 """
 
 import threading
@@ -404,6 +404,77 @@ def test_inflight_set_not_reclaimed(tmp_path: Path) -> None:
     watcher.run_cycle()
     assert len(submit.calls) == 1
     assert watcher.snapshot().pending == []
+
+
+# ---------------------------------------------------------------------------
+# last_error lifecycle: cleared when the producing set recovers (review I2)
+# ---------------------------------------------------------------------------
+
+
+def test_last_error_cleared_when_producing_set_succeeds(tmp_path: Path) -> None:
+    """A recovered system must not display a stale error forever: when the
+    set that produced last_error later imports fine, the error clears."""
+    folder = tmp_path / "watched"
+    folder.mkdir()
+    archive = folder / "flaky.zip"
+    archive.write_bytes(b"transient bad bytes")
+    submit = SubmitRecorder()
+    watcher = make_watcher([folder], submit)
+
+    watcher.run_cycle()
+    watcher.run_cycle()
+    submit.settle("corrupt or unreadable archive")
+    assert watcher.snapshot().last_error is not None
+
+    # Backoff (1 cycle) expires, the retry succeeds -> error gone.
+    watcher.run_cycle()  # skip
+    watcher.run_cycle()  # resubmit
+    submit.settle(None)
+    assert watcher.snapshot().last_error is None
+    assert watcher.snapshot().pending == []
+
+
+def test_last_error_cleared_on_fingerprint_change_reset(tmp_path: Path) -> None:
+    """The re-drop of a fixed file invalidates the recorded failure at the
+    reset itself — before any retry even runs."""
+    folder = tmp_path / "watched"
+    folder.mkdir()
+    archive = folder / "corrupt.zip"
+    archive.write_bytes(b"bad bytes")
+    submit = SubmitRecorder()
+    watcher = make_watcher([folder], submit)
+
+    watcher.run_cycle()
+    watcher.run_cycle()
+    submit.settle("corrupt or unreadable archive")
+    assert watcher.snapshot().last_error is not None
+
+    archive.write_bytes(b"fixed bytes, new fingerprint")
+    watcher.run_cycle()  # change detected: reset wipes the stale error too
+    assert watcher.snapshot().last_error is None
+
+
+def test_last_error_survives_unrelated_set_success(tmp_path: Path) -> None:
+    """Only the PRODUCING set clears the error: another set's success must
+    not mask a still-broken drop."""
+    folder = tmp_path / "watched"
+    folder.mkdir()
+    bad = folder / "a-corrupt.zip"
+    bad.write_bytes(b"bad bytes")
+    good = folder / "b-good.zip"
+    good.write_bytes(b"good bytes")
+    submit = SubmitRecorder()
+    watcher = make_watcher([folder], submit)
+
+    watcher.run_cycle()
+    watcher.run_cycle()  # both stable: claimed in sorted order
+    assert submit.calls == [bad, good]
+
+    submit.settle("corrupt or unreadable archive")  # settles bad (oldest)
+    assert watcher.snapshot().last_error is not None
+    submit.settle(None)  # the good set succeeds
+    error = watcher.snapshot().last_error
+    assert error is not None and "a-corrupt.zip" in error
 
 
 # ---------------------------------------------------------------------------
