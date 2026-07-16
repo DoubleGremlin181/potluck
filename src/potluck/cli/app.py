@@ -27,6 +27,7 @@ from potluck.models.search import SearchRequest
 from potluck.services import dev as dev_service
 from potluck.services import imports as imports_service
 from potluck.services import items as items_service
+from potluck.services import lifecycle as lifecycle_service
 from potluck.services import search as search_service
 from potluck.services import stats as stats_service
 from potluck.services import threads as threads_service
@@ -104,6 +105,7 @@ def import_(
         t.add_row("items_duplicate", str(run.items_duplicate))
         t.add_row("items_updated", str(run.items_updated))
         t.add_row("items_skipped", str(run.items_skipped))
+        t.add_row("items_suppressed", str(run.items_suppressed))
         t.add_row("duration", f"{duration_s:.2f}s" if duration_s is not None else "-")
         t.add_row("path", run.path)
         console.print(t)
@@ -435,6 +437,102 @@ def status(
                 error_str,
             )
         console.print(t)
+
+
+def _remove(
+    item_ids: list[int] | None,
+    import_id: int | None,
+    source: str | None,
+    *,
+    yes: bool,
+    as_json: bool,
+    forget: bool,
+) -> None:
+    """Shared rm/forget body: validate the selector, confirm, delete, report."""
+    selectors = sum([bool(item_ids), import_id is not None, source is not None])
+    if selectors != 1:
+        raise typer.BadParameter("pass exactly one of: item ids, --import, or --source")
+
+    ctx = create_context()
+    try:
+        if import_id is not None:
+            # Resolve before prompting: a typo'd id fails here, not post-confirm.
+            run = imports_service.get_import(ctx, import_id)
+            prompt = f"Delete import #{import_id} ({run.source}) and every item it ingested?"
+        elif source is not None:
+            prompt = f"Delete ALL items and the whole import history of source '{source}'?"
+        else:
+            assert item_ids is not None
+            ids_str = ", ".join(str(i) for i in item_ids)
+            prompt = f"Delete {len(item_ids)} item(s) [{ids_str}]?"
+        if forget:
+            prompt += " Their content will also be blocked from ever re-importing."
+        if not yes:
+            typer.confirm(prompt, abort=True)
+
+        if import_id is not None:
+            result = lifecycle_service.remove_import(ctx, import_id, forget=forget)
+        elif source is not None:
+            result = lifecycle_service.remove_source(ctx, source, forget=forget)
+        else:
+            assert item_ids is not None
+            result = lifecycle_service.remove_items(ctx, item_ids, forget=forget)
+    except PotluckError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        ctx.db.close()
+
+    if as_json:
+        print(result.model_dump_json(indent=2))
+        return
+    summary = f"deleted {result.items_deleted} item(s), {result.imports_deleted} import run(s)"
+    if forget:
+        summary += f"; suppressed {result.hashes_suppressed} content hash(es)"
+    typer.echo(summary)
+
+
+@app.command()
+def rm(
+    item_ids: list[int] | None = typer.Argument(None, help="Item ids to delete."),
+    import_id: int | None = typer.Option(
+        None, "--import", help="Delete one import run and every item it ingested."
+    ),
+    source: str | None = typer.Option(
+        None, "--source", help="Delete a source's items and its whole import history."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON output."),
+) -> None:
+    """Delete items — by id, by import run, or by whole source.
+
+    Satellite data, attachment metadata and the search index follow
+    automatically. Plain rm means the content MAY return on a re-import of
+    the same archive; use `potluck forget` to also block it from ever
+    re-importing.
+    """
+    _remove(item_ids, import_id, source, yes=yes, as_json=as_json, forget=False)
+
+
+@app.command()
+def forget(
+    item_ids: list[int] | None = typer.Argument(None, help="Item ids to forget."),
+    import_id: int | None = typer.Option(
+        None, "--import", help="Forget one import run and every item it ingested."
+    ),
+    source: str | None = typer.Option(
+        None, "--source", help="Forget a source's items and its whole import history."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON output."),
+) -> None:
+    """Delete items AND block their content from ever re-importing.
+
+    Everything `potluck rm` does, plus the deleted items' content hashes are
+    recorded in the suppression registry — future imports drop matching
+    content (counted as items_suppressed in the run's summary).
+    """
+    _remove(item_ids, import_id, source, yes=yes, as_json=as_json, forget=True)
 
 
 @app.command()

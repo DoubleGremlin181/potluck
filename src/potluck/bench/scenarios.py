@@ -35,6 +35,7 @@ from potluck.ingest.engine import run_import
 from potluck.models.search import SearchRequest
 from potluck.services.context import AppContext, create_context
 from potluck.services.imports import import_path
+from potluck.services.lifecycle import remove_import
 from potluck.services.search import search
 from potluck.storage.db import Database
 from potluck.testing.chrome import write_chrome_takeout
@@ -344,6 +345,42 @@ def _chrome_ingest_scenario(name: str, tier: Tier, count: int) -> Scenario:
 
 
 # ---------------------------------------------------------------------------
+# P4: delete an import run (#153)
+# ---------------------------------------------------------------------------
+
+
+def _delete_import_run(workdir: Path) -> None:
+    """Measured work: one rm --import over the corpus built in setup.
+
+    The corpus is import #1 (run_import on a fresh bench DB); the delete is
+    one transaction — items, satellite rows (emails), FTS entries, ledger row.
+    """
+    ctx = _make_ctx(workdir)
+    try:
+        result = remove_import(ctx, 1)
+        if result.items_deleted == 0:
+            raise RuntimeError("scenario integrity check failed: nothing deleted")
+        with ctx.db.read() as conn:
+            remaining = int(conn.execute("SELECT count(*) FROM items").fetchone()[0])
+        if remaining != 0:
+            raise RuntimeError(f"scenario integrity check failed: {remaining} items left")
+    finally:
+        ctx.db.close()
+
+
+def _delete_import_scenario(name: str, tier: Tier, count: int) -> Scenario:
+    """Factory for delete-import scenarios: setup ingests *count* email drafts
+    (satellite rows + FTS included) as import #1; run deletes that import."""
+    return Scenario(
+        name=name,
+        tier=tier,
+        item_count=count,
+        setup=_email_corpus_setup(count),
+        run=_delete_import_run,
+    )
+
+
+# ---------------------------------------------------------------------------
 # P3: end-to-end REST search (#131)
 # ---------------------------------------------------------------------------
 
@@ -490,6 +527,11 @@ ALL_SCENARIOS = [
     # scenario tracks the trend.
     _chrome_ingest_scenario("ingest_chrome_10k", "smoke", 10_000),
     _chrome_ingest_scenario("ingest_chrome_200k", "full", 200_000),
+    # P4 delete-import (#153): smoke tracker + the full-tier 50k corpus.
+    # The < 30 s hard budget is asserted nightly in test_p4_budgets.py;
+    # the full-tier scenario tracks the trend.
+    _delete_import_scenario("delete_import_10k", "smoke", 10_000),
+    _delete_import_scenario("delete_import_50k", "full", 50_000),
     # P3 REST search end-to-end (#131): nightly 100k budget anchor (p95
     # < 100 ms, asserted in test_p3_budgets.py) + smoke 10k PR-CI tracker
     Scenario(

@@ -106,6 +106,8 @@ potluck search Q     full-text search (--kind, --prefix, --cursor, --limit, --js
 potluck list         browse items without a query (--kind, --source, --since, --sort, --json)
 potluck show ID      full item content + metadata (--thread: the whole conversation)
 potluck status       database overview + per-import stats
+potluck rm           delete items by id, --import run, or --source (confirms; --yes to skip)
+potluck forget       rm + block the deleted content from ever re-importing
 potluck serve        web app + API + MCP (/mcp) on one port (opens your browser)
 potluck mcp          MCP server on stdio (HTTP lives at /mcp on the serve port)
 potluck bench run    benchmark harness (smoke/full tiers)

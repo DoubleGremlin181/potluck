@@ -25,6 +25,9 @@ class ImportRun(BaseModel):
     items_duplicate: int
     items_updated: int
     items_skipped: int
+    # Drafts dropped because their content hash is in suppressed_hashes
+    # (forgotten content, #153) — its own counter, never folded into skipped.
+    items_suppressed: int = 0
     # Expected item count for progress bars; None = unknown (#132) — streaming
     # sources cannot know it upfront and the engine never pre-scans to count.
     items_total: int | None = None
@@ -41,7 +44,13 @@ class ImportRun(BaseModel):
     @property
     def items_done(self) -> int:
         """Progress numerator, derived from the existing per-batch counters."""
-        return self.items_new + self.items_duplicate + self.items_updated + self.items_skipped
+        return (
+            self.items_new
+            + self.items_duplicate
+            + self.items_updated
+            + self.items_skipped
+            + self.items_suppressed
+        )
 
 
 class ImportTask(BaseModel):

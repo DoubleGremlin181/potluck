@@ -59,16 +59,18 @@ def record_batch(
     duplicate: int,
     updated: int,
     skipped: int,
+    suppressed: int = 0,
 ) -> None:
     """Increment the running counters on an import row."""
     conn.execute(
         """UPDATE imports
-           SET items_new       = items_new       + ?,
-               items_duplicate = items_duplicate + ?,
-               items_updated   = items_updated   + ?,
-               items_skipped   = items_skipped   + ?
+           SET items_new        = items_new        + ?,
+               items_duplicate  = items_duplicate  + ?,
+               items_updated    = items_updated    + ?,
+               items_skipped    = items_skipped    + ?,
+               items_suppressed = items_suppressed + ?
            WHERE id = ?""",
-        (new, duplicate, updated, skipped, import_id),
+        (new, duplicate, updated, skipped, suppressed, import_id),
     )
 
 
@@ -121,6 +123,7 @@ def _row_to_import_run(row: sqlite3.Row) -> ImportRun:
         items_duplicate=int(row["items_duplicate"]),
         items_updated=int(row["items_updated"]),
         items_skipped=int(row["items_skipped"]),
+        items_suppressed=int(row["items_suppressed"]),
         items_total=row["items_total"],
         error=row["error"],
         extract_attachments=bool(row["extract_attachments"]),

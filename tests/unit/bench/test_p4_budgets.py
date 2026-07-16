@@ -22,7 +22,12 @@ from pathlib import Path
 
 import pytest
 
+from potluck.core.config import Settings
+from potluck.ingest.engine import run_import
+from potluck.services.context import create_context
+from potluck.services.lifecycle import remove_import
 from potluck.testing.chrome import expected_visit_count, write_chrome_takeout
+from potluck.testing.mbox import synthetic_email_drafts
 from potluck.testing.whatsapp import expected_message_count, write_whatsapp_export
 
 _PER_CHAT = 25_000
@@ -105,3 +110,45 @@ def test_budget_chrome_200k_ingest(tmp_path: Path) -> None:
     assert rss_kb < _CHROME_RSS_BUDGET_KB, (
         f"peak RSS {rss_kb / 1024:.0f} MB (budget {_CHROME_RSS_BUDGET_KB / 1024:.0f} MB)"
     )
+
+
+_DELETE_COUNT = 50_000
+_DELETE_BUDGET_S = 30
+
+
+@pytest.mark.bench
+def test_budget_delete_import_50k(tmp_path: Path) -> None:
+    """#153's acceptance criterion: deleting a 50k-item import takes < 30 s.
+
+    In-process on purpose (unlike the ingest budgets above): the budget is
+    about the one delete transaction — items + satellite cascades + FTS
+    delete triggers + ledger row — not interpreter start or parse RSS, so
+    timing the service call directly is the honest measurement. The corpus
+    is draft-fed through the real engine (emails satellite + FTS included).
+    """
+    ctx = create_context(Settings(db_path=tmp_path / "bench.db"))
+    try:
+        generated = time.perf_counter()
+        import_id = run_import(
+            ctx.db,
+            source_name="gmail",
+            parser_version=1,
+            drafts=iter(synthetic_email_drafts(_DELETE_COUNT, seed=42)),
+            path="bench://drafts",
+            file_hash=None,
+        )
+        print(f"corpus ingested in {time.perf_counter() - generated:.1f}s")
+
+        started = time.perf_counter()
+        result = remove_import(ctx, import_id)
+        elapsed = time.perf_counter() - started
+
+        assert result.items_deleted == _DELETE_COUNT
+        with ctx.db.read() as conn:
+            assert conn.execute("SELECT count(*) FROM items").fetchone()[0] == 0
+            assert conn.execute("SELECT count(*) FROM emails").fetchone()[0] == 0
+        assert elapsed < _DELETE_BUDGET_S, (
+            f"50k delete took {elapsed:.1f}s (budget {_DELETE_BUDGET_S}s)"
+        )
+    finally:
+        ctx.db.close()

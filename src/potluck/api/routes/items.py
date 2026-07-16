@@ -1,4 +1,4 @@
-"""REST items endpoints: offset-paged listing, item detail, thread view."""
+"""REST items endpoints: offset-paged listing, item detail, thread view, delete."""
 
 from datetime import datetime
 from typing import Annotated
@@ -8,11 +8,15 @@ from fastapi import APIRouter, Path, Query
 from potluck.api.deps import CtxDep
 from potluck.api.errors import error_responses
 from potluck.models.items import Item, ItemKind, ItemSort, ListItemsRequest, ListItemsResponse
+from potluck.models.lifecycle import RemoveResult
 from potluck.models.threads import ThreadResponse
 from potluck.services import items as items_service
+from potluck.services import lifecycle as lifecycle_service
 from potluck.services import threads as threads_service
 
 router = APIRouter(tags=["items"])
+
+_DELETE_409 = {409: "The import run that owns this item is still running."}
 
 _ITEM_ID = Annotated[int, Path(description="Item id, as returned by search hits and listing rows.")]
 
@@ -74,6 +78,29 @@ def get_item(ctx: CtxDep, item_id: _ITEM_ID) -> Item:
     emails: addresses, labels, attachments); other kinds leave it null.
     """
     return items_service.get_item(ctx, item_id)
+
+
+@router.delete(
+    "/items/{item_id}",
+    summary="Delete one item",
+    responses=error_responses(404, 409, 422, overrides=_DELETE_409),
+)
+def delete_item(
+    ctx: CtxDep,
+    item_id: _ITEM_ID,
+    forget: Annotated[
+        bool,
+        Query(
+            description="Also suppress the item's content hash so this content "
+            "can never be re-imported. Without it, re-importing the same "
+            "archive may restore the item (the owning run's file_hash is "
+            "cleared so the archive re-scans)."
+        ),
+    ] = False,
+) -> RemoveResult:
+    """Remove the item row; satellite detail, attachment metadata, and its
+    full-text index entries go with it (cascades + triggers)."""
+    return lifecycle_service.remove_items(ctx, [item_id], forget=forget)
 
 
 @router.get(

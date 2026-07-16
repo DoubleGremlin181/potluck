@@ -18,12 +18,15 @@ from potluck.models.imports import (
     SourceInfo,
     StartImportRequest,
 )
+from potluck.models.lifecycle import RemoveResult
 from potluck.services import imports as imports_service
+from potluck.services import lifecycle as lifecycle_service
 
 router = APIRouter(tags=["imports"])
 
 _IMPORT_404 = {404: "No import run with this id exists."}
 _START_400 = {400: "The path does not exist, or the upload filename is unusable."}
+_DELETE_409 = {409: "This import run is still running; wait for it to finish."}
 
 
 @router.post(
@@ -105,6 +108,29 @@ def get_import(
     while the run is `running` (`items_done` advances once per committed
     batch; the row survives restarts)."""
     return imports_service.get_import(ctx, import_id)
+
+
+@router.delete(
+    "/imports/{import_id}",
+    summary="Delete an import run and every item it ingested",
+    responses=error_responses(404, 409, 422, overrides=_IMPORT_404 | _DELETE_409),
+)
+def delete_import(
+    ctx: CtxDep,
+    import_id: Annotated[int, Path(description="Import run id, as listed in the history.")],
+    forget: Annotated[
+        bool,
+        Query(
+            description="Also suppress the deleted items' content hashes so this "
+            "content can never be re-imported. Without it, re-importing the same "
+            "archive restores the items."
+        ),
+    ] = False,
+) -> RemoveResult:
+    """Remove the run's items (satellite/FTS data cascades) and its history
+    row. Plain delete keeps the content importable again — the archive just
+    re-ingests; `forget=true` blocks the deleted content forever."""
+    return lifecycle_service.remove_import(ctx, import_id, forget=forget)
 
 
 @router.get("/sources", summary="Registered source plugins")

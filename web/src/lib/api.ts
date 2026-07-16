@@ -247,6 +247,8 @@ export interface ImportRun {
   items_duplicate: number
   items_updated: number
   items_skipped: number
+  /** Drafts dropped because their content was forgotten (suppressed_hashes). */
+  items_suppressed: number
   /** Progress denominator; null = unknown (streaming sources never pre-count). */
   items_total: number | null
   error: string | null
@@ -306,6 +308,21 @@ export function startUploadImport(file: File): Promise<ImportTask> {
   const form = new FormData()
   form.append('file', file)
   return request<ImportTask>('/api/imports/upload', { method: 'POST', body: form })
+}
+
+/** Counts from one delete call (mirrors `models/lifecycle.py::RemoveResult`). */
+export interface RemoveResult {
+  items_deleted: number
+  imports_deleted: number
+  hashes_suppressed: number
+}
+
+/** Delete an import run and every item it ingested. Plain delete lets a
+ * re-import of the same archive restore the content; `forget` also blocks
+ * the deleted content from ever re-importing. 404 = unknown id, 409 = the
+ * run is still running. */
+export function deleteImport(id: number, forget: boolean): Promise<RemoveResult> {
+  return request<RemoveResult>(`/api/imports/${id}?forget=${forget}`, { method: 'DELETE' })
 }
 
 // ---------------------------------------------------------------------------

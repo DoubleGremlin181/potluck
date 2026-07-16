@@ -37,6 +37,14 @@ class ImportInProgressError(PotluckError):
     """A background import is already running; only one runs at a time (#132)."""
 
 
+class ImportRunningError(PotluckError):
+    """The rm/forget target belongs to an import run that is still running (#153)."""
+
+
+class SourceNotFoundError(PotluckError):
+    """No source with the given name exists in the database (#153)."""
+
+
 class UploadTooLargeError(PotluckError):
     """An uploaded archive exceeds the configured max_upload_bytes limit."""
 
