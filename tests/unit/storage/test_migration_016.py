@@ -16,12 +16,6 @@ def _table_sql(conn: sqlite3.Connection, name: str) -> str:
     return str(row[0])
 
 
-def test_user_version_is_16(ctx: AppContext) -> None:
-    with ctx.db.read() as conn:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
-    assert version == 16
-
-
 def test_suppressed_hashes_table_shape(ctx: AppContext) -> None:
     with ctx.db.read() as conn:
         sql = _table_sql(conn, "suppressed_hashes")

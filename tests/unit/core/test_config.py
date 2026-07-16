@@ -61,3 +61,33 @@ def test_attachment_settings_defaults() -> None:
     settings = Settings()
     assert settings.extract_attachments is False
     assert settings.attachments_dir == data_dir() / "attachments"
+
+
+def test_gdrive_settings_defaults_and_flat_toml_keys(isolated_dirs: Path) -> None:
+    """#152: off until a client is supplied; prune hard-defaults off; the
+    config surface is FLAT gdrive_* keys (the watch_* family shape — a TOML
+    [gdrive] section would not map onto pydantic-settings fields)."""
+    from potluck.core.paths import data_dir
+
+    settings = Settings()
+    assert settings.gdrive_client_id is None
+    assert settings.gdrive_client_secret is None
+    assert settings.gdrive_folder_name == "Takeout"
+    assert settings.gdrive_interval_s == 86400.0
+    assert settings.gdrive_downloads_dir == data_dir() / "gdrive"
+    assert settings.gdrive_prune is False
+    assert settings.gdrive_enabled is True
+
+    cfg = config_dir()
+    cfg.mkdir(parents=True)
+    (cfg / "config.toml").write_text(
+        'gdrive_client_id = "cid.apps.googleusercontent.com"\n'
+        'gdrive_client_secret = "GOCSPX-secret"\n'
+        "gdrive_prune = true\n"
+        "gdrive_interval_s = 3600\n"
+    )
+    loaded = Settings()
+    assert loaded.gdrive_client_id == "cid.apps.googleusercontent.com"
+    assert loaded.gdrive_client_secret == "GOCSPX-secret"
+    assert loaded.gdrive_prune is True
+    assert loaded.gdrive_interval_s == 3600.0

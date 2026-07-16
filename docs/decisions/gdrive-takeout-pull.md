@@ -230,7 +230,8 @@ per the brief.
 config. The eligibility gate, evaluated on a later puller cycle (never inline with the
 download): every part of a set has a `gdrive_pulls` row, **and** the set's import is
 verified successful by joining against the persisted `imports` runs (rows carry `path`,
-`file_hash`, `status` — match on the set's local paths with `status = 'done'`), **and**
+`file_hash`, `status` — match on the set's local paths with `status = 'completed'`, the
+schema's actual CHECK value), **and**
 the `drive` scope was granted (recorded in the token file, §3). Only then are the exact
 recorded `file_id`s deleted, one `files.delete` each, `pruned_at` stamped per file;
 anything else in the Takeout folder is never touched. `gdrive_prune = true` without the
@@ -302,8 +303,10 @@ downloads. Mirrors `WatchStatus` so the SPA card pattern is reusable if trivial.
    after 7 days and *will* silently break a 2-month pull cadence.
 5. **Create the client**: Credentials → Create credentials → OAuth client ID → **Desktop
    app**; copy client ID + secret.
-6. **Configure Potluck**: `[gdrive]`-prefixed keys in `config.toml` (exact snippet), or
-   `POTLUCK_GDRIVE_*` env vars; optional `gdrive_prune`, folder name, interval.
+6. **Configure Potluck**: flat top-level `gdrive_*` keys in `config.toml` (exact snippet —
+   the `watch_*` family shape; a TOML `[gdrive]` section would not map to the flat
+   pydantic-settings fields), or `POTLUCK_GDRIVE_*` env vars; optional `gdrive_prune`,
+   folder name, interval.
 7. **Authorize**: `potluck gdrive auth` (add `--prune` for delete rights, destructive-use
    warning); the unverified-app interstitial walkthrough (Advanced → continue); token file
    location + 0600 note; `--no-browser` and copy-the-token-file paths for headless serves.

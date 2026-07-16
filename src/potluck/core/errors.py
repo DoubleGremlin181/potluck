@@ -51,3 +51,18 @@ class UploadTooLargeError(PotluckError):
 
 class InvalidCursorError(PotluckError):
     """The search pagination cursor is malformed or of an unsupported version."""
+
+
+class GDriveAuthError(PotluckError):
+    """Google Drive authorization is missing, revoked, or failed (#152).
+
+    Recovering requires the user to (re-)run ``potluck gdrive auth`` — the
+    puller surfaces this in status and never retries a dead credential in a
+    loop (it waits for the token file to change).
+    """
+
+
+class GDriveApiError(PotluckError):
+    """A Google Drive API call failed for a non-auth reason (#152): rate
+    limit, server error, or a download-integrity (md5) mismatch. Transient —
+    the puller backs off and retries on later cycles."""

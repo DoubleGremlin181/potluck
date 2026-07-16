@@ -33,5 +33,8 @@ imports in subprocesses for honest RSS numbers.
 - `tests/fixtures/` may only contain synthetic generator output; the PII guard
   (`scripts/check_fixtures.py`) enforces this in pre-commit and CI.
 - Shared helpers in `tests/conftest.py`: `insert_source`/`insert_import` (raw
-  ledger rows for storage-level tests) and `ingest_keep_corpus` (imports a
-  synthetic Keep archive through the real service path).
+  ledger rows for storage-level tests), `ingest_keep_corpus` (imports a
+  synthetic Keep archive through the real service path), and `MockDrive`
+  (an in-memory Google Drive + OAuth token endpoint behind
+  `httpx.MockTransport` for the #152 gdrive tier — no network in tests,
+  ever).

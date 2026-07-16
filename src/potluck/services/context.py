@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 
 from potluck.core.config import Settings
+from potluck.services.gdrive_manager import DrivePuller
 from potluck.services.import_manager import ImportManager
 from potluck.services.watch_manager import FolderWatcher
 from potluck.storage.db import Database
@@ -21,6 +22,10 @@ class AppContext:
     # but its thread is started only by the serve lifespan — CLI/one-shot
     # contexts never poll (write-ownership rule).
     watcher: FolderWatcher = field(default_factory=FolderWatcher)
+    # Drive Takeout puller (#152): same ownership story as the watcher —
+    # present everywhere for status, thread started only by the serve
+    # lifespan; it only downloads (the watcher imports).
+    puller: DrivePuller = field(default_factory=DrivePuller)
 
 
 def create_context(settings: Settings | None = None) -> AppContext:

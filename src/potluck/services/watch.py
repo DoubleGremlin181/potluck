@@ -15,11 +15,23 @@ from potluck.models.imports import ImportRun
 from potluck.models.watch import WatchEnabledSource, WatchFolder, WatchStatus
 from potluck.services import imports as imports_service
 from potluck.services.context import AppContext
+from potluck.services.gdrive import gdrive_configured
 from potluck.storage import app_settings as _storage_app_settings
 
 _logger = logging.getLogger(__name__)
 
 WATCH_ENABLED_KEY = "watch_enabled"
+
+
+def effective_watch_folders(ctx: AppContext) -> tuple[Path, ...]:
+    """Configured folders, plus the managed gdrive downloads dir when the
+    Drive puller is configured (#152): the puller only downloads — this
+    watcher debounces and imports what lands there (decision doc §4)."""
+    folders = list(ctx.settings.watch_folders)
+    gdrive_dir = ctx.settings.gdrive_downloads_dir
+    if gdrive_configured(ctx.settings) and gdrive_dir not in folders:
+        folders.append(gdrive_dir)
+    return tuple(folders)
 
 
 def effective_watch_enabled(ctx: AppContext) -> tuple[bool, WatchEnabledSource]:
@@ -46,7 +58,7 @@ def get_watch_status(ctx: AppContext) -> WatchStatus:
         interval_s=ctx.settings.watch_interval_s,
         folders=[
             WatchFolder(path=str(folder), exists=folder.is_dir())
-            for folder in ctx.settings.watch_folders
+            for folder in effective_watch_folders(ctx)
         ],
         last_scan_at=runtime.last_scan_at,
         pending=runtime.pending,
@@ -72,11 +84,12 @@ def start_watcher(ctx: AppContext) -> bool:
     runtime toggle can re-enable scanning without a restart; a disabled
     cycle costs one KV read.
     """
-    if not ctx.settings.watch_folders:
+    folders = effective_watch_folders(ctx)
+    if not folders:
         _logger.info("watch-folders: none configured; watcher not started")
         return False
     ctx.watcher.configure(
-        folders=tuple(ctx.settings.watch_folders),
+        folders=folders,
         interval_s=ctx.settings.watch_interval_s,
         enabled=lambda: effective_watch_enabled(ctx)[0],
         submit=lambda path, on_done: _submit_watch_import(ctx, path, on_done),
@@ -84,7 +97,7 @@ def start_watcher(ctx: AppContext) -> bool:
     ctx.watcher.start()
     _logger.info(
         "watch-folders: polling %d folder(s) every %.0f s",
-        len(ctx.settings.watch_folders),
+        len(folders),
         ctx.settings.watch_interval_s,
     )
     return True

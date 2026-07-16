@@ -20,10 +20,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from potluck import __version__
 from potluck.api.errors import register_error_handlers
-from potluck.api.routes import imports, items, search, system, watch
+from potluck.api.routes import gdrive, imports, items, search, system, watch
 from potluck.api.static import SPAStaticFiles, find_web_dist
 from potluck.mcp.server import create_mcp
 from potluck.services.context import AppContext, create_context
+from potluck.services.gdrive import start_puller
 from potluck.services.imports import recover_interrupted_imports
 from potluck.services.watch import start_watcher
 
@@ -85,8 +86,13 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
         recover_interrupted_imports(context)
         # Same ownership moment starts the watch-folder poller (#151): only
         # the serving process may submit imports on a schedule. No-op when
-        # no folders are configured.
+        # no folders are configured (the gdrive downloads dir counts as one
+        # once a Drive client is configured).
         start_watcher(context)
+        # And the Drive Takeout puller (#152): downloads-only — what it lands
+        # in the (watched) downloads dir, the watcher above imports. No-op
+        # when no OAuth client is configured.
+        start_puller(context)
         if open_browser:
             webbrowser.open(f"http://{context.settings.host}:{context.settings.port}/")
         # Starlette never runs a mounted sub-app's lifespan, and fastmcp's
@@ -94,9 +100,12 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
         # request dies with "task group is not initialized".
         async with mcp_app.lifespan(app_):
             yield
-        # Watcher first (it must not claim new imports while we drain), then
-        # bounded grace for a finishing import.
+        # Puller first (stop landing new archives), watcher next (it must not
+        # claim new imports while we drain), then bounded grace for a
+        # finishing import.
+        context.puller.stop()
         context.watcher.stop()
+        context.puller.join(_SHUTDOWN_JOIN_S)
         context.watcher.join(_SHUTDOWN_JOIN_S)
         context.import_manager.join(_SHUTDOWN_JOIN_S)
 
@@ -115,6 +124,7 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
     app.include_router(items.router, prefix="/api")
     app.include_router(imports.router, prefix="/api")
     app.include_router(watch.router, prefix="/api")
+    app.include_router(gdrive.router, prefix="/api")
     # Before the SPA catch-all: Starlette matches mounts in registration order.
     app.mount("/mcp", mcp_app)
 

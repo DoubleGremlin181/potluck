@@ -1,9 +1,12 @@
 """Potluck command-line interface: thin Typer adapter over services."""
 
 import json as _json
+import webbrowser
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qs, urlsplit
 
 import typer
 import uvicorn
@@ -20,11 +23,13 @@ from potluck.bench.runner import run_tier
 from potluck.bench.scenarios import ALL_SCENARIOS
 from potluck.core.config import Settings
 from potluck.core.errors import ItemNotFoundError, PotluckError
+from potluck.core.paths import gdrive_token_path
 from potluck.mcp.server import run_stdio
 from potluck.models.imports import ImportRun
 from potluck.models.items import ItemKind, ItemSort, ListItemsRequest
 from potluck.models.search import SearchRequest
 from potluck.services import dev as dev_service
+from potluck.services import gdrive as gdrive_service
 from potluck.services import imports as imports_service
 from potluck.services import items as items_service
 from potluck.services import lifecycle as lifecycle_service
@@ -51,6 +56,12 @@ app.add_typer(bench_app, name="bench")
 
 dev_app = typer.Typer(help="Developer tools for building source plugins.", no_args_is_help=True)
 app.add_typer(dev_app, name="dev")
+
+gdrive_app = typer.Typer(
+    help="Google Drive Takeout auto-pull (#152): one-time authorization and status.",
+    no_args_is_help=True,
+)
+app.add_typer(gdrive_app, name="gdrive")
 
 
 def _version_callback(value: bool) -> None:
@@ -564,6 +575,167 @@ def mcp() -> None:
     same tools at /mcp on the web/API port.
     """
     run_stdio(create_context())
+
+
+# ---------------------------------------------------------------------------
+# gdrive (#152): one-time OAuth authorization + status. The CLI owns exactly
+# the UI mechanics of the loopback flow (browser, one-shot localhost listener,
+# paste fallback); everything protocol-shaped lives in services.gdrive.
+# ---------------------------------------------------------------------------
+
+# Fixed loopback redirect for --no-browser: no listener is bound (the redirect
+# fails to load wherever the browser runs — the user copies it from the
+# address bar), but the URI must still be a loopback address and must match
+# exactly between the consent URL and the code exchange.
+_NO_BROWSER_REDIRECT_URI = "http://127.0.0.1:8085/"
+
+_AUTH_LANDING_HTML = (
+    b"<!doctype html><meta charset='utf-8'><title>Potluck</title>"
+    b"<p>Authorization received &mdash; you can close this tab and return to the terminal.</p>"
+)
+
+
+class _LoopbackServer(HTTPServer):
+    """One-shot localhost listener catching the OAuth redirect."""
+
+    captured_path: str | None = None
+
+
+class _RedirectHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - http.server API
+        assert isinstance(self.server, _LoopbackServer)
+        self.server.captured_path = self.path
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(_AUTH_LANDING_HTML)
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - http.server API
+        pass  # never log request lines (they carry the authorization code)
+
+
+def _parse_redirect(url: str, expected_state: str) -> str:
+    """The authorization code from a captured/pasted redirect URL.
+
+    Verifies the ``state`` echo (CSRF guard) and surfaces Google's ``error``
+    param (e.g. access_denied) as a clean CLI failure.
+    """
+    query = parse_qs(urlsplit(url).query)
+    if "error" in query:
+        raise typer.BadParameter(f"authorization refused by Google: {query['error'][0]}")
+    code = query.get("code", [None])[0]
+    state = query.get("state", [None])[0]
+    if not code or not state:
+        raise typer.BadParameter("redirect URL carries no code/state parameters")
+    if state != expected_state:
+        raise typer.BadParameter("state mismatch — not the redirect for this auth attempt")
+    return code
+
+
+@gdrive_app.command("auth")
+def gdrive_auth(
+    prune: bool = typer.Option(
+        False,
+        "--prune",
+        help="Also request the FULL Drive scope so gdrive_prune can permanently "
+        "delete pulled archives from Drive. Destructive capability — only grant "
+        "it if you want that.",
+    ),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Headless flow: print the consent URL, then paste the full redirect "
+        "URL back (copy it from the browser's address bar — the 127.0.0.1 page "
+        "failing to load there is expected).",
+    ),
+) -> None:
+    """Authorize Potluck against your own Google OAuth client (one-time).
+
+    Requires gdrive_client_id / gdrive_client_secret in config.toml — see
+    docs/gdrive-setup.md for the Google Cloud console walkthrough. The token
+    is written to a 0600 file under the config dir, never to the database.
+    """
+    ctx = create_context()
+    try:
+        if no_browser:
+            auth = gdrive_service.build_authorization(
+                ctx, prune=prune, redirect_uri=_NO_BROWSER_REDIRECT_URI
+            )
+            typer.echo("Open this URL in any browser and approve access:")
+            typer.echo(auth.url)
+            typer.echo(
+                "The final redirect (to 127.0.0.1) will fail to load — that is "
+                "expected. Copy the full URL from the address bar."
+            )
+            pasted = typer.prompt("Paste the full redirect URL")
+            code = _parse_redirect(pasted, auth.state)
+        else:
+            with _LoopbackServer(("127.0.0.1", 0), _RedirectHandler) as server:
+                auth = gdrive_service.build_authorization(
+                    ctx, prune=prune, redirect_uri=f"http://127.0.0.1:{server.server_port}/"
+                )
+                typer.echo("Opening Google's consent page in your browser…")
+                typer.echo(f"(if nothing opens, visit: {auth.url})")
+                webbrowser.open(auth.url)
+                while server.captured_path is None:
+                    server.handle_request()  # one-shot; Ctrl+C aborts cleanly
+                code = _parse_redirect(server.captured_path, auth.state)
+        status = gdrive_service.complete_authorization(
+            ctx, code=code, redirect_uri=auth.redirect_uri, code_verifier=auth.code_verifier
+        )
+    except PotluckError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"Authorized. Token saved (0600) to {gdrive_token_path()}")
+    if status.prune_scope_granted:
+        typer.echo(
+            "Full Drive scope granted: gdrive_prune = true in config.toml will "
+            "PERMANENTLY delete pulled archives from Drive after import."
+        )
+    elif status.prune:
+        typer.echo(
+            "Note: gdrive_prune is enabled but only read access was granted — "
+            "re-run with --prune to allow pruning.",
+            err=True,
+        )
+    typer.echo("Takeout archives will be pulled while `potluck serve` runs.")
+
+
+@gdrive_app.command("status")
+def gdrive_status(
+    as_json: bool = typer.Option(False, "--json", help="Print JSON output."),
+) -> None:
+    """Show Drive-pull configuration, auth state and runtime status.
+
+    Runtime fields are meaningful only inside `potluck serve` — the sole
+    process that pulls; this command reports the durable state.
+    """
+    ctx = create_context()
+    status = gdrive_service.get_gdrive_status(ctx)
+    if as_json:
+        typer.echo(status.model_dump_json(indent=2))
+        return
+    typer.echo(f"gdrive: {'configured' if status.configured else 'not configured'}")
+    typer.echo(f"gdrive auth: {status.auth_state}")
+    typer.echo(f"gdrive enabled: {status.enabled} ({status.effective_enabled_source})")
+    prune = "on (destructive)" if status.prune else "off"
+    if status.prune and not status.prune_scope_granted:
+        prune += " — scope NOT granted; re-run `potluck gdrive auth --prune`"
+    typer.echo(f"gdrive prune: {prune}")
+    typer.echo(f"gdrive folder: {status.folder_name}")
+    typer.echo(f"gdrive interval: {status.interval_s}s")
+    typer.echo(f"gdrive downloads dir: {status.downloads_dir}")
+    typer.echo(f"gdrive pulled files: {status.pulled_files}")
+    last_check = status.last_check_at.isoformat() if status.last_check_at else "never"
+    last_pull = status.last_pull_at.isoformat() if status.last_pull_at else "never"
+    typer.echo(f"gdrive last check: {last_check}")
+    typer.echo(f"gdrive last pull: {last_pull}")
+    if status.offline:
+        typer.echo("gdrive connectivity: offline (will retry next cycle)")
+    if status.backoff_cycles is not None:
+        typer.echo(f"gdrive backoff: retry in {status.backoff_cycles} cycle(s)")
+    if status.last_error:
+        typer.echo(f"gdrive last error: {status.last_error}")
 
 
 @bench_app.command("run")
