@@ -155,6 +155,92 @@ def test_detect_sources_collects_all_matches(clean_registry: dict[str, Any]) -> 
     assert detect_sources(FakeArchive(["README.md", "data.csv"])) == []
 
 
+def test_generic_flag_defaults_false_and_registers(clean_registry: dict[str, Any]) -> None:
+    """#150: @source grows a generic flag; omitting it keeps the specific tier."""
+    from potluck.ingest.plugins import Glob, source
+
+    @source(name="spec_plugin", detect=Glob("*Spec/*.json"), kinds=(ItemKind.NOTE,))
+    def parse_spec(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    @source(name="gen_plugin", detect=Glob("*.txt"), kinds=(ItemKind.NOTE,), generic=True)
+    def parse_gen(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    assert clean_registry["spec_plugin"].generic is False
+    assert clean_registry["gen_plugin"].generic is True
+
+
+def _register_tiers(clean_registry: dict[str, Any]) -> None:
+    """One specific (Keep-style) + two generic (txt/jpg) toy plugins."""
+    from potluck.ingest.plugins import Glob, source
+
+    @source(name="tier_keep", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,))
+    def parse_keep(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    @source(name="tier_txt", detect=Glob("*.txt"), kinds=(ItemKind.NOTE,), generic=True)
+    def parse_txt(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    @source(name="tier_jpg", detect=Glob("*.jpg"), kinds=(ItemKind.PHOTO,), generic=True)
+    def parse_jpg(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+
+def test_detect_sources_drops_generics_when_any_specific_matches(
+    clean_registry: dict[str, Any],
+) -> None:
+    """Tier fallback (#150): a recognized export inside a messy folder wins —
+    generic plugins never double-import members a specific source claims."""
+    from potluck.ingest.plugins import detect_sources
+
+    _register_tiers(clean_registry)
+    mixed = FakeArchive(["Takeout/Keep/a.json", "loose-notes.txt", "photos/holiday.jpg"])
+    assert [p.name for p in detect_sources(mixed)] == ["tier_keep"]
+
+
+def test_detect_sources_generics_run_when_nothing_specific_matches(
+    clean_registry: dict[str, Any],
+) -> None:
+    """A notes-only folder reaches the generic tier; every matching generic runs."""
+    from potluck.ingest.plugins import detect_sources
+
+    _register_tiers(clean_registry)
+    folder = FakeArchive(["notes/a.txt", "pics/b.jpg", "misc/data.csv"])
+    assert [p.name for p in detect_sources(folder)] == ["tier_jpg", "tier_txt"]
+
+    txt_only = FakeArchive(["just-notes.txt"])
+    assert [p.name for p in detect_sources(txt_only)] == ["tier_txt"]
+
+    # Nothing matches at either tier -> empty list, unchanged.
+    assert detect_sources(FakeArchive(["data.csv"])) == []
+
+
+def test_registry_fingerprint_covers_generic_flag(clean_registry: dict[str, Any]) -> None:
+    """The flag changes detection semantics, so it must change the fingerprint
+    (#196 scan caching would otherwise serve stale tier decisions)."""
+    import dataclasses
+
+    from potluck.ingest.plugins import Glob, registry_fingerprint, source
+
+    @source(name="fp_plugin", detect=Glob("*.txt"), kinds=(ItemKind.NOTE,), generic=True)
+    def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    generic_fp = registry_fingerprint(dict(clean_registry))
+    flipped = {
+        name: dataclasses.replace(plugin, generic=False) for name, plugin in clean_registry.items()
+    }
+    assert registry_fingerprint(flipped) != generic_fp
+
+
 def test_detect_sources_single_pass_early_exit(clean_registry: dict[str, Any]) -> None:
     """Iteration stops as soon as every registered plugin has matched."""
     from potluck.ingest.plugins import Glob, detect_sources, source

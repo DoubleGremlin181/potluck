@@ -91,20 +91,18 @@ themselves always exist). ``Google Play*`` products, paths merely containing
 "Photos" (``Drive/My Photos/…``), and ``archive_browser.html`` never match.
 """
 
-import hashlib
 import json
 import logging
 import mimetypes
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta, timezone
-from io import BytesIO
-from typing import IO, Final
+from datetime import UTC, datetime
+from typing import Final
 
-from PIL import ExifTags, Image
 from pydantic import JsonValue
 
+from potluck.ingest.imagemeta import PROBE_EXTS, Probe, extension, hash_and_head, probe_image
 from potluck.ingest.plugins import Glob, ParseContext, source
 from potluck.ingest.readers import Archive
 from potluck.models.drafts import PhotoDraft
@@ -122,23 +120,12 @@ _EXPORT_GLOB = Glob("Google Photos/*|*/Google Photos/*")
 _PRODUCT_SEGMENT: Final = "Google Photos"
 _SIDECAR_SUFFIX: Final = ".supplemental-metadata"
 _DIGEST_CHARS: Final = 16  # the chrome/timeline identity sizing
-_CHUNK: Final = 1 << 20
-# Probe head cap: JPEG/PNG headers + EXIF live at the front; 32 MiB covers
-# every real photo (part-12 mean ~4 MB) while keeping memory flat.
-_HEAD_CAP: Final = 32 * 1024 * 1024
-# Extensions Pillow decodes without plugins; everything else (mp4/mov/heic/…)
-# is hashed without buffering and never probed — silent by design.
-_PROBE_EXTS: Final = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"})
 
 # Sidecar json name: optional '(N)' between the (possibly truncated) stem
 # and '.json'. Media name: optional '(N)' just before the extension.
 _JSON_NAME_RE: Final = re.compile(r"^(?P<stem>.*?)(?:\((?P<n>\d+)\))?\.json$")
 _MEDIA_N_RE: Final = re.compile(r"^(?P<root>.+)\((?P<n>\d+)\)(?P<ext>\.[^.]+)$")
 _METADATA_STEM: Final = "metadata"
-
-# EXIF DateTimeOriginal rendering; the offset shape of OffsetTimeOriginal.
-_EXIF_DT_RE: Final = re.compile(r"^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})")
-_EXIF_OFFSET_RE: Final = re.compile(r"^([+-])(\d{2}):(\d{2})$")
 
 
 @dataclass(slots=True)
@@ -159,19 +146,6 @@ class _Sidecar:
     app_source: str | None = None
     n: int | None = None  # the sidecar filename's own (N), before .json
     claimed_by: str | None = None  # first media basename that paired with it
-
-
-@dataclass(slots=True)
-class _Probe:
-    """What Pillow extracted from a media head (all-None when not probed)."""
-
-    width: int | None = None
-    height: int | None = None
-    mime: str | None = None
-    make: str | None = None
-    model: str | None = None
-    taken: datetime | None = None
-    gps: tuple[float, float, float | None] | None = None
 
 
 @dataclass(slots=True)
@@ -362,141 +336,29 @@ def _match_sidecar(state: _DirState, media_basename: str) -> _Sidecar | None:
 
 
 # ---------------------------------------------------------------------------
-# EXIF probing
+# EXIF probing (shared implementation: potluck.ingest.imagemeta, #150)
 # ---------------------------------------------------------------------------
 
 
-def _exif_str(value: object) -> str | None:
-    """EXIF string values arrive NUL/space-padded; bytes are decoded first."""
-    if isinstance(value, bytes):
-        value = value.decode("ascii", errors="replace")
-    if not isinstance(value, str):
-        return None
-    return value.strip("\x00 \t") or None
-
-
-def _parse_exif_datetime(raw: object, raw_offset: object) -> datetime | None:
-    """``YYYY:MM:DD HH:MM:SS`` (+ optional OffsetTimeOriginal) → aware
-    instant. A naive value reads as UTC — the whatsapp/gmail unknown-zone
-    policy; all-zero placeholders and impossible dates return None."""
-    text = _exif_str(raw)
-    if text is None:
-        return None
-    m = _EXIF_DT_RE.match(text)
-    if m is None:
-        return None
-    tz = UTC
-    offset_text = _exif_str(raw_offset)
-    if offset_text is not None:
-        om = _EXIF_OFFSET_RE.match(offset_text)
-        if om is not None:
-            sign = 1 if om.group(1) == "+" else -1
-            tz = timezone(sign * timedelta(hours=int(om.group(2)), minutes=int(om.group(3))))
-    year, month, day, hour, minute, second = (int(g) for g in m.groups())
-    try:
-        return datetime(year, month, day, hour, minute, second, tzinfo=tz)
-    except ValueError:  # impossible dates, including the 0000:00:00 placeholder
-        return None
-
-
-def _dms_to_degrees(values: object, ref: object) -> float | None:
-    """GPS DMS rationals + hemisphere ref → signed decimal degrees, or None
-    (0-denominator rationals and foreign shapes are rejected, never 0.0)."""
-    if not isinstance(values, (tuple, list)) or not 1 <= len(values) <= 3:
-        return None
-    try:
-        parts = [float(v) for v in values]
-    except (TypeError, ValueError, ZeroDivisionError):
-        return None
-    degrees = sum(part / (60.0**power) for power, part in enumerate(parts))
-    ref_text = _exif_str(ref)
-    if ref_text in ("S", "W"):
-        degrees = -degrees
-    return degrees
-
-
-def _parse_exif_gps(gps_ifd: dict[int, object]) -> tuple[float, float, float | None] | None:
-    """The GPS IFD → (lat, lon, alt), or None. Null Island (0,0) is the same
-    junk sentinel as the sidecar's and reads as absent."""
-    lat = _dms_to_degrees(
-        gps_ifd.get(ExifTags.GPS.GPSLatitude), gps_ifd.get(ExifTags.GPS.GPSLatitudeRef)
-    )
-    lon = _dms_to_degrees(
-        gps_ifd.get(ExifTags.GPS.GPSLongitude), gps_ifd.get(ExifTags.GPS.GPSLongitudeRef)
-    )
-    if lat is None or lon is None:
-        return None
-    if lat == 0.0 and lon == 0.0:
-        return None
-    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
-        return None
-    alt: float | None = None
-    raw_alt = gps_ifd.get(ExifTags.GPS.GPSAltitude)
-    if raw_alt is not None:
-        try:
-            alt = float(raw_alt)  # type: ignore[arg-type]
-        except (TypeError, ValueError, ZeroDivisionError):
-            alt = None
-        else:
-            if gps_ifd.get(ExifTags.GPS.GPSAltitudeRef) in (1, b"\x01"):
-                alt = -alt
-    return lat, lon, alt
-
-
-def _probe_image(head: bytes, member_name: str) -> _Probe:
-    """Pillow over the buffered head: dimensions, MIME, camera, capture
-    time, GPS. Never decodes pixels (.size/.getexif read headers only).
-
-    Blanket containment is deliberate (module docstring): a malformed image
-    must never kill the import, and Pillow's failure surface spans
-    UnidentifiedImageError/OSError/ValueError/SyntaxError/ZeroDivisionError.
+def _probe_image(head: bytes, member_name: str) -> Probe:
+    """Containment wrapper over the shared probe: a malformed image must
+    never kill the import — it warns and imports from byte facts alone
+    (module docstring; the images source makes the opposite call and skips).
     """
-    probe = _Probe()
     try:
-        with Image.open(BytesIO(head)) as image:
-            probe.width, probe.height = image.size
-            probe.mime = Image.MIME.get(image.format or "")
-            exif = image.getexif()
-            probe.make = _exif_str(exif.get(ExifTags.Base.Make))
-            probe.model = _exif_str(exif.get(ExifTags.Base.Model))
-            exif_ifd = exif.get_ifd(ExifTags.IFD.Exif)
-            probe.taken = _parse_exif_datetime(
-                exif_ifd.get(ExifTags.Base.DateTimeOriginal),
-                exif_ifd.get(ExifTags.Base.OffsetTimeOriginal),
-            )
-            probe.gps = _parse_exif_gps(dict(exif.get_ifd(ExifTags.IFD.GPSInfo)))
-    except Exception as exc:
+        return probe_image(head)
+    except Exception as exc:  # noqa: BLE001 — Pillow's broad surface; see imagemeta
         _logger.warning(
             "photos: %r is not a readable image (%s) — imported from byte facts alone",
             member_name,
             exc,
         )
-        return _Probe()
-    return probe
+        return Probe()
 
 
 # ---------------------------------------------------------------------------
 # Media streaming
 # ---------------------------------------------------------------------------
-
-
-def _hash_and_head(stream: IO[bytes], probeable: bool) -> tuple[str, int, bytes]:
-    """One streaming pass: sha256 + size over every byte, buffering only the
-    first _HEAD_CAP bytes of probeable images (b"" otherwise)."""
-    digest = hashlib.sha256()
-    size = 0
-    head = bytearray()
-    while chunk := stream.read(_CHUNK):
-        digest.update(chunk)
-        size += len(chunk)
-        if probeable and len(head) < _HEAD_CAP:
-            head.extend(chunk[: _HEAD_CAP - len(head)])
-    return digest.hexdigest(), size, bytes(head)
-
-
-def _extension(basename: str) -> str:
-    dot = basename.rfind(".")
-    return basename[dot:].lower() if dot >= 0 else ""
 
 
 def _compose_text(sidecar: _Sidecar | None) -> str | None:
@@ -515,7 +377,7 @@ def _build_draft(
     basename: str,
     album: str | None,
     sidecar: _Sidecar | None,
-    probe: _Probe,
+    probe: Probe,
     sha256: str,
     size: int,
 ) -> PhotoDraft:
@@ -675,8 +537,8 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[PhotoDraft]:
                 state = dirs.setdefault(directory, _DirState())
             state.orphan_warned = True
 
-        probeable = _extension(basename) in _PROBE_EXTS
-        sha256, size, head = _hash_and_head(stream, probeable)
+        probeable = extension(basename) in PROBE_EXTS
+        sha256, size, head = hash_and_head(stream, probeable)
 
         cached = first_draft_by_sha.get(sha256)
         if cached is not None:
@@ -686,7 +548,7 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[PhotoDraft]:
             yield cached
             continue
 
-        probe = _probe_image(head, member.name) if probeable else _Probe()
+        probe = _probe_image(head, member.name) if probeable else Probe()
         draft = _build_draft(member.name, basename, album, sidecar, probe, sha256, size)
         first_draft_by_sha[sha256] = draft
         yield draft

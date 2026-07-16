@@ -68,10 +68,11 @@ def test_import_unknown_archive(tmp_path: Path) -> None:
 
 
 def test_import_unsupported_path(tmp_path: Path) -> None:
-    """A plain .txt path exits 1 (not a supported archive format)."""
-    txt = tmp_path / "notes.txt"
-    txt.write_text("not an archive")
-    result = runner.invoke(app, ["import", str(txt)])
+    """A plain file no plugin recognises exits 1. (.csv, not .txt: bare text
+    files are claimed by the generic notes source since #150.)"""
+    csv = tmp_path / "data.csv"
+    csv.write_text("not an archive")
+    result = runner.invoke(app, ["import", str(csv)])
     assert result.exit_code == 1
 
 

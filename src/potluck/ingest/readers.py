@@ -19,6 +19,7 @@ import tarfile
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Protocol
 
@@ -66,6 +67,23 @@ class Member:
 
     name: str  # posix path inside the LOGICAL archive, e.g. 'Takeout/Keep/note.json'
     size: int  # uncompressed byte length
+    # Modification time as POSIX epoch seconds, None when the container lacks
+    # one (#150: the notes/images ts fallback; #151 watch-folders want it too).
+    # Zip DOS timestamps carry no zone and are read as UTC — the house
+    # unknown-zone policy, deterministic across hosts (mktime would not be).
+    mtime: float | None = None
+
+
+def mtime_ts(member: Member) -> datetime | None:
+    """Interpret a member's mtime as an item timestamp, or None.
+
+    Consumer-side policy (the raw Member reports facts): epoch-0 is tar's
+    'unset' convention — treated as absent, the Keep epoch-0-is-absent
+    posture — and negative values are pre-1970 clock junk.
+    """
+    if member.mtime is None or member.mtime <= 0:
+        return None
+    return datetime.fromtimestamp(member.mtime, tz=UTC)
 
 
 class Archive(Protocol):
@@ -96,6 +114,15 @@ class Archive(Protocol):
 # ---------------------------------------------------------------------------
 
 
+def _zip_mtime(info: zipfile.ZipInfo) -> float | None:
+    """The member's DOS timestamp as epoch seconds (read as UTC — see
+    Member.mtime); a malformed tuple (month/day 0 in hostile zips) is absent."""
+    try:
+        return datetime(*info.date_time, tzinfo=UTC).timestamp()
+    except ValueError:
+        return None
+
+
 class ZipArchive:
     """Read-only streaming view of a single zip file."""
 
@@ -120,7 +147,10 @@ class ZipArchive:
             for info in zf.infolist():
                 if not info.is_dir() and fnmatch.fnmatchcase(info.filename, pattern):
                     with zf.open(info) as stream:
-                        yield Member(name=info.filename, size=info.file_size), stream
+                        member = Member(
+                            name=info.filename, size=info.file_size, mtime=_zip_mtime(info)
+                        )
+                        yield member, stream
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +188,7 @@ class TarArchive:
                     fileobj = tf.extractfile(m)
                     if fileobj is None:  # impossible: m.isfile() guarantees a regular file
                         raise AssertionError("extractfile returned None for a regular file")
-                    yield Member(name=m.name, size=m.size), fileobj
+                    yield Member(name=m.name, size=m.size, mtime=float(m.mtime)), fileobj
 
 
 # ---------------------------------------------------------------------------
@@ -185,8 +215,9 @@ class DirArchive:
         for name in self.iter_names():
             if fnmatch.fnmatchcase(name, pattern):
                 file_path = self._path / name
+                stat = file_path.stat()
                 with file_path.open("rb") as f:
-                    yield Member(name=name, size=file_path.stat().st_size), f
+                    yield Member(name=name, size=stat.st_size, mtime=stat.st_mtime), f
 
 
 # ---------------------------------------------------------------------------
@@ -218,8 +249,9 @@ class SingleFileArchive:
         contract the other implementations honour.
         """
         if fnmatch.fnmatchcase(self._path.name, pattern):
+            stat = self._path.stat()
             with self._path.open("rb") as f:
-                yield Member(name=self._path.name, size=self._path.stat().st_size), f
+                yield Member(name=self._path.name, size=stat.st_size, mtime=stat.st_mtime), f
 
 
 # ---------------------------------------------------------------------------

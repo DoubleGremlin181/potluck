@@ -137,7 +137,7 @@ def _deg_to_dms(value: float) -> tuple[float, float, float]:
 
 
 def tiny_image(
-    fmt: Literal["JPEG", "PNG", "WEBP"] = "JPEG",
+    fmt: Literal["JPEG", "PNG", "WEBP", "GIF", "BMP", "TIFF"] = "JPEG",
     *,
     size: tuple[int, int] = (32, 24),
     color: tuple[int, int, int] = (200, 30, 40),

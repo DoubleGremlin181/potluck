@@ -85,15 +85,16 @@ def test_import_path_unknown_source(
 def test_import_path_unrecognized_plain_file(ctx: AppContext, tmp_path: Path) -> None:
     """A plain file opens as a single-member archive (#148 — bare exports
     like Timeline.json are real import shapes), so an unrecognizable one
-    fails as UnknownSourceError, not as an unsupported format."""
+    fails as UnknownSourceError, not as an unsupported format. (.csv, not
+    .txt: bare text files are claimed by the generic notes source since #150.)"""
     from potluck.core.errors import UnknownSourceError
     from potluck.services.imports import import_path
 
-    txt_path = tmp_path / "notes.txt"
-    txt_path.write_text("not an export any plugin recognises")
+    csv_path = tmp_path / "data.csv"
+    csv_path.write_text("not an export any plugin recognises")
 
     with pytest.raises(UnknownSourceError):
-        import_path(ctx, txt_path)
+        import_path(ctx, csv_path)
 
 
 def test_import_path_corrupt_zip_raises_potluck_error(ctx: AppContext, tmp_path: Path) -> None:

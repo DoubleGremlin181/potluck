@@ -4,10 +4,11 @@ import hashlib
 import logging
 from pathlib import Path
 
+from potluck.ingest.maildraft import to_email_draft as _to_draft
 from potluck.ingest.mbox import parse_email
 from potluck.ingest.plugins import ParseContext, detect_sources, discover
 from potluck.ingest.readers import open_archive
-from potluck.ingest.sources.gmail import _to_draft, parse
+from potluck.ingest.sources.gmail import parse
 from potluck.models.drafts import EmailDraft
 from potluck.models.items import ItemKind
 from potluck.testing.mbox import write_gmail_takeout
