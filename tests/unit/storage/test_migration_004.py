@@ -100,7 +100,7 @@ def test_dedupe_keeps_newest_row_and_fts_stays_consistent(tmp_path: Path) -> Non
         )
         conn.commit()
 
-        assert apply_migrations(conn) == 14
+        assert apply_migrations(conn) == 15
 
         ids = {int(r[0]) for r in conn.execute("SELECT id FROM items").fetchall()}
         assert ids == {survivor, other, null_a, null_b}

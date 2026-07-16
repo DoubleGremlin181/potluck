@@ -30,6 +30,7 @@ from potluck.services import items as items_service
 from potluck.services import search as search_service
 from potluck.services import stats as stats_service
 from potluck.services import threads as threads_service
+from potluck.services import watch as watch_service
 from potluck.services.context import create_context
 
 console = Console()
@@ -377,6 +378,7 @@ def status(
     try:
         stats = stats_service.get_stats(ctx)
         import_runs = imports_service.list_imports(ctx).runs
+        watch = watch_service.get_watch_status(ctx)
     finally:
         ctx.db.close()
 
@@ -384,12 +386,31 @@ def status(
         payload = {
             "stats": stats.model_dump(mode="json"),
             "imports": [r.model_dump(mode="json") for r in import_runs],
+            "watch": watch.model_dump(mode="json"),
         }
         print(_json.dumps(payload, indent=2))
         return
 
     for key, value in stats.model_dump().items():
         typer.echo(f"{key}: {value}")
+
+    # Watch-folder section (#151). Runtime fields (last scan / pending) are
+    # meaningful only inside `potluck serve` — the sole process that polls —
+    # so a CLI invocation truthfully reports 'never' / 'none'.
+    state = "enabled" if watch.enabled else "disabled"
+    typer.echo(f"watch: {state} ({watch.effective_enabled_source})")
+    if not watch.folders:
+        typer.echo("watch folders: no watch folders configured")
+    else:
+        typer.echo(f"watch interval: {watch.interval_s}s")
+        for folder in watch.folders:
+            typer.echo(f"watch folder: {folder.path} ({'ok' if folder.exists else 'missing'})")
+        last_scan = watch.last_scan_at.isoformat() if watch.last_scan_at else "never"
+        typer.echo(f"watch last scan: {last_scan}")
+        stabilizing = sum(1 for p in watch.pending if p.state == "stabilizing")
+        backoff = sum(1 for p in watch.pending if p.state == "backoff")
+        pending = f"{stabilizing} stabilizing, {backoff} backoff" if watch.pending else "none"
+        typer.echo(f"watch pending: {pending}")
 
     if import_runs:
         t = Table(show_header=True, header_style="bold")

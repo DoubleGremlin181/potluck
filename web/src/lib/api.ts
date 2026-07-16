@@ -307,3 +307,50 @@ export function startUploadImport(file: File): Promise<ImportTask> {
   form.append('file', file)
   return request<ImportTask>('/api/imports/upload', { method: 'POST', body: form })
 }
+
+// ---------------------------------------------------------------------------
+// Watch folders: GET /api/watch, PATCH /api/watch
+// ---------------------------------------------------------------------------
+
+export interface WatchFolder {
+  path: string
+  /** False = configured but missing on disk (warned by the server, skipped). */
+  exists: boolean
+}
+
+export interface WatchPendingSet {
+  /** Representative file of the archive set (first part of a multi-part drop). */
+  path: string
+  /** 'stabilizing' = waiting out the copy-in-progress debounce; 'backoff' = a
+   * failed import cooling down before its retry. */
+  state: 'stabilizing' | 'backoff'
+  /** Backoff only: polling cycles left before the retry. */
+  retry_in_cycles: number | null
+}
+
+/** Mirrors `models/watch.py::WatchStatus`. Folders and interval are
+ * config-file-owned (edit config.toml); only `enabled` is togglable here. */
+export interface WatchStatus {
+  enabled: boolean
+  /** 'runtime' when a persisted toggle overrides the config default. */
+  effective_enabled_source: 'config' | 'runtime'
+  interval_s: number
+  folders: WatchFolder[]
+  /** Null before the first scan — and always null unless `potluck serve` runs. */
+  last_scan_at: string | null
+  pending: WatchPendingSet[]
+  last_error: string | null
+}
+
+export function fetchWatchStatus(signal?: AbortSignal): Promise<WatchStatus> {
+  return request<WatchStatus>('/api/watch', { signal })
+}
+
+/** Persist the runtime enable/disable toggle; returns the new status. */
+export function setWatchEnabled(enabled: boolean): Promise<WatchStatus> {
+  return request<WatchStatus>('/api/watch', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+}

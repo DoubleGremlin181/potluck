@@ -1,5 +1,7 @@
 """CLI shell tests: every command runs and reuses the service layer."""
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -24,6 +26,45 @@ def test_status_prints_stats_from_service() -> None:
     assert "items: 0" in result.output
     assert "sources: 0" in result.output
     assert f"version: {__version__}" in result.output
+
+
+def test_status_watch_section_no_folders() -> None:
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert "watch: enabled (config)" in result.output
+    assert "no watch folders configured" in result.output
+
+
+def test_status_watch_section_lists_folders(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    present = tmp_path / "watch-present"
+    present.mkdir()
+    missing = tmp_path / "watch-missing"
+    monkeypatch.setenv("POTLUCK_WATCH_FOLDERS", json.dumps([str(present), str(missing)]))
+
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert "watch: enabled (config)" in result.output
+    assert f"watch folder: {present} (ok)" in result.output
+    assert f"watch folder: {missing} (missing)" in result.output
+    assert "watch last scan: never" in result.output  # no watcher in a CLI process
+    assert "watch pending: none" in result.output
+
+
+def test_status_json_includes_watch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    folder = tmp_path / "watched"
+    folder.mkdir()
+    monkeypatch.setenv("POTLUCK_WATCH_FOLDERS", json.dumps([str(folder)]))
+
+    result = runner.invoke(app, ["status", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    watch = payload["watch"]
+    assert watch["enabled"] is True
+    assert watch["effective_enabled_source"] == "config"
+    assert watch["folders"] == [{"path": str(folder), "exists": True}]
+    assert watch["pending"] == []
 
 
 def test_serve_wires_uvicorn_with_overrides(monkeypatch: pytest.MonkeyPatch) -> None:

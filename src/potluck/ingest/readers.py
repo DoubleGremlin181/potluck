@@ -45,11 +45,15 @@ _MULTIPART_RE: re.Pattern[str] = re.compile(
 _TAKEOUT_FILE_RE: re.Pattern[str] = re.compile(r"^(?P<stem>.+-\d{8}T\d{6}Z)-(?P<file>\d+)$")
 
 
-def _parse_part_name(name: str) -> tuple[str, str, tuple[int, int]] | None:
+def parse_part_name(name: str) -> tuple[str, str, tuple[int, int]] | None:
     """Split an archive filename into (set stem, ext, numeric order) — or None.
 
     Order is (file, part) so real sets sort numerically (9 < 12 < 16, and
     2-001 < 2-002 < 10-001); old-style names have no file number and use 0.
+
+    Public since #151: the watch-folder poller groups multi-part drops with
+    the exact same rule :func:`open_archive` uses, so one representative part
+    is submitted per set (opening any part loads the whole set).
     """
     m = _MULTIPART_RE.match(name)
     if m is None:
@@ -315,14 +319,14 @@ def open_archive(path: Path) -> Archive:
         raise UnsupportedArchiveError(f"Path does not exist: {path}")
 
     # Multi-part detection
-    parsed = _parse_part_name(path.name)
+    parsed = parse_part_name(path.name)
     if parsed is not None:
         stem, ext, _ = parsed
         parent = path.parent
         # glob.escape: the stem is user-controlled and may contain glob
         # metacharacters ('[', ']', '*') — match it literally or siblings are
         # silently missed. The '*' spans both '-NNN' and '-N-NNN' tails;
-        # _parse_part_name re-validates every candidate, and the stem equality
+        # parse_part_name re-validates every candidate, and the stem equality
         # check rejects files whose stem merely extends this one (e.g.
         # 'takeout-test-9-001' globbed from stem 'takeout-test').
         # Zero-padded and bare file numbers ('-014-' vs '-14-') collide to
@@ -330,7 +334,7 @@ def open_archive(path: Path) -> Archive:
         siblings: list[tuple[tuple[int, int], Path]] = sorted(
             (candidate[2], p)
             for p in parent.glob(f"{glob.escape(stem)}-*.{ext}")
-            if (candidate := _parse_part_name(p.name)) is not None and candidate[0] == stem
+            if (candidate := parse_part_name(p.name)) is not None and candidate[0] == stem
         )
         if len(siblings) > 1:
             parts = tuple(_make_single_archive(p) for _, p in siblings)

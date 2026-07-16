@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     # MIME parse worker processes (#199): 0 = auto (min(4, cpu_count) —
     # measured flat beyond 4 workers); 1 = sequential, no pool.
     ingest_workers: int = 0
+    # Watch-folder auto-import (#151): folders polled for dropped export
+    # archives while `potluck serve` runs (stdlib polling — CLI/one-shot
+    # contexts never poll; write ownership lives with the server). The folder
+    # list and interval are config-file-owned; enabled is only the DEFAULT —
+    # a runtime toggle persisted in the database (app_settings KV, settable
+    # from the UI/API) overrides it when present.
+    watch_folders: list[Path] = Field(default_factory=list)
+    watch_interval_s: float = 30.0
+    watch_enabled: bool = True
 
     @classmethod
     def settings_customise_sources(

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from potluck.core.config import Settings
 from potluck.services.import_manager import ImportManager
+from potluck.services.watch_manager import FolderWatcher
 from potluck.storage.db import Database
 
 
@@ -16,6 +17,10 @@ class AppContext:
     # Owns the background import worker (#132): one manager — and therefore
     # at most one running import — per context (one context per process).
     import_manager: ImportManager = field(default_factory=ImportManager)
+    # Watch-folder poller (#151): exists on every context (status reads it),
+    # but its thread is started only by the serve lifespan — CLI/one-shot
+    # contexts never poll (write-ownership rule).
+    watcher: FolderWatcher = field(default_factory=FolderWatcher)
 
 
 def create_context(settings: Settings | None = None) -> AppContext:
