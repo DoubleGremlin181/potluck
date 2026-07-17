@@ -258,3 +258,59 @@ def test_detect_sources_single_pass_early_exit(clean_registry: dict[str, Any]) -
     assert counting.served == 1, (
         f"Expected early exit after 1 archive name, got {counting.served} served"
     )
+
+
+def test_detect_sources_empty_registry(clean_registry: dict[str, Any]) -> None:
+    """No registered plugins -> no matches, and the scan does not blow up."""
+    from potluck.ingest.plugins import detect_sources
+
+    assert detect_sources(FakeArchive(["a.txt", "b.json"])) == []
+
+
+def test_required_literal_extraction() -> None:
+    """The prefilter literal is the longest wildcard-free run — or None
+    (character class / all-wildcard alternatives cannot be filtered)."""
+    from potluck.ingest.plugins import _required_literal
+
+    assert _required_literal("*Keep/*.json") == "Keep/"
+    assert _required_literal("*.txt") == ".txt"
+    assert _required_literal("Timeline.json") == "Timeline.json"
+    assert _required_literal("*note[0-9].json") is None
+    assert _required_literal("*") is None
+    assert _required_literal("???") is None
+
+
+def test_detect_sources_character_class_glob(clean_registry: dict[str, Any]) -> None:
+    """A '[' alternative disables the literal prefilter for the whole scan;
+    detection results must be identical either way."""
+    from potluck.ingest.plugins import Glob, detect_sources, source
+
+    @source(name="classy", detect=Glob("*report-[0-9].csv"), kinds=(ItemKind.NOTE,))
+    def parse_classy(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    @source(name="plain", detect=Glob("*Keep/*.json"), kinds=(ItemKind.NOTE,))
+    def parse_plain(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    both = FakeArchive(["data/report-3.csv", "Takeout/Keep/a.json"])
+    assert [p.name for p in detect_sources(both)] == ["classy", "plain"]
+    assert [p.name for p in detect_sources(FakeArchive(["report-x.csv"]))] == []
+
+
+def test_detect_sources_prefilter_false_positive(clean_registry: dict[str, Any]) -> None:
+    """A name CONTAINING a glob's literal but matching no glob must not match
+    (the prefilter only proves misses; the union confirms hits)."""
+    from potluck.ingest.plugins import Glob, detect_sources, source
+
+    @source(name="txt_plugin", detect=Glob("*.txt"), kinds=(ItemKind.NOTE,))
+    def parse_txt(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
+        notes: list[NoteDraft] = []
+        yield from notes
+
+    assert detect_sources(FakeArchive(["backup.txt.gz"])) == []
+    assert [p.name for p in detect_sources(FakeArchive(["backup.txt.gz", "real.txt"]))] == [
+        "txt_plugin"
+    ]
