@@ -7,9 +7,11 @@ verification and idempotent delete.
 """
 
 import base64
+import errno
 import hashlib
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PosixPath
+from typing import IO, Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -313,6 +315,53 @@ def test_download_416_restarts_from_zero(tmp_path: Path) -> None:
     with _client(mock, tmp_path / "tok.json") as client:
         client.download(fid, dest, expected_md5=mock.file_md5(fid))
     assert dest.read_bytes() == content
+
+
+class _FailingWritePath(PosixPath):
+    """A Path whose WRITE opens fail with a scripted errno (reads untouched)."""
+
+    write_errno = errno.ENOSPC
+
+    def open(self, mode: str = "r", *args: Any, **kwargs: Any) -> IO[Any]:  # type: ignore[override]
+        if "w" in mode or "a" in mode:
+            raise OSError(type(self).write_errno, "scripted write failure")
+        return super().open(mode, *args, **kwargs)
+
+
+class _EIOPath(_FailingWritePath):
+    write_errno = errno.EIO
+
+
+def test_download_enospc_removes_partial(tmp_path: Path) -> None:
+    """Doc §8 'Disk full': the .part is removed before the error surfaces —
+    it occupies the very space the user must free, and retry-appends would
+    fail forever until then (review I2)."""
+    mock = MockDrive()
+    folder = mock.add_folder("Takeout")
+    content = b"0123456789" * 50
+    fid = mock.add_file(folder, "t.zip", content)
+    plain = tmp_path / "t.zip.part"
+    plain.write_bytes(content[:100])  # an interrupted earlier attempt
+    with _client(mock, tmp_path / "tok.json") as client, pytest.raises(OSError) as excinfo:
+        client.download(fid, _FailingWritePath(plain), expected_md5=mock.file_md5(fid))
+    assert excinfo.value.errno == errno.ENOSPC
+    assert not plain.exists()
+
+
+def test_download_other_write_error_keeps_partial_for_resume(tmp_path: Path) -> None:
+    """Only ENOSPC unlinks (doc §8): any other I/O error keeps the partial —
+    its bytes are a valid prefix (md5-verified before any publish), and the
+    next cycle's Range resume saves re-downloading multi-GB prefixes."""
+    mock = MockDrive()
+    folder = mock.add_folder("Takeout")
+    content = b"0123456789" * 50
+    fid = mock.add_file(folder, "t.zip", content)
+    plain = tmp_path / "t.zip.part"
+    plain.write_bytes(content[:100])
+    with _client(mock, tmp_path / "tok.json") as client, pytest.raises(OSError) as excinfo:
+        client.download(fid, _EIOPath(plain), expected_md5=mock.file_md5(fid))
+    assert excinfo.value.errno == errno.EIO
+    assert plain.read_bytes() == content[:100]  # retained, resume-ready
 
 
 # ---------------------------------------------------------------------------

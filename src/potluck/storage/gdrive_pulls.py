@@ -54,10 +54,19 @@ def count_pulls(conn: sqlite3.Connection) -> int:
 def list_prunable(conn: sqlite3.Connection) -> list[GDrivePullRecord]:
     """Un-pruned rows whose SET verifiably imported (decision doc §6).
 
-    The watcher submits one representative part per set, so one COMPLETED
-    imports run (matched by local path — 'completed' is the schema's CHECK
-    value) covers every part sharing that set_stem. Failed/running runs never
-    qualify.
+    Two conditions must hold for a set (review I1 — the gate for a
+    destructive files.delete must be sound on its own):
+
+    - some row of the set matches a COMPLETED imports run by local path
+      ('completed' is the schema's CHECK value; failed/running never
+      qualify), AND
+    - that run STARTED strictly after the set's newest pulled_at. Rows are
+      recorded only after every part is renamed into place, so such a run
+      necessarily opened the fully published set — and opening any part
+      loads all on-disk siblings, so it imported the whole set. A run
+      predating the pulls may be a stale import of a partial publish
+      (crash between renames) and never qualifies; equality is excluded
+      too — when in doubt, don't prune.
     """
     rows = conn.execute(
         """SELECT p.file_id, p.name, p.md5, p.set_stem, p.local_path,
@@ -68,7 +77,13 @@ def list_prunable(conn: sqlite3.Connection) -> list[GDrivePullRecord]:
                  SELECT 1
                  FROM gdrive_pulls p2
                  JOIN imports i ON i.path = p2.local_path
-                 WHERE p2.set_stem = p.set_stem AND i.status = 'completed'
+                 WHERE p2.set_stem = p.set_stem
+                   AND i.status = 'completed'
+                   -- Freshness: both columns are dt_to_iso strings (same
+                   -- format), so lexical comparison is chronological.
+                   AND i.started_at > (SELECT max(p3.pulled_at)
+                                       FROM gdrive_pulls p3
+                                       WHERE p3.set_stem = p.set_stem)
              )
            ORDER BY p.name"""
     ).fetchall()

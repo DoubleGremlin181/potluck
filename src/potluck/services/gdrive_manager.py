@@ -224,24 +224,28 @@ class DrivePuller:
                 )
             # Set-atomic publish: every member is on disk and verified — only
             # now do the renames make the set visible to the watcher.
-            now = datetime.now(UTC)
-            records = []
             for file in members:
-                final = self._downloads_dir / file.name
                 part = self._downloads_dir / (file.name + _PART_SUFFIX)
                 if part.exists():
-                    part.replace(final)
-                records.append(
+                    part.replace(self._downloads_dir / file.name)
+            # pulled_at is stamped AFTER the last rename (review I1): the
+            # prune gate only trusts an import that STARTED after the set's
+            # newest pulled_at, and that guarantee holds only if pulled_at
+            # postdates the moment every part became visible.
+            now = datetime.now(UTC)
+            ops.record_pulls(
+                [
                     GDrivePullRecord(
                         file_id=file.id,
                         name=file.name,
                         md5=file.md5,
                         set_stem=stem,
-                        local_path=str(final),
+                        local_path=str(self._downloads_dir / file.name),
                         pulled_at=now,
                     )
-                )
-            ops.record_pulls(records)
+                    for file in members
+                ]
+            )
             pulled_any = True
         return pulled_any
 

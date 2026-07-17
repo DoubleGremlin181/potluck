@@ -19,6 +19,7 @@ test suite runs against ``httpx.MockTransport`` — no network in tests, ever.
 """
 
 import base64
+import errno
 import hashlib
 import json
 import logging
@@ -388,9 +389,19 @@ class DriveClient:
             # 206 appends after our offset; a 200 despite Range means the
             # server sent the whole file — start over.
             mode = "ab" if response.status_code == 206 else "wb"
-            with dest.open(mode) as handle:
-                for chunk in response.iter_bytes(_CHUNK_BYTES):
-                    handle.write(chunk)
+            try:
+                with dest.open(mode) as handle:
+                    for chunk in response.iter_bytes(_CHUNK_BYTES):
+                        handle.write(chunk)
+            except OSError as exc:
+                if exc.errno == errno.ENOSPC:
+                    # Doc §8 'Disk full': remove the partial — it occupies
+                    # the very space the user must now free, and retry
+                    # cycles would append a few bytes and fail forever
+                    # until space appears. Other I/O errors KEEP it: the
+                    # bytes are a valid prefix for a Range resume.
+                    dest.unlink(missing_ok=True)
+                raise
 
     # -- delete (pruning only, §6) ---------------------------------------------
 
