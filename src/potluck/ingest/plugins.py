@@ -9,9 +9,11 @@ import hashlib
 import importlib
 import logging
 import pkgutil
+import re
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 import potluck.ingest.sources as sources_pkg
@@ -59,9 +61,22 @@ class Glob:
 
     pattern: str
 
+    @cached_property
+    def _compiled(self) -> re.Pattern[str]:
+        # detect_sources calls matches() for every member name × every
+        # still-unmatched plugin — O(members × plugins) on single-source
+        # archives (nothing ever exhausts `remaining`). Per-call splitting +
+        # per-alternative fnmatchcase was ~40% of a Keep import's wall time
+        # once P4 grew the registry to 14 plugins; one combined regex keeps
+        # the whole check in C. fnmatch.translate is exactly fnmatchcase's
+        # internal compilation, so semantics are unchanged.
+        return re.compile(
+            "|".join(f"(?:{fnmatch.translate(alt)})" for alt in self.pattern.split("|"))
+        )
+
     def matches(self, name: str) -> bool:
         """Return True if *name* matches any of this glob's alternatives."""
-        return any(fnmatch.fnmatchcase(name, alt) for alt in self.pattern.split("|"))
+        return self._compiled.match(name) is not None
 
 
 @dataclass(frozen=True)
