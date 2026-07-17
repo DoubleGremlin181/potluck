@@ -1,6 +1,6 @@
 [project]
 name = "potluck"
-version = "1.0.0b1"
+version = "1.0.0b2"
 description = "Privacy-first personal knowledge database for your AI — local-first, MCP-native"
 readme = "README.md"
 license = { text = "MIT" }
