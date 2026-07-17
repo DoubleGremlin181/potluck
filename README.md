@@ -2,10 +2,13 @@
 
 **Privacy-first personal knowledge database for your AI** — local-first, MCP-native.
 
-Potluck ingests your data exports (Google Takeout first: Keep + Gmail; more sources each
-phase), stores everything in one local SQLite database, and exposes it three ways — a web
-app, a CLI, and [MCP](https://modelcontextprotocol.io/) for AI assistants. No cloud, no
-telemetry: nothing leaves your machine.
+Potluck ingests your data exports — Google Takeout (Gmail, Keep, Calendar, Chat, Chrome
+history, Photos metadata, Timeline), WhatsApp, Reddit, YNAB, plus generic folders of
+images, notes, and mbox files — stores everything in one local SQLite database, and
+exposes it three ways: a web app, a CLI, and
+[MCP](https://modelcontextprotocol.io/) for AI assistants. Watched folders and scheduled
+Google Drive pulls keep it current automatically. No cloud, no telemetry: nothing leaves
+your machine.
 
 ## Status — v1 rewrite in progress
 
@@ -50,9 +53,11 @@ docker run -p 127.0.0.1:8765:8765 -v potluck-data:/data ghcr.io/doublegremlin181
 ```
 
 **2 — Import your data.** Feed it a [Google Takeout](https://takeout.google.com/)
-export (Keep + Gmail today; zip, tgz, or unpacked dir) — reuse the same
+export, a WhatsApp/Reddit/YNAB export, a bare Timeline.json, or any folder of
+notes/images/mbox files (zip, tgz, unpacked dir, or single file) — reuse the same
 `uvx --from … potluck` prefix for every command, or upload from the web app's
-Imports page:
+Imports page. Drop exports into a watched folder (see `watch_folders` in the config)
+or set up [scheduled Google Drive pulls](docs/gdrive-setup.md) to automate it:
 
 ```bash
 uvx --from git+https://github.com/DoubleGremlin181/potluck potluck import ~/Downloads/takeout-20260707T120000Z-001.zip
@@ -101,13 +106,14 @@ without MCP, and troubleshooting: [docs/ai-integration.md](docs/ai-integration.m
 ## CLI
 
 ```text
-potluck import PATH  ingest an export (Google Takeout zip/tgz/dir; auto-detected)
+potluck import PATH  ingest an export (zip/tgz/dir/single file; source auto-detected)
 potluck search Q     full-text search (--kind, --prefix, --cursor, --limit, --json)
 potluck list         browse items without a query (--kind, --source, --since, --sort, --json)
 potluck show ID      full item content + metadata (--thread: the whole conversation)
 potluck status       database overview + per-import stats
 potluck rm           delete items by id, --import run, or --source (confirms; --yes to skip)
 potluck forget       rm + block the deleted content from ever re-importing
+potluck gdrive       Google Drive Takeout auto-pull (auth / status; docs/gdrive-setup.md)
 potluck serve        web app + API + MCP (/mcp) on one port (opens your browser)
 potluck mcp          MCP server on stdio (HTTP lives at /mcp on the serve port)
 potluck bench run    benchmark harness (smoke/full tiers)

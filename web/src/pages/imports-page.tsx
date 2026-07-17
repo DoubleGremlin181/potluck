@@ -682,7 +682,7 @@ function HistoryRow({ run, onRetry }: { run: ImportRun; onRetry: (path: string) 
           <StatusBadge status={run.status} />
         </td>
         <td className="py-2.5 pr-3 font-medium whitespace-nowrap">{run.source}</td>
-        <td className="max-w-52 truncate py-2.5 pr-3 text-muted-foreground" title={run.path}>
+        <td className="max-w-40 truncate py-2.5 pr-3 text-muted-foreground" title={run.path}>
           {basename(run.path)}
         </td>
         <td data-testid="history-items" className="py-2.5 pr-3 text-right tabular-nums">
