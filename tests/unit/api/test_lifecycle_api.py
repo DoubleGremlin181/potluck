@@ -12,7 +12,13 @@ from fastapi.testclient import TestClient
 from httpx2 import Response  # starlette 1.x TestClient is an httpx2.Client
 
 from potluck.services.context import AppContext
-from tests.conftest import email_draft, ingest_email_drafts, insert_import, insert_source
+from tests.conftest import (
+    email_draft,
+    ingest_email_drafts,
+    insert_import,
+    insert_item,
+    insert_source,
+)
 
 
 def _assert_envelope(resp: Response, status: int, code: str) -> dict[str, Any]:
@@ -105,3 +111,17 @@ def test_delete_item_forget_suppresses(ctx: AppContext, api_client: TestClient) 
 
 def test_delete_item_unknown_404(api_client: TestClient) -> None:
     _assert_envelope(api_client.delete("/api/items/424242"), 404, "item_not_found")
+
+
+def test_delete_item_running_owner_409(ctx: AppContext, api_client: TestClient) -> None:
+    """DELETE /api/items/{id} while the item's owning import is still running
+    → the same 409 envelope the import route serves (task-11 review M2)."""
+
+    def _seed(conn: sqlite3.Connection) -> int:
+        source_id = insert_source(conn)
+        import_id = insert_import(conn, source_id)  # status defaults to 'running'
+        return insert_item(conn, source_id, import_id, content_hash="h1")
+
+    item_id = ctx.db.write(_seed)
+    _assert_envelope(api_client.delete(f"/api/items/{item_id}"), 409, "import_running")
+    assert _count(ctx, "SELECT COUNT(*) FROM items") == 1

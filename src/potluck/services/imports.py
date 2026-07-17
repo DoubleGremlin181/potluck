@@ -70,9 +70,10 @@ def import_path(ctx: AppContext, path: Path) -> list[ImportRun]:
     the rest (idempotent thanks to content-hash dedup).
 
     Raises:
-        UnsupportedArchiveError: if *path* is not a recognised archive format,
-            or is a corrupt/truncated zip or tar (translated from the stdlib
-            errors so interface layers only handle PotluckError).
+        UnsupportedArchiveError: if *path* does not exist, or is a corrupt/
+            truncated zip or tar (translated from the stdlib errors so
+            interface layers only handle PotluckError). An existing plain
+            file of any other format opens as a SingleFileArchive instead.
         UnknownSourceError: if no registered plugin matches the archive contents.
 
     File hash semantics: single-file archives → sha256 of the passed file;

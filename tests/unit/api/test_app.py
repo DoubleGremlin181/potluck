@@ -1,7 +1,9 @@
 """API shell: health, stats/items parity with the service, OpenAPI, SPA mount/fallback."""
 
+import webbrowser
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from potluck import __version__
@@ -155,3 +157,30 @@ def test_spa_fallback_never_swallows_api_or_mcp(tmp_path: Path) -> None:
             assert client.get("/mcp-extra").status_code == 404
     finally:
         context.db.close()
+
+
+def test_lifespan_startup_failure_stops_watcher_thread(
+    ctx: AppContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lifespan enter that raises AFTER the watcher thread starts must stop
+    it on the way out — the poller must not outlive a failed startup
+    (task-10 review M1)."""
+    folder = tmp_path / "watched"
+    folder.mkdir()
+    wctx = AppContext(
+        settings=ctx.settings.model_copy(
+            update={"watch_folders": [folder], "web_dist": tmp_path / "no-spa"}
+        ),
+        db=ctx.db,
+    )
+
+    def _fail(url: str) -> bool:
+        raise RuntimeError("scripted startup failure")
+
+    monkeypatch.setattr(webbrowser, "open", _fail)
+    with (
+        pytest.raises(RuntimeError, match="scripted startup failure"),
+        TestClient(create_app(wctx, open_browser=True)),
+    ):
+        pass  # pragma: no cover — startup never completes
+    assert not wctx.watcher.is_running()

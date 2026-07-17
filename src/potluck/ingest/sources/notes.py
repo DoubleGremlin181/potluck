@@ -58,8 +58,16 @@ MAX_NOTE_BYTES: Final = 10 * 1024 * 1024
 
 def _h1_title(text: str) -> str | None:
     """The first non-empty ATX H1 (``# Title``): CommonMark requires the
-    space, and ``##``+ are sub-headings, not titles."""
+    space, and ``##``+ are sub-headings, not titles. Fenced code blocks are
+    skipped — a ``# comment`` inside a ``` fence is code, not a heading
+    (a simple open/close toggle, not a full CommonMark fence matcher)."""
+    in_fence = False
     for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if line.startswith("# "):
             title = line[2:].strip()
             if title:
@@ -95,7 +103,9 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[NoteDraft]:
 
         text = clean_text(stream.read().decode("utf-8-sig", errors="replace"))
         basename = member.name.rsplit("/", 1)[-1]
-        stem = basename.rsplit(".", 1)[0]
+        # A bare dotfile named '.txt'/'.md' has an empty stem ('*' matches
+        # empty) — fall back to the full filename, never an empty title.
+        stem = basename.rsplit(".", 1)[0] or basename
         title = (_h1_title(text) if basename.endswith(_MD_EXTS) else None) or stem
 
         yield NoteDraft(

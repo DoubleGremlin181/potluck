@@ -373,7 +373,6 @@ def _compose_text(sidecar: _Sidecar | None) -> str | None:
 
 
 def _build_draft(
-    member_name: str,
     basename: str,
     album: str | None,
     sidecar: _Sidecar | None,
@@ -509,7 +508,9 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[PhotoDraft]:
         if basename.endswith(".json"):
             continue  # pass 1 owns jsons
         rel = _rel_after_product(member.name)
-        album = album_titles.get(directory) or (rel[0] if len(rel) >= 2 else None)
+        if len(rel) < 2:
+            continue  # product-level file (pass 1's rule): never media, no item
+        album = album_titles.get(directory) or rel[0]
 
         state = dirs.get(directory)
         sidecar = _match_sidecar(state, basename) if state is not None else None
@@ -549,7 +550,7 @@ def parse(archive: Archive, ctx: ParseContext) -> Iterator[PhotoDraft]:
             continue
 
         probe = _probe_image(head, member.name) if probeable else Probe()
-        draft = _build_draft(member.name, basename, album, sidecar, probe, sha256, size)
+        draft = _build_draft(basename, album, sidecar, probe, sha256, size)
         first_draft_by_sha[sha256] = draft
         yield draft
 

@@ -353,6 +353,23 @@ def test_product_root_json_skipped_silently(
     assert not _potluck_warnings(caplog)
 
 
+def test_product_root_non_json_never_mints_a_photo(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A NON-json file directly under Google Photos/ (a future product-root
+    README/HTML) mirrors pass 1's product-level skip: no item, no orphan
+    warning (task-8 review M1)."""
+    members = {
+        "Takeout/Google Photos/user-generated-memory-titles.html": b"<html></html>",
+        f"{_ALBUM}/pic.jpg": tiny_image(),
+        f"{_ALBUM}/pic.jpg.supplemental-metadata.json": sidecar_json("pic.jpg", taken_epoch=_EPOCH),
+    }
+    with caplog.at_level(logging.WARNING):
+        drafts = _drafts(tmp_path, members)
+    assert [d.title for d in drafts] == ["pic.jpg"]
+    assert not _potluck_warnings(caplog)
+
+
 # ---------------------------------------------------------------------------
 # Coordinate + timestamp precedence
 # ---------------------------------------------------------------------------

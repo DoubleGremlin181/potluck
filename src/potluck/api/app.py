@@ -84,30 +84,36 @@ def create_app(ctx: AppContext | None = None, *, open_browser: bool = False) -> 
         # sweep stale 'running' rows before the first request can observe
         # phantom progress. ASGI lifespan startup completes before serving.
         recover_interrupted_imports(context)
-        # Same ownership moment starts the watch-folder poller (#151): only
-        # the serving process may submit imports on a schedule. No-op when
-        # no folders are configured (the gdrive downloads dir counts as one
-        # once a Drive client is configured).
-        start_watcher(context)
-        # And the Drive Takeout puller (#152): downloads-only — what it lands
-        # in the (watched) downloads dir, the watcher above imports. No-op
-        # when no OAuth client is configured.
-        start_puller(context)
-        if open_browser:
-            webbrowser.open(f"http://{context.settings.host}:{context.settings.port}/")
-        # Starlette never runs a mounted sub-app's lifespan, and fastmcp's
-        # owns the MCP session manager — compose it here or every /mcp
-        # request dies with "task group is not initialized".
-        async with mcp_app.lifespan(app_):
-            yield
-        # Puller first (stop landing new archives), watcher next (it must not
-        # claim new imports while we drain), then bounded grace for a
-        # finishing import.
-        context.puller.stop()
-        context.watcher.stop()
-        context.puller.join(_SHUTDOWN_JOIN_S)
-        context.watcher.join(_SHUTDOWN_JOIN_S)
-        context.import_manager.join(_SHUTDOWN_JOIN_S)
+        # The finally also covers a startup failure AFTER the poller threads
+        # start (MCP lifespan enter, webbrowser.open): they must never
+        # outlive a failed startup. stop()/join() are safe on never-started
+        # managers.
+        try:
+            # Same ownership moment starts the watch-folder poller (#151):
+            # only the serving process may submit imports on a schedule.
+            # No-op when no folders are configured (the gdrive downloads dir
+            # counts as one once a Drive client is configured).
+            start_watcher(context)
+            # And the Drive Takeout puller (#152): downloads-only — what it
+            # lands in the (watched) downloads dir, the watcher above
+            # imports. No-op when no OAuth client is configured.
+            start_puller(context)
+            if open_browser:
+                webbrowser.open(f"http://{context.settings.host}:{context.settings.port}/")
+            # Starlette never runs a mounted sub-app's lifespan, and
+            # fastmcp's owns the MCP session manager — compose it here or
+            # every /mcp request dies with "task group is not initialized".
+            async with mcp_app.lifespan(app_):
+                yield
+        finally:
+            # Puller first (stop landing new archives), watcher next (it
+            # must not claim new imports while we drain), then bounded grace
+            # for a finishing import.
+            context.puller.stop()
+            context.watcher.stop()
+            context.puller.join(_SHUTDOWN_JOIN_S)
+            context.watcher.join(_SHUTDOWN_JOIN_S)
+            context.import_manager.join(_SHUTDOWN_JOIN_S)
 
     app = FastAPI(
         title="Potluck",

@@ -636,13 +636,28 @@ def _build_position_draft(
     )
 
 
+def _warn_unknown_edit(flags: _MemberFlags, ordinal: int, member_name: str) -> None:
+    """Latch one per-member WARNING for an edit that is neither a position nor
+    a documented non-item — a future kind must never vanish silently."""
+    if not flags.flavor_warned:
+        _logger.warning(
+            "timeline: edit %d in %r has an unknown kind — skipped (further "
+            "occurrences in this member are counted silently)",
+            ordinal,
+            member_name,
+        )
+        flags.flavor_warned = True
+
+
 def _parse_edits(text: str, member_name: str) -> Iterator[LocationDraft]:
     """Yield position drafts from one Timeline Edits member.
 
     Telemetry signals (activityRecord/wifiScan) and semantic-segment edits
-    (inferred/userEdited) are documented non-items and skip silently; a
-    non-object edit warns. Same counter scoping and JSON containment as the
-    segments pass.
+    (inferred/userEdited) are documented non-items and skip silently — keyed
+    on their documented keys EXPLICITLY, so an unknown future edit kind or
+    signal type latches one WARNING per member (the segments pass's
+    unknown-flavor posture) instead of vanishing. A non-object edit warns.
+    Same counter scoping and JSON containment as the segments pass.
     """
     counters: dict[str, int] = {}
     flags = _MemberFlags()
@@ -657,10 +672,19 @@ def _parse_edits(text: str, member_name: str) -> Iterator[LocationDraft]:
                 continue
             raw_signal: object = element.get("rawSignal")
             if not isinstance(raw_signal, dict):
+                if (
+                    "inferredSemanticSegment" not in element
+                    and "userEditedSemanticSegment" not in element
+                ):
+                    _warn_unknown_edit(flags, ordinal, member_name)
                 continue  # inferred/userEdited semantic edits: documented non-items
             signal: object = raw_signal.get("signal")
             position = signal.get("position") if isinstance(signal, dict) else None
             if not isinstance(position, dict):
+                if not isinstance(signal, dict) or (
+                    "activityRecord" not in signal and "wifiScan" not in signal
+                ):
+                    _warn_unknown_edit(flags, ordinal, member_name)
                 continue  # activityRecord/wifiScan telemetry: documented non-items
             draft = _build_position_draft(element, position, member_name, ordinal, counters, flags)
             if draft is not None:

@@ -184,7 +184,12 @@ class DrivePuller:
             with self._lock:
                 self._last_check_at = now
                 self._offline = False
-                self._failures += 1
+                # Saturate the counter at the exponent that reaches the
+                # ceiling: years of consecutive daily failures must not keep
+                # inflating the power behind the min() clamp (unbounded
+                # state; task-12 review M5). bit_length ties the cap to
+                # _MAX_BACKOFF_CYCLES: 2**(bit_length-1) == the ceiling.
+                self._failures = min(self._failures + 1, _MAX_BACKOFF_CYCLES.bit_length())
                 self._skip_remaining = min(2 ** (self._failures - 1), _MAX_BACKOFF_CYCLES)
                 self._last_error = str(exc) or type(exc).__name__
 

@@ -198,6 +198,13 @@ def detect_sources(archive: Archive) -> list[SourcePlugin]:
             break
 
     if any(not plugin.generic for plugin in matched):
+        dropped = sorted(plugin.name for plugin in matched if plugin.generic)
+        if dropped:
+            _logger.info(
+                "generic source(s) %s suppressed: a specific source matched "
+                "(import the loose folder/file directly to ingest what they cover)",
+                ", ".join(dropped),
+            )
         matched = [plugin for plugin in matched if not plugin.generic]
     matched.sort(key=lambda plugin: plugin.name)
     return matched

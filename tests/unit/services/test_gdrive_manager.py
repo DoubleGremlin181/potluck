@@ -18,7 +18,7 @@ from potluck.ingest.gdrive import (
     DriveClient,
 )
 from potluck.models.gdrive import GDrivePullRecord, StoredToken
-from potluck.services.gdrive_manager import DrivePuller, PullerOps
+from potluck.services.gdrive_manager import _MAX_BACKOFF_CYCLES, DrivePuller, PullerOps
 from tests.conftest import MockDrive
 
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -251,6 +251,24 @@ def test_backoff_progression_1_2_4_capped(tmp_path: Path) -> None:
         puller.run_cycle()  # the retry
         attempts += 1
         assert mock.refresh_calls == attempts
+
+
+def test_consecutive_failures_never_grow_unbounded_state(tmp_path: Path) -> None:
+    """The failure counter saturates once backoff hits its ceiling: years of
+    consecutive daily failures must not keep inflating the exponent behind
+    the min() clamp (task-12 review M5)."""
+    mock = MockDrive()
+    ids = seed_takeout_set(mock)
+    mock.fail_download_ids = set(ids)
+    harness = OpsHarness(mock, tmp_path / "tok.json")
+    puller = make_puller(harness, tmp_path / "downloads")
+    for _ in range(50):  # ~10 active failures — several past the backoff cap
+        puller.run_cycle()
+    assert 2 ** (puller._failures - 1) <= _MAX_BACKOFF_CYCLES  # saturated, not huge
+    before = mock.refresh_calls
+    while mock.refresh_calls == before:
+        puller.run_cycle()  # drain any sit-out (≤ 4); the next active cycle fails
+    assert puller.snapshot().backoff_cycles == _MAX_BACKOFF_CYCLES  # still capped
 
 
 # ---------------------------------------------------------------------------

@@ -20,8 +20,9 @@ connection (single writer thread), so validation cannot race a concurrent
 """
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
+from typing import Final
 
 from potluck.core.errors import (
     ImportNotFoundError,
@@ -30,6 +31,16 @@ from potluck.core.errors import (
     SourceNotFoundError,
 )
 from potluck.storage.items import dt_to_iso
+
+# Placeholder-chunk size for id lists: SQLITE_MAX_VARIABLE_NUMBER is
+# build-dependent (historically 999, commonly 32766) — 500 stays safely
+# under every real build. Chunks always run inside ONE transaction.
+_ID_CHUNK_SIZE: Final = 500
+
+
+def _id_chunks(ids: Sequence[int]) -> Iterator[Sequence[int]]:
+    for start in range(0, len(ids), _ID_CHUNK_SIZE):
+        yield ids[start : start + _ID_CHUNK_SIZE]
 
 
 def suppressed_subset(conn: sqlite3.Connection, hashes: Sequence[str]) -> set[str]:
@@ -155,8 +166,10 @@ def delete_items(
     For forget the clearing is redundant (suppression already blocks return)
     but kept — one code path, and the extra re-parse is the only cost.
 
-    Atomic over the whole id list, one transaction; returns
-    (items_deleted, hashes_suppressed).
+    Atomic over the whole id list, one transaction; the list expands into
+    placeholder chunks of ``_ID_CHUNK_SIZE`` so a huge rm never trips
+    SQLITE_MAX_VARIABLE_NUMBER. All validation runs before any mutation.
+    Returns (items_deleted, hashes_suppressed).
 
     Raises:
         ItemNotFoundError: if ANY id is unknown (nothing is deleted).
@@ -165,37 +178,50 @@ def delete_items(
     ids = list(dict.fromkeys(item_ids))  # de-dup, order-preserving
     if not ids:
         return 0, 0
-    placeholders = ",".join("?" * len(ids))
     conn.execute("BEGIN")
     try:
-        found = {
-            int(row[0])
-            for row in conn.execute(
-                f"SELECT id FROM items WHERE id IN ({placeholders})", ids
-            ).fetchall()
-        }
+        found: set[int] = set()
+        for chunk in _id_chunks(ids):
+            placeholders = ",".join("?" * len(chunk))
+            found.update(
+                int(row[0])
+                for row in conn.execute(
+                    f"SELECT id FROM items WHERE id IN ({placeholders})", chunk
+                ).fetchall()
+            )
         missing = [i for i in ids if i not in found]
         if missing:
             raise ItemNotFoundError(f"no item(s) with id {', '.join(map(str, missing))}")
-        running = conn.execute(
-            f"""SELECT id FROM imports WHERE status = 'running'
-                AND id IN (SELECT DISTINCT import_id FROM items WHERE id IN ({placeholders}))
-                LIMIT 1""",
-            ids,
-        ).fetchone()
-        if running is not None:
-            raise ImportRunningError(
-                f"import {int(running[0])} owning these items is still running; "
-                "wait for it to finish before deleting"
+        for chunk in _id_chunks(ids):
+            placeholders = ",".join("?" * len(chunk))
+            running = conn.execute(
+                f"""SELECT id FROM imports WHERE status = 'running'
+                    AND id IN (SELECT DISTINCT import_id FROM items WHERE id IN ({placeholders}))
+                    LIMIT 1""",
+                chunk,
+            ).fetchone()
+            if running is not None:
+                raise ImportRunningError(
+                    f"import {int(running[0])} owning these items is still running; "
+                    "wait for it to finish before deleting"
+                )
+        items = 0
+        suppressed = 0
+        # Per-chunk order is safe: _unlink_children(chunk) nulls EVERY link
+        # pointing into that chunk (from doomed rows in later chunks too), so
+        # the chunk's DELETE never strands a forward reference.
+        for chunk in _id_chunks(ids):
+            placeholders = ",".join("?" * len(chunk))
+            where = f"id IN ({placeholders})"
+            _unlink_children(conn, where, chunk)
+            if forget:
+                suppressed += _suppress_hashes(conn, where, chunk)
+            conn.execute(
+                f"""UPDATE imports SET file_hash = NULL
+                    WHERE id IN (SELECT DISTINCT import_id FROM items WHERE {where})""",
+                chunk,
             )
-        _unlink_children(conn, f"id IN ({placeholders})", ids)
-        suppressed = _suppress_hashes(conn, f"id IN ({placeholders})", ids) if forget else 0
-        conn.execute(
-            f"""UPDATE imports SET file_hash = NULL
-                WHERE id IN (SELECT DISTINCT import_id FROM items WHERE id IN ({placeholders}))""",
-            ids,
-        )
-        items = conn.execute(f"DELETE FROM items WHERE id IN ({placeholders})", ids).rowcount
+            items += conn.execute(f"DELETE FROM items WHERE {where}", chunk).rowcount
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")

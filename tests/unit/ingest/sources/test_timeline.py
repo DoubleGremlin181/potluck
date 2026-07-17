@@ -599,6 +599,19 @@ def test_telemetry_and_semantic_edit_kinds_are_silent_non_items(
     assert not caplog.records
 
 
+def test_unknown_edit_kind_warns_once_per_member(caplog: pytest.LogCaptureFixture) -> None:
+    """A FUTURE edit kind (neither rawSignal nor a documented semantic edit)
+    and an unknown rawSignal type must not vanish silently — one latched
+    WARNING per member, mirroring the segments pass's unknown-flavor posture
+    (task-7 review Minor c)."""
+    unknown_kind = {"deviceId": "-1", "placeVisitEdit": {"placeId": "p1"}}
+    unknown_signal = {"deviceId": "-1", "rawSignal": {"signal": {"odometerRecord": {}}}}
+    with caplog.at_level(logging.WARNING):
+        drafts = _edit_drafts(unknown_kind, unknown_signal, _position_edit())
+    assert len(drafts) == 1
+    assert len([r for r in caplog.records if "unknown" in r.message]) == 1  # latched
+
+
 def test_position_missing_timestamp_keeps_item_undated(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

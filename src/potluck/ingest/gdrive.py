@@ -378,8 +378,12 @@ class DriveClient:
                 self._refresh()
                 self._stream_to(file_id, dest, retry_auth=False)
                 return
-            if response.status_code == 416:
+            if response.status_code == 416 and offset:
                 # Partial longer than the remote file: stale — restart clean.
+                # Guarded on offset: the restart sends NO Range (the partial
+                # is gone), so a server that 416s unconditionally falls to
+                # _checked below on the retry instead of recursing (task-12
+                # review M3); real Drive never 416s a Range-less request.
                 dest.unlink(missing_ok=True)
                 self._stream_to(file_id, dest, retry_auth=retry_auth)
                 return

@@ -286,15 +286,19 @@ class MultiPartArchive:
 
 
 def _make_single_archive(path: Path) -> "ZipArchive | TarArchive":
-    """Create a single-file archive by extension. Raises UnsupportedArchiveError."""
+    """Create a single-file archive by extension.
+
+    Both call sites guarantee a ``.zip``/``.tgz``/``.tar.gz`` name (the
+    multipart regex enforces it; the plain-file fallthrough checks
+    ``endswith`` first), so any other extension is an impossible branch —
+    unrecognized plain files open as :class:`SingleFileArchive` upstream.
+    """
     name = path.name
     if name.endswith(".zip"):
         return ZipArchive(path)
-    if name.endswith(".tgz") or name.endswith(".tar.gz"):
+    if name.endswith((".tgz", ".tar.gz")):
         return TarArchive(path)
-    raise UnsupportedArchiveError(
-        f"Unsupported archive format '{path.suffix}': {path}. Expected .zip, .tgz, or .tar.gz"
-    )
+    raise AssertionError(f"_make_single_archive called with a non-archive name: {path}")
 
 
 def open_archive(path: Path) -> Archive:

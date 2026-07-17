@@ -68,6 +68,27 @@ def test_empty_h1_falls_back_to_stem(tmp_path: Path) -> None:
     assert draft.title == "blank-heading"
 
 
+def test_h1_inside_code_fence_is_not_a_title(tmp_path: Path) -> None:
+    """A shell comment inside a ``` fence must not win over the real H1 that
+    follows it (task-9 review Minor 1)."""
+    body = b"```bash\n# install deps\nmake install\n```\n\n# Real Title\nbody\n"
+    [draft] = _drafts(tmp_path, {"setup.md": body})
+    assert draft.title == "Real Title"
+
+
+def test_fence_only_markdown_falls_back_to_stem(tmp_path: Path) -> None:
+    [draft] = _drafts(tmp_path, {"snippet.md": b"```sh\n# just a comment\n```\n"})
+    assert draft.title == "snippet"
+
+
+def test_bare_dotfile_name_titles_as_full_filename(tmp_path: Path) -> None:
+    """A member literally named ``.txt`` (editor dropping) has an empty stem —
+    the full filename is the fallback, never an empty title (task-9 review
+    Minor 2)."""
+    [draft] = _drafts(tmp_path, {"Notes/.txt": b"stray editor dropping\n"})
+    assert draft.title == ".txt"
+
+
 # ---------------------------------------------------------------------------
 # Identity / timestamps
 # ---------------------------------------------------------------------------

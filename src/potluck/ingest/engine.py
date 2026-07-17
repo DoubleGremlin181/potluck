@@ -271,7 +271,11 @@ def run_import(
     items_suppressed. A repeat of a suppressed hash later in the same run
     counts items_duplicate (it duplicates the suppressed draft), and an
     existing identity row keeps its old content when its new revision is
-    suppressed.
+    suppressed. In-run edge: when ONE run carries two revisions of the same
+    external_id and only the LAST is suppressed, the earlier revision was
+    already displaced (counted items_duplicate) before the suppression
+    check, so NEITHER lands — unlike the cross-run case, where the existing
+    row would have kept the earlier revision.
     """
 
     def _setup(conn: sqlite3.Connection) -> tuple[int, int]:

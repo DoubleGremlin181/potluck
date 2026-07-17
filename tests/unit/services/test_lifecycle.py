@@ -300,6 +300,28 @@ def test_remove_items_refuses_running_owner(ctx: AppContext) -> None:
     assert _count(ctx, "SELECT COUNT(*) FROM items") == 1
 
 
+def test_remove_items_chunks_ids_under_the_sqlite_variable_limit(ctx: AppContext) -> None:
+    """A >1000-id delete must not expand into one placeholder list — proven
+    by pinning SQLITE_LIMIT_VARIABLE_NUMBER to its historical 999 default on
+    the write connection (task-11 review M3)."""
+
+    def _seed(conn: sqlite3.Connection) -> list[int]:
+        conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+        source_id = insert_source(conn)
+        import_id = insert_import(conn, source_id)
+        conn.execute("UPDATE imports SET status = 'completed' WHERE id = ?", (import_id,))
+        return [
+            insert_item(conn, source_id, import_id, content_hash=f"chunk-h{i}") for i in range(1200)
+        ]
+
+    ids = ctx.db.write(_seed)
+    result = lifecycle_service.remove_items(ctx, ids, forget=True)
+    assert result.items_deleted == 1200
+    assert result.hashes_suppressed == 1200
+    assert _count(ctx, "SELECT COUNT(*) FROM items") == 0
+    _assert_no_orphans(ctx)
+
+
 # ---------------------------------------------------------------------------
 # forget: everything rm does + suppressed_hashes
 # ---------------------------------------------------------------------------

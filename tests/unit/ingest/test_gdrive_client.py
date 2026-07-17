@@ -14,6 +14,7 @@ from pathlib import Path, PosixPath
 from typing import IO, Any
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import pytest
 
 from potluck.core.errors import GDriveApiError, GDriveAuthError
@@ -315,6 +316,29 @@ def test_download_416_restarts_from_zero(tmp_path: Path) -> None:
     with _client(mock, tmp_path / "tok.json") as client:
         client.download(fid, dest, expected_md5=mock.file_md5(fid))
     assert dest.read_bytes() == content
+
+
+class _Broken416Drive(MockDrive):
+    """A pathological server that 416s EVERY download, Range header or not
+    (real Drive and the stock MockDrive cannot; a broken proxy could)."""
+
+    def _download(self, request: httpx.Request, file_id: str) -> httpx.Response:
+        self.download_ranges.append((file_id, request.headers.get("Range")))
+        return httpx.Response(416)
+
+
+def test_pathological_416_fails_after_one_restart(tmp_path: Path) -> None:
+    """The 416 → unlink-partial → restart path runs at most ONCE (only a
+    request that actually sent a Range may restart): an unconditional-416
+    server surfaces GDriveApiError instead of recursing (task-12 review M3)."""
+    mock = _Broken416Drive()
+    folder = mock.add_folder("Takeout")
+    fid = mock.add_file(folder, "t.zip", b"payload")
+    dest = tmp_path / "t.zip.part"
+    dest.write_bytes(b"x" * 100)  # forces a Range on the first attempt
+    with _client(mock, tmp_path / "tok.json") as client, pytest.raises(GDriveApiError):
+        client.download(fid, dest, expected_md5=mock.file_md5(fid))
+    assert len(mock.download_ranges) == 2  # first attempt + exactly one restart
 
 
 class _FailingWritePath(PosixPath):

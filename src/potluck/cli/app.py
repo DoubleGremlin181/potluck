@@ -418,7 +418,11 @@ def status(
         typer.echo(f"watch interval: {watch.interval_s}s")
         for folder in watch.folders:
             typer.echo(f"watch folder: {folder.path} ({'ok' if folder.exists else 'missing'})")
-        last_scan = watch.last_scan_at.isoformat() if watch.last_scan_at else "never"
+        last_scan = (
+            watch.last_scan_at.isoformat()
+            if watch.last_scan_at
+            else "never (in this process — the watcher polls inside `potluck serve`)"
+        )
         typer.echo(f"watch last scan: {last_scan}")
         stabilizing = sum(1 for p in watch.pending if p.state == "stabilizing")
         backoff = sum(1 for p in watch.pending if p.state == "backoff")
