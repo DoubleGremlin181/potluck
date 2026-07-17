@@ -47,24 +47,38 @@ type ParseFn = Callable[[Archive, ParseContext], Iterator[ItemDraft]]
 @dataclass(frozen=True)
 class Glob:
     """Detection pattern; fnmatch semantics ('*' crosses '/'), case-sensitive
-    on every platform — archive member names are virtual posix paths."""
+    on every platform — archive member names are virtual posix paths.
+
+    ``|`` separates alternative patterns, matched any-of (fnmatch itself has
+    no alternation, and export layouts legitimately vary — e.g. WhatsApp's
+    Android vs iOS naming). ``|`` is reserved as the separator: a literal
+    ``|`` cannot be matched — splitting happens before fnmatch, so even a
+    ``[|]`` character class is split apart. Real archive member names never
+    contain one.
+    """
 
     pattern: str
 
     def matches(self, name: str) -> bool:
-        """Return True if *name* matches this glob pattern."""
-        return fnmatch.fnmatchcase(name, self.pattern)
+        """Return True if *name* matches any of this glob's alternatives."""
+        return any(fnmatch.fnmatchcase(name, alt) for alt in self.pattern.split("|"))
 
 
 @dataclass(frozen=True)
 class SourcePlugin:
-    """A fully-described source plugin, stored in the registry."""
+    """A fully-described source plugin, stored in the registry.
+
+    generic (#150) marks the fallback tier: catch-all globs (``*.txt``,
+    ``*.jpg``, ``*.mbox``) that only apply when NO specific plugin matched
+    the archive — see :func:`detect_sources` for the tier rule.
+    """
 
     name: str
     detect: Glob
     kinds: tuple[ItemKind, ...]
     parser_version: int
     parse: ParseFn
+    generic: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -87,11 +101,13 @@ def source(
     detect: Glob,
     kinds: Sequence[ItemKind],
     parser_version: int = 1,
+    generic: bool = False,
 ) -> Callable[[ParseFn], ParseFn]:
     """Register a pure-generator parser as a Potluck source plugin.
 
     The engine owns batching/hashing/dedup/FTS/ledger; the decorated function
-    only turns an Archive into typed drafts.
+    only turns an Archive into typed drafts. ``generic=True`` places the
+    plugin in the fallback detection tier (#150; see :func:`detect_sources`).
 
     Raises DuplicateSourceError on name collision.
     """
@@ -107,6 +123,7 @@ def source(
             kinds=tuple(kinds),
             parser_version=parser_version,
             parse=fn,
+            generic=generic,
         )
         return fn
 
@@ -158,6 +175,14 @@ def detect_sources(archive: Archive) -> list[SourcePlugin]:
     Returned sorted by plugin name for a deterministic run order; empty list
     when nothing matches.
 
+    Tier fallback (#150): when ANY specific plugin matched, every generic
+    plugin is dropped — catch-all globs ('*' crosses '/') would otherwise
+    double-import members a specific source already claims, and per-source
+    identity means such collisions are real duplication, never dedup.
+    Degradation to document at the source level: a messy folder holding both
+    a recognized export and loose files imports only the export; importing
+    the loose subfolder (or file) directly is the escape hatch.
+
     Tar-friendly: one sequential walk, exiting early once every registered
     plugin has matched.
     """
@@ -172,18 +197,32 @@ def detect_sources(archive: Archive) -> list[SourcePlugin]:
         if not remaining:
             break
 
+    if any(not plugin.generic for plugin in matched):
+        dropped = sorted(plugin.name for plugin in matched if plugin.generic)
+        if dropped:
+            _logger.info(
+                "generic source(s) %s suppressed: a specific source matched "
+                "(import the loose folder/file directly to ingest what they cover)",
+                ", ".join(dropped),
+            )
+        matched = [plugin for plugin in matched if not plugin.generic]
     matched.sort(key=lambda plugin: plugin.name)
     return matched
 
 
 def registry_fingerprint(plugins: dict[str, SourcePlugin]) -> str:
-    """Identity of the detection configuration: sorted plugin names + globs.
+    """Identity of the detection configuration: sorted plugin names + globs +
+    tiers (canonical line ``name:glob:generic|specific``).
 
     detect_sources is a pure function of (archive names, this fingerprint) —
-    the key that lets archive scans be cached (#196). parser_version is
-    deliberately excluded: it changes what parse produces, not what matches.
+    the key that lets archive scans be cached (#196). The generic flag is
+    included because it changes detection SEMANTICS (tier fallback, #150);
+    parser_version is deliberately excluded: it changes what parse produces,
+    not what matches. Adding the tier column invalidated pre-#150 cache
+    entries once — a single cheap re-scan, never a correctness issue.
     """
     canonical = "\n".join(
-        f"{name}:{plugin.detect.pattern}" for name, plugin in sorted(plugins.items())
+        f"{name}:{plugin.detect.pattern}:{'generic' if plugin.generic else 'specific'}"
+        for name, plugin in sorted(plugins.items())
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

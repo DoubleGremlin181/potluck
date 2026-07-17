@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from potluck.core.errors import (
     ImportInProgressError,
     ImportNotFoundError,
+    ImportRunningError,
     InvalidCursorError,
     ItemNotFoundError,
     UnsupportedArchiveError,
@@ -98,6 +99,11 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ImportInProgressError)
     def import_in_progress(request: Request, exc: ImportInProgressError) -> JSONResponse:
         return _envelope(409, "import_in_progress", str(exc))
+
+    @app.exception_handler(ImportRunningError)
+    def import_running(request: Request, exc: ImportRunningError) -> JSONResponse:
+        # rm/forget refused (#153): the delete target's run is still writing.
+        return _envelope(409, "import_running", str(exc))
 
     @app.exception_handler(UnsupportedArchiveError)
     def unsupported_archive(request: Request, exc: UnsupportedArchiveError) -> JSONResponse:

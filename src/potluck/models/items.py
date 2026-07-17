@@ -70,6 +70,72 @@ class EmailDetail(BaseModel):
     attachments: list[AttachmentDetail]
 
 
+class MessageDetail(BaseModel):
+    """Messages-satellite fields surfaced on item detail (#142).
+
+    media lists metadata-only references to the chat's exported media files —
+    no sizes or hashes until pixel ingestion lands (P6).
+    """
+
+    chat_key: str
+    chat_name: str | None
+    sender: str | None
+    is_media: bool
+    media: list[AttachmentDetail]
+
+
+class TransactionDetail(BaseModel):
+    """Transactions-satellite fields surfaced on item detail (#144).
+
+    amount_milliunits is the exact signed amount in integer milliunits
+    (1/1000 currency unit; outflows negative) — money is never a float.
+    """
+
+    amount_milliunits: int
+    account: str | None
+    payee: str | None
+    category: str | None
+    category_group: str | None
+
+
+class LocationDetail(BaseModel):
+    """Locations-satellite fields surfaced on item detail (#148).
+
+    lat/lon mirror the item's own columns (the satellite owns the NOT NULL
+    invariant); end_lat/end_lon are the route end point (None for visits and
+    raw positions); place_id/semantic_type/distance_m are verbatim export
+    values.
+    """
+
+    lat: float
+    lon: float
+    end_lat: float | None
+    end_lon: float | None
+    place_id: str | None
+    semantic_type: str | None
+    distance_m: float | None
+
+
+class MediaDetail(BaseModel):
+    """Media-satellite fields surfaced on item detail (#149).
+
+    Byte facts (size_bytes, sha256) always exist — they come from the
+    streamed media bytes; probe facts (dimensions, camera, altitude) are
+    None for videos and unprobeable images. sha256 is the durable locator
+    for P6 pixel ingestion (archive paths are transient across re-exports
+    and deliberately not stored).
+    """
+
+    width: int | None
+    height: int | None
+    camera_make: str | None
+    camera_model: str | None
+    gps_alt: float | None
+    mime: str | None
+    size_bytes: int
+    sha256: str
+
+
 class Item(BaseModel):
     """A fully-hydrated item row returned from the storage layer."""
 
@@ -88,6 +154,10 @@ class Item(BaseModel):
     meta: dict[str, JsonValue]
     # Satellite detail (#200): hydrated only for kinds with a SATELLITE_READER.
     email: EmailDetail | None = None
+    message: MessageDetail | None = None
+    transaction: TransactionDetail | None = None
+    location: LocationDetail | None = None
+    media: MediaDetail | None = None
 
 
 class ItemSort(StrEnum):

@@ -74,7 +74,8 @@ def create_mcp(ctx: AppContext | None = None) -> FastMCP:
         """Search the user's personal knowledge base by keywords.
 
         It holds the user's own data from their personal exports (Google Keep
-        notes and Gmail email today; more sources later) — use this whenever
+        notes, Gmail email, and WhatsApp chat messages today; more sources
+        later) — use this whenever
         the user asks about anything they may have written down, saved,
         noted, or received. Multi-word queries match items containing ALL
         words (no phrase search).

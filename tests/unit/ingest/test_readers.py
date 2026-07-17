@@ -1,9 +1,11 @@
 """Tests for potluck.ingest.readers: zip/tgz/dir archive readers + multi-part sets."""
 
 import itertools
+import os
 import random
 import tracemalloc
 from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
 
@@ -171,15 +173,134 @@ def test_open_archive_detects(tmp_path: Path, fmt: Literal["zip", "tgz", "dir"])
 # ---------------------------------------------------------------------------
 
 
-def test_open_archive_unknown_raises(tmp_path: Path) -> None:
-    """UnsupportedArchiveError raised for .txt files and nonexistent paths."""
-    txt_file = tmp_path / "data.txt"
-    txt_file.write_bytes(b"hello")
-    with pytest.raises(UnsupportedArchiveError):
-        open_archive(txt_file)
-
+def test_open_archive_nonexistent_raises(tmp_path: Path) -> None:
+    """UnsupportedArchiveError still fails fast on typo'd paths."""
     with pytest.raises(UnsupportedArchiveError):
         open_archive(tmp_path / "nonexistent.xyz")
+
+
+# ---------------------------------------------------------------------------
+# SingleFileArchive: bare (non-archive) export files
+# ---------------------------------------------------------------------------
+
+
+def test_open_archive_plain_file_is_single_member_archive(tmp_path: Path) -> None:
+    """An existing plain file opens as a one-member archive whose member name
+    is the file's basename — bare single-file exports (the Android
+    Timeline.json, a lone WhatsApp chat .txt) are real import shapes."""
+    plain = tmp_path / "Timeline.json"
+    plain.write_bytes(b'{"semanticSegments": []}')
+    archive = open_archive(plain)
+    assert list(archive.iter_names()) == ["Timeline.json"]
+
+
+def test_single_file_archive_iter_members_matches_pattern(tmp_path: Path) -> None:
+    plain = tmp_path / "WhatsApp Chat with Bo Sample.txt"
+    plain.write_bytes(b"3/17/23, 9:00 AM - Bo Sample: synthetic hello\n")
+    archive = open_archive(plain)
+
+    matched = [(m.name, stream.read()) for m, stream in archive.iter_members("*.txt")]
+    assert matched == [
+        ("WhatsApp Chat with Bo Sample.txt", b"3/17/23, 9:00 AM - Bo Sample: synthetic hello\n")
+    ]
+    assert list(archive.iter_members("*.json")) == []
+
+
+def test_single_file_archive_member_size(tmp_path: Path) -> None:
+    plain = tmp_path / "data.csv"
+    plain.write_bytes(b"a,b\n1,2\n")
+    archive = open_archive(plain)
+    sizes = [member.size for member, _ in archive.iter_members("*.csv")]
+    assert sizes == [8]
+
+
+def test_single_file_archive_iterations_are_independent(tmp_path: Path) -> None:
+    """Each iter_members call opens a fresh handle (the per-call contract the
+    other Archive implementations honour) — two-pass parsers re-read."""
+    plain = tmp_path / "Timeline.json"
+    plain.write_bytes(b"{}")
+    archive = open_archive(plain)
+    for _ in range(2):
+        contents = [stream.read() for _, stream in archive.iter_members("Timeline.json")]
+        assert contents == [b"{}"]
+
+
+def test_plain_file_beside_multipart_set_stays_separate(tmp_path: Path) -> None:
+    """A bare file never joins an adjacent multi-part set, and opening a real
+    part still loads the whole set (multi-part detection is unaffected)."""
+    write_archive(tmp_path / "takeout-20240115T123456Z-001.zip", {"a.txt": b"a"}, "zip")
+    write_archive(tmp_path / "takeout-20240115T123456Z-002.zip", {"b.txt": b"b"}, "zip")
+    plain = tmp_path / "takeout-20240115T123456Z-notes.txt"
+    plain.write_bytes(b"plain")
+
+    assert list(open_archive(plain).iter_names()) == ["takeout-20240115T123456Z-notes.txt"]
+    names = list(open_archive(tmp_path / "takeout-20240115T123456Z-001.zip").iter_names())
+    assert names == ["a.txt", "b.txt"]
+
+
+# ---------------------------------------------------------------------------
+# Member.mtime (#150): every Archive implementation reports it, or None
+# ---------------------------------------------------------------------------
+
+
+def test_member_mtime_zip(tmp_path: Path) -> None:
+    """Zip DOS timestamps carry no zone — read as UTC (the unknown-zone
+    policy), deterministic across hosts. The generator pins the zip epoch."""
+    dest = tmp_path / "archive.zip"
+    write_archive(dest, {"Takeout/a.txt": b"hello"}, "zip")
+    [(member, _)] = list(open_archive(dest).iter_members("*.txt"))
+    assert member.mtime == datetime(1980, 1, 1, tzinfo=UTC).timestamp()
+
+
+def test_member_mtime_tgz(tmp_path: Path) -> None:
+    """Tar carries an mtime header; the generator writes 0 (the epoch)."""
+    dest = tmp_path / "archive.tgz"
+    write_archive(dest, {"Takeout/a.txt": b"hello"}, "tgz")
+    [(member, _)] = list(open_archive(dest).iter_members("*.txt"))
+    assert member.mtime == 0.0
+
+
+def test_member_mtime_dir(tmp_path: Path) -> None:
+    dest = tmp_path / "archive_dir"
+    write_archive(dest, {"Takeout/a.txt": b"hello"}, "dir")
+    stamp = datetime(2024, 3, 1, 8, 0, tzinfo=UTC).timestamp()
+    os.utime(dest / "Takeout/a.txt", (stamp, stamp))
+    [(member, _)] = list(open_archive(dest).iter_members("*.txt"))
+    assert member.mtime == stamp
+
+
+def test_member_mtime_single_file(tmp_path: Path) -> None:
+    plain = tmp_path / "note.md"
+    plain.write_bytes(b"# hi\n")
+    stamp = datetime(2024, 3, 1, 8, 0, tzinfo=UTC).timestamp()
+    os.utime(plain, (stamp, stamp))
+    [(member, _)] = list(open_archive(plain).iter_members("*.md"))
+    assert member.mtime == stamp
+
+
+def test_member_mtime_multipart_passthrough(tmp_path: Path) -> None:
+    parts_data = split_parts(ALL_MEMBERS, 2)
+    paths: list[Path] = []
+    for i, part_members in enumerate(parts_data, 1):
+        dest = tmp_path / f"takeout-test-{i:03d}.zip"
+        write_archive(dest, part_members, "zip")
+        paths.append(dest)
+    zip_epoch = datetime(1980, 1, 1, tzinfo=UTC).timestamp()
+    mtimes = [m.mtime for m, _ in open_archive(paths[0]).iter_members("*")]
+    assert mtimes == [zip_epoch] * len(ALL_MEMBERS)
+
+
+def test_mtime_ts_interpretation() -> None:
+    """The consumer-side helper: positive epoch -> aware UTC instant; 0,
+    negative, and absent read as no timestamp (epoch-0 is tar's 'unset'
+    convention — the Keep epoch-0-is-absent posture)."""
+    from potluck.ingest.readers import Member, mtime_ts
+
+    stamp = datetime(2024, 3, 1, 8, 0, tzinfo=UTC)
+    assert mtime_ts(Member(name="a", size=1, mtime=stamp.timestamp())) == stamp
+    assert mtime_ts(Member(name="a", size=1, mtime=0.0)) is None
+    assert mtime_ts(Member(name="a", size=1, mtime=-7200.0)) is None
+    assert mtime_ts(Member(name="a", size=1, mtime=None)) is None
 
 
 # ---------------------------------------------------------------------------

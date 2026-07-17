@@ -10,6 +10,11 @@ generators. This guard rejects:
   formats; plain integers and ISO timestamps do not trip it)
 - files larger than 1 MiB (raw exports do not belong in the repo)
 
+Binary members (the generated media fixtures of #149) are NOT skipped
+wholesale: their printable-ASCII runs — where EXIF/XMP-style embedded
+metadata lives — are scanned with the same email/phone rules, so a real
+photo dropped into fixtures cannot slip through just by being binary.
+
 Exit 0 = clean, 1 = violations (listed on stdout). Stdlib only — it must run
 before any dependency is installed.
 """
@@ -30,6 +35,21 @@ PHONE_RES = (
     re.compile(r"(?<![\w.+])\+\d{7,15}(?!\w)"),
     re.compile(r"(?<![\w.])\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}(?![\w.])"),
 )
+# Printable-ASCII runs inside binary members: long enough to hold an email
+# or phone, short enough not to miss metadata packed between raw bytes.
+ASCII_RUN_RE = re.compile(rb"[ -~]{6,}")
+
+
+def _segment_violations(segment: str, where: str) -> Iterator[str]:
+    """The email/phone rules for one text segment (a line or an ASCII run)."""
+    for match in EMAIL_RE.finditer(segment):
+        domain = match.group(1).lower()
+        allowed = any(domain == d or domain.endswith("." + d) for d in ALLOWED_EMAIL_DOMAINS)
+        if not allowed:
+            yield f"{where}: disallowed email address ({match.group(0)})"
+    for phone_re in PHONE_RES:
+        if phone_re.search(segment):
+            yield f"{where}: phone-number-like string"
 
 
 def iter_violations(root: Path) -> Iterator[str]:
@@ -43,18 +63,15 @@ def iter_violations(root: Path) -> Iterator[str]:
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
-            continue  # binary content is governed by the size rule
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            for match in EMAIL_RE.finditer(line):
-                domain = match.group(1).lower()
-                allowed = any(
-                    domain == d or domain.endswith("." + d) for d in ALLOWED_EMAIL_DOMAINS
+            # Binary member: scan its printable-ASCII runs (embedded EXIF/XMP
+            # metadata) instead of skipping — see the module docstring.
+            for run in ASCII_RUN_RE.finditer(path.read_bytes()):
+                yield from _segment_violations(
+                    run.group().decode("ascii"), f"{path}: binary metadata"
                 )
-                if not allowed:
-                    yield f"{path}:{lineno}: disallowed email address ({match.group(0)})"
-            for phone_re in PHONE_RES:
-                if phone_re.search(line):
-                    yield f"{path}:{lineno}: phone-number-like string"
+            continue
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            yield from _segment_violations(line, f"{path}:{lineno}")
 
 
 def main(root: Path | None = None) -> int:

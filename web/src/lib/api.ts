@@ -247,6 +247,8 @@ export interface ImportRun {
   items_duplicate: number
   items_updated: number
   items_skipped: number
+  /** Drafts dropped because their content was forgotten (suppressed_hashes). */
+  items_suppressed: number
   /** Progress denominator; null = unknown (streaming sources never pre-count). */
   items_total: number | null
   error: string | null
@@ -306,4 +308,66 @@ export function startUploadImport(file: File): Promise<ImportTask> {
   const form = new FormData()
   form.append('file', file)
   return request<ImportTask>('/api/imports/upload', { method: 'POST', body: form })
+}
+
+/** Counts from one delete call (mirrors `models/lifecycle.py::RemoveResult`). */
+export interface RemoveResult {
+  items_deleted: number
+  imports_deleted: number
+  hashes_suppressed: number
+}
+
+/** Delete an import run and every item it ingested. Plain delete lets a
+ * re-import of the same archive restore the content; `forget` also blocks
+ * the deleted content from ever re-importing. 404 = unknown id, 409 = the
+ * run is still running. */
+export function deleteImport(id: number, forget: boolean): Promise<RemoveResult> {
+  return request<RemoveResult>(`/api/imports/${id}?forget=${forget}`, { method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Watch folders: GET /api/watch, PATCH /api/watch
+// ---------------------------------------------------------------------------
+
+export interface WatchFolder {
+  path: string
+  /** False = configured but missing on disk (warned by the server, skipped). */
+  exists: boolean
+}
+
+export interface WatchPendingSet {
+  /** Representative file of the archive set (first part of a multi-part drop). */
+  path: string
+  /** 'stabilizing' = waiting out the copy-in-progress debounce; 'backoff' = a
+   * failed import cooling down before its retry. */
+  state: 'stabilizing' | 'backoff'
+  /** Backoff only: polling cycles left before the retry. */
+  retry_in_cycles: number | null
+}
+
+/** Mirrors `models/watch.py::WatchStatus`. Folders and interval are
+ * config-file-owned (edit config.toml); only `enabled` is togglable here. */
+export interface WatchStatus {
+  enabled: boolean
+  /** 'runtime' when a persisted toggle overrides the config default. */
+  effective_enabled_source: 'config' | 'runtime'
+  interval_s: number
+  folders: WatchFolder[]
+  /** Null before the first scan — and always null unless `potluck serve` runs. */
+  last_scan_at: string | null
+  pending: WatchPendingSet[]
+  last_error: string | null
+}
+
+export function fetchWatchStatus(signal?: AbortSignal): Promise<WatchStatus> {
+  return request<WatchStatus>('/api/watch', { signal })
+}
+
+/** Persist the runtime enable/disable toggle; returns the new status. */
+export function setWatchEnabled(enabled: boolean): Promise<WatchStatus> {
+  return request<WatchStatus>('/api/watch', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
 }

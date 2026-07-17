@@ -7,6 +7,7 @@ Patterns established here are reused by every later phase:
   user data and are safe under pytest-xdist.
 """
 
+import hashlib
 import os
 import sqlite3
 import sys
@@ -14,7 +15,9 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import parse_qs
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -269,3 +272,197 @@ def api_client(ctx: AppContext, tmp_path: Path) -> Iterator[TestClient]:
     )
     with TestClient(create_app(no_spa)) as client:
         yield client
+
+
+# ---------------------------------------------------------------------------
+# Mock Google Drive (#152): an in-memory Drive v3 + OAuth token endpoint
+# behind httpx.MockTransport. An importable helper (not a fixture) — client,
+# puller and integration tests build their own instances and inject
+# ``.transport()`` into DriveClient. NO network in tests, ever.
+# ---------------------------------------------------------------------------
+
+
+class MockDrive:
+    """Simulates exactly the surface potluck.ingest.gdrive touches.
+
+    Knobs (set between requests to script failure modes):
+
+    - ``refresh_error``: token-endpoint error code for refresh attempts
+      (e.g. ``"invalid_grant"``).
+    - ``rotate_refresh_to``: next refresh response carries this new refresh
+      token (Google-style rotation); subsequent refreshes require it.
+    - ``fail_next_status``: one-shot HTTP status for the next Drive call.
+    - ``fail_download_ids``: file ids whose download always 503s.
+    - ``offline``: every request raises httpx.ConnectError.
+    - ``page_size``: forces files.list pagination at this size.
+    """
+
+    def __init__(
+        self,
+        *,
+        refresh_token: str = "rtok-1",
+        scopes: tuple[str, ...] = ("https://www.googleapis.com/auth/drive.readonly",),
+        auth_code: str = "authcode-1",
+    ) -> None:
+        self.refresh_token = refresh_token
+        self.scopes = list(scopes)
+        self.auth_code = auth_code
+        self.access_token = "atok-1"
+        self._token_serial = 1
+        self.folders: dict[str, str] = {}  # id -> name
+        # file id -> (folder_id, name, content)
+        self.files: dict[str, tuple[str, str, bytes]] = {}
+        self._next_id = 0
+        self.deleted: list[str] = []
+        self.refresh_calls = 0
+        self.exchange_calls: list[dict[str, str]] = []
+        self.list_queries: list[str] = []
+        self.download_ranges: list[tuple[str, str | None]] = []
+        self.refresh_error: str | None = None
+        self.rotate_refresh_to: str | None = None
+        self.fail_next_status: int | None = None
+        self.fail_download_ids: set[str] = set()
+        self.offline = False
+        self.page_size: int | None = None
+
+    # -- corpus construction --------------------------------------------------
+
+    def add_folder(self, name: str) -> str:
+        self._next_id += 1
+        folder_id = f"folder-{self._next_id}"
+        self.folders[folder_id] = name
+        return folder_id
+
+    def add_file(self, folder_id: str, name: str, content: bytes) -> str:
+        self._next_id += 1
+        file_id = f"file-{self._next_id}"
+        self.files[file_id] = (folder_id, name, content)
+        return file_id
+
+    def expire_access(self) -> None:
+        """Invalidate the current access token (old bearers now 401)."""
+        self._token_serial += 1
+        self.access_token = f"atok-{self._token_serial}"
+
+    def file_md5(self, file_id: str) -> str:
+        return hashlib.md5(self.files[file_id][2], usedforsecurity=False).hexdigest()
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self.handler)
+
+    # -- request handling ------------------------------------------------------
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if self.offline:
+            raise httpx.ConnectError("mock drive is offline", request=request)
+        if request.url.host == "oauth2.googleapis.com" and request.url.path == "/token":
+            return self._token_endpoint(request)
+        if self.fail_next_status is not None:
+            status = self.fail_next_status
+            self.fail_next_status = None
+            return httpx.Response(status, json={"error": {"message": f"scripted {status}"}})
+        if request.headers.get("Authorization") != f"Bearer {self.access_token}":
+            return httpx.Response(401, json={"error": {"message": "Invalid Credentials"}})
+        path = request.url.path
+        if request.method == "GET" and path == "/drive/v3/files":
+            return self._list(request)
+        if path.startswith("/drive/v3/files/"):
+            file_id = path.removeprefix("/drive/v3/files/")
+            if request.method == "GET" and request.url.params.get("alt") == "media":
+                return self._download(request, file_id)
+            if request.method == "DELETE":
+                if file_id not in self.files:
+                    return httpx.Response(404, json={"error": {"message": "not found"}})
+                del self.files[file_id]
+                self.deleted.append(file_id)
+                return httpx.Response(204)
+        return httpx.Response(400, json={"error": {"message": f"unhandled {request.url}"}})
+
+    def _token_endpoint(self, request: httpx.Request) -> httpx.Response:
+        form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+        if form.get("grant_type") == "refresh_token":
+            self.refresh_calls += 1
+            if self.refresh_error is not None:
+                return httpx.Response(400, json={"error": self.refresh_error})
+            if form.get("refresh_token") != self.refresh_token:
+                return httpx.Response(400, json={"error": "invalid_grant"})
+            payload: dict[str, object] = {
+                "access_token": self.access_token,
+                "expires_in": 3600,
+                "scope": " ".join(self.scopes),
+                "token_type": "Bearer",
+            }
+            if self.rotate_refresh_to is not None:
+                self.refresh_token = self.rotate_refresh_to
+                payload["refresh_token"] = self.rotate_refresh_to
+                self.rotate_refresh_to = None
+            return httpx.Response(200, json=payload)
+        if form.get("grant_type") == "authorization_code":
+            self.exchange_calls.append(form)
+            if form.get("code") != self.auth_code:
+                return httpx.Response(400, json={"error": "invalid_grant"})
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": self.access_token,
+                    "refresh_token": self.refresh_token,
+                    "expires_in": 3600,
+                    "scope": " ".join(self.scopes),
+                    "token_type": "Bearer",
+                },
+            )
+        return httpx.Response(400, json={"error": "unsupported_grant_type"})
+
+    def _list(self, request: httpx.Request) -> httpx.Response:
+        q = request.url.params.get("q") or ""
+        self.list_queries.append(q)
+        if "mimeType = 'application/vnd.google-apps.folder'" in q:
+            wanted = q.split("name = '", 1)[1].split("'", 1)[0]
+            entries = [
+                {"id": fid, "name": name}
+                for fid, name in sorted(self.folders.items())
+                if name == wanted
+            ]
+        elif "' in parents" in q:
+            parent = q.split("'", 1)[1].split("'", 1)[0]
+            entries = [
+                {
+                    "id": fid,
+                    "name": name,
+                    "size": str(len(content)),
+                    "md5Checksum": self.file_md5(fid),
+                }
+                for fid, (folder_id, name, content) in sorted(self.files.items())
+                if folder_id == parent
+            ]
+        else:
+            entries = []
+        body: dict[str, object] = {}
+        if self.page_size is not None:
+            offset = int(request.url.params.get("pageToken") or "0")
+            page = entries[offset : offset + self.page_size]
+            if offset + self.page_size < len(entries):
+                body["nextPageToken"] = str(offset + self.page_size)
+            body["files"] = page
+        else:
+            body["files"] = entries
+        return httpx.Response(200, json=body)
+
+    def _download(self, request: httpx.Request, file_id: str) -> httpx.Response:
+        if file_id in self.fail_download_ids:
+            return httpx.Response(503, json={"error": {"message": "scripted download failure"}})
+        if file_id not in self.files:
+            return httpx.Response(404, json={"error": {"message": "not found"}})
+        content = self.files[file_id][2]
+        range_header = request.headers.get("Range")
+        self.download_ranges.append((file_id, range_header))
+        if range_header is not None:
+            start = int(range_header.removeprefix("bytes=").split("-", 1)[0])
+            if start >= len(content):
+                return httpx.Response(416)
+            return httpx.Response(
+                206,
+                content=content[start:],
+                headers={"Content-Range": f"bytes {start}-{len(content) - 1}/{len(content)}"},
+            )
+        return httpx.Response(200, content=content)

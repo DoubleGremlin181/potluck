@@ -1,6 +1,6 @@
 [project]
 name = "potluck"
-version = "1.0.0b1"
+version = "1.0.0b2"
 description = "Privacy-first personal knowledge database for your AI — local-first, MCP-native"
 readme = "README.md"
 license = { text = "MIT" }
@@ -23,6 +23,19 @@ dependencies = [
     # invocation of a non-dev install printed a deprecation warning (#141).
     "httpx2>=2",
     "rich>=13",
+    # 7.0 floor is a hard import gate: sources/calendar.py imports
+    # BrokenCalendarProperty (added in icalendar 7.0.0) at top of file, and
+    # plugin discovery skips modules that fail to import — a 6.x resolution
+    # would silently drop the whole calendar source.
+    "icalendar>=7",
+    # 10.4 floor, proven empirically (uv run --with pillow==10.4.0 exercising
+    # every API sources/photos.py + testing/photos.py use: lazy Image.open on
+    # a stream, .size, getexif(), Exif.get_ifd(IFD.Exif / IFD.GPSInfo), the
+    # ExifTags enums, Image.MIME, save(exif=) whole-IFD round-trip): 10.4.0
+    # is the first release shipping cp313 wheels, so with requires-python
+    # >=3.13 any lower resolution fails to install and plugin discovery would
+    # silently drop the whole photos source.
+    "pillow>=10.4",
 ]
 
 [project.scripts]

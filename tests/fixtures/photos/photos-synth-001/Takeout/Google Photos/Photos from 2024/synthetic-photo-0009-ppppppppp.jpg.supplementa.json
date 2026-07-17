@@ -1,0 +1,32 @@
+{
+  "title": "synthetic-photo-0009-ppppppppp.jpg",
+  "description": "",
+  "imageViews": "1",
+  "creationTime": {
+    "timestamp": "1709431233",
+    "formatted": "Mar 03, 2024, 02:00:33 AM UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1709344833",
+    "formatted": "Mar 02, 2024, 02:00:33 AM UTC"
+  },
+  "geoData": {
+    "latitude": 40.037,
+    "longitude": -75.047,
+    "altitude": 19.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "url": "https://photos.google.com/photo/synthetic-0009",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceFolder": {
+        "localFolderName": "Camera"
+      },
+      "deviceType": "ANDROID_PHONE"
+    }
+  },
+  "appSource": {
+    "androidPackageName": "test.synthetic.app"
+  }
+}

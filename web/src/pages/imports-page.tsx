@@ -13,11 +13,22 @@ import {
   Inbox,
   LoaderCircle,
   RotateCw,
+  Trash2,
   TriangleAlert,
   Upload,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,6 +43,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   ApiError,
+  deleteImport,
   fetchImports,
   fetchImportStatus,
   startPathImport,
@@ -476,6 +488,7 @@ function countsBreakdown(run: ImportRun): string[] {
     [run.items_updated, 'updated'],
     [run.items_duplicate, 'duplicate'],
     [run.items_skipped, 'skipped'],
+    [run.items_suppressed, 'suppressed'],
   ] as const
   const shown = parts.filter(([count]) => count > 0)
   if (shown.length === 0) return [run.status === 'running' ? 'starting…' : 'no items']
@@ -609,6 +622,9 @@ function HistoryCard({
                     <th className="py-2 pr-3 text-right font-medium">Items</th>
                     <th className="py-2 pr-3 font-medium">Started</th>
                     <th className="py-2 font-medium">Duration</th>
+                    <th className="py-2">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className={cn(query.isPlaceholderData && 'opacity-60')}>
@@ -666,7 +682,7 @@ function HistoryRow({ run, onRetry }: { run: ImportRun; onRetry: (path: string) 
           <StatusBadge status={run.status} />
         </td>
         <td className="py-2.5 pr-3 font-medium whitespace-nowrap">{run.source}</td>
-        <td className="max-w-52 truncate py-2.5 pr-3 text-muted-foreground" title={run.path}>
+        <td className="max-w-40 truncate py-2.5 pr-3 text-muted-foreground" title={run.path}>
           {basename(run.path)}
         </td>
         <td data-testid="history-items" className="py-2.5 pr-3 text-right tabular-nums">
@@ -681,10 +697,13 @@ function HistoryRow({ run, onRetry }: { run: ImportRun; onRetry: (path: string) 
         <td className="py-2.5 whitespace-nowrap text-muted-foreground">
           {formatDuration(run.started_at, run.finished_at) ?? '—'}
         </td>
+        <td className="py-2 text-right">
+          <DeleteRunButton run={run} />
+        </td>
       </tr>
       {failed && (
         <tr className="border-b last:border-0">
-          <td colSpan={6} className="pb-3">
+          <td colSpan={7} className="pb-3">
             <FailedRowError run={run} onRetry={onRetry} />
           </td>
         </tr>
@@ -735,6 +754,87 @@ function FailedRowError({ run, onRetry }: { run: ImportRun; onRetry: (path: stri
         </Button>
       </div>
     </div>
+  )
+}
+
+/** Per-row delete with a confirm dialog — a destructive action is never one
+ * accidental keypress away. "Delete" alone stays reversible via re-import;
+ * "Delete & forget" additionally suppresses the content hashes for good. */
+function DeleteRunButton({ run }: { run: ImportRun }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const mutation = useMutation({
+    mutationFn: (forget: boolean) => deleteImport(run.id, forget),
+    onSuccess: () => {
+      setOpen(false)
+      void queryClient.invalidateQueries({ queryKey: ['imports'] })
+      void queryClient.invalidateQueries({ queryKey: ['stats'] })
+    },
+  })
+  const running = run.status === 'running'
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) mutation.reset()
+      }}
+    >
+      <AlertDialogTrigger asChild>
+        <Button
+          data-testid="history-delete"
+          variant="ghost"
+          size="icon-xs"
+          disabled={running}
+          aria-label={`Delete import ${run.id} (${run.source})`}
+          title={
+            running ? 'This import is still running.' : 'Delete this import run and its items.'
+          }
+          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Trash2 aria-hidden />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent data-testid="delete-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Delete import #{run.id} ({run.source})?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This removes the run and every item it ingested — Delete lets a re-import of the same
+            archive bring the content back, while Delete &amp; forget also blocks the deleted
+            content from ever importing again.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {mutation.isError && (
+          <p
+            data-testid="delete-error"
+            className="rounded-md bg-destructive/10 px-3 py-2 text-sm break-all text-destructive"
+          >
+            {mutation.error instanceof Error ? mutation.error.message : 'The delete failed.'}
+          </p>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={mutation.isPending}>Cancel</AlertDialogCancel>
+          <Button
+            data-testid="confirm-delete"
+            variant="destructive"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate(false)}
+          >
+            Delete
+          </Button>
+          <Button
+            data-testid="confirm-forget"
+            variant="destructive"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate(true)}
+          >
+            Delete &amp; forget
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

@@ -31,6 +31,7 @@ from potluck.storage.items import (
     update_items_content,
     update_items_meta,
 )
+from potluck.storage.lifecycle import suppressed_subset
 from potluck.storage.satellites import SATELLITE_WRITERS
 
 DEFAULT_BATCH_SIZE: Final = 1000
@@ -47,6 +48,9 @@ class _BatchPlan:
     # so they must also leave the run-wide seen set (last-wins on revert).
     displaced_hashes: list[str] = field(default_factory=list)
     duplicates: int = 0
+    # Drafts dropped because their hash is in suppressed_hashes (#153) —
+    # forgotten content never re-ingests; counted separately, never skipped.
+    suppressed: int = 0
     # Satellite payloads (only drafts whose kind has a SatelliteWriter):
     # inserted drafts keyed by content_hash for the post-insert id select-back;
     # updated drafts already know their item id.
@@ -106,12 +110,19 @@ def _classify_batch(
     new_hashes = [h for _, h in new_pairs]
     # ONE IN(...) query for the whole batch; skip when nothing new.
     already_in_db = existing_hashes(conn, source_id, new_hashes) if new_hashes else set()
+    # ONE anti-join against suppressed_hashes (#153): forgotten content is
+    # dropped outright — no insert, and no update of an existing identity row
+    # (the row keeps its old content; the banned revision never lands).
+    suppressed = suppressed_subset(conn, new_hashes) if new_hashes else set()
 
     # ONE identity lookup for the whole batch (source_id is constant per run).
     batch_eids = [d.external_id for d, _ in new_pairs if d.external_id is not None]
     existing = existing_by_external_id(conn, source_id, batch_eids) if batch_eids else {}
 
     for draft, h in new_pairs:
+        if h in suppressed:
+            plan.suppressed += 1
+            continue
         row = draft_to_row(draft, source_id=source_id, import_id=import_id, content_hash=h)
         ex = existing.get(draft.external_id) if draft.external_id is not None else None
         has_satellite = draft.kind in SATELLITE_WRITERS
@@ -203,6 +214,7 @@ def _write_batch(
             duplicate=plan.duplicates,
             updated=len(plan.content_updates) + len(plan.meta_updates),
             skipped=0,
+            suppressed=plan.suppressed,
         )
         conn.execute("COMMIT")
     except Exception:
@@ -253,6 +265,17 @@ def run_import(
     as an UPDATE and counts items_updated.
 
     skipped stays 0: the engine does not yet drop drafts for validation reasons.
+
+    Suppression (#153): drafts whose content hash is in suppressed_hashes
+    (forgotten content) are dropped per batch via one anti-join and counted
+    items_suppressed. A repeat of a suppressed hash later in the same run
+    counts items_duplicate (it duplicates the suppressed draft), and an
+    existing identity row keeps its old content when its new revision is
+    suppressed. In-run edge: when ONE run carries two revisions of the same
+    external_id and only the LAST is suppressed, the earlier revision was
+    already displaced (counted items_duplicate) before the suppression
+    check, so NEITHER lands — unlike the cross-run case, where the existing
+    row would have kept the earlier revision.
     """
 
     def _setup(conn: sqlite3.Connection) -> tuple[int, int]:

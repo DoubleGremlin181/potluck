@@ -1,6 +1,8 @@
 """Streaming archive readers for Google Takeout exports.
 
-Supports zip, tgz (tar.gz), extracted directories, and multi-part sets.
+Supports zip, tgz (tar.gz), extracted directories, multi-part sets, and bare
+single-file exports (plugins only speak Archive, so a lone export file is
+exposed as a one-member archive).
 
 Design contract: iteration is streaming / sequential.
 - tar.gz is single-cursor sequential access: each yielded stream is valid only
@@ -17,6 +19,7 @@ import tarfile
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Protocol
 
@@ -42,11 +45,15 @@ _MULTIPART_RE: re.Pattern[str] = re.compile(
 _TAKEOUT_FILE_RE: re.Pattern[str] = re.compile(r"^(?P<stem>.+-\d{8}T\d{6}Z)-(?P<file>\d+)$")
 
 
-def _parse_part_name(name: str) -> tuple[str, str, tuple[int, int]] | None:
+def parse_part_name(name: str) -> tuple[str, str, tuple[int, int]] | None:
     """Split an archive filename into (set stem, ext, numeric order) — or None.
 
     Order is (file, part) so real sets sort numerically (9 < 12 < 16, and
     2-001 < 2-002 < 10-001); old-style names have no file number and use 0.
+
+    Public since #151: the watch-folder poller groups multi-part drops with
+    the exact same rule :func:`open_archive` uses, so one representative part
+    is submitted per set (opening any part loads the whole set).
     """
     m = _MULTIPART_RE.match(name)
     if m is None:
@@ -64,6 +71,23 @@ class Member:
 
     name: str  # posix path inside the LOGICAL archive, e.g. 'Takeout/Keep/note.json'
     size: int  # uncompressed byte length
+    # Modification time as POSIX epoch seconds, None when the container lacks
+    # one (#150: the notes/images ts fallback; #151 watch-folders want it too).
+    # Zip DOS timestamps carry no zone and are read as UTC — the house
+    # unknown-zone policy, deterministic across hosts (mktime would not be).
+    mtime: float | None = None
+
+
+def mtime_ts(member: Member) -> datetime | None:
+    """Interpret a member's mtime as an item timestamp, or None.
+
+    Consumer-side policy (the raw Member reports facts): epoch-0 is tar's
+    'unset' convention — treated as absent, the Keep epoch-0-is-absent
+    posture — and negative values are pre-1970 clock junk.
+    """
+    if member.mtime is None or member.mtime <= 0:
+        return None
+    return datetime.fromtimestamp(member.mtime, tz=UTC)
 
 
 class Archive(Protocol):
@@ -94,6 +118,15 @@ class Archive(Protocol):
 # ---------------------------------------------------------------------------
 
 
+def _zip_mtime(info: zipfile.ZipInfo) -> float | None:
+    """The member's DOS timestamp as epoch seconds (read as UTC — see
+    Member.mtime); a malformed tuple (month/day 0 in hostile zips) is absent."""
+    try:
+        return datetime(*info.date_time, tzinfo=UTC).timestamp()
+    except ValueError:
+        return None
+
+
 class ZipArchive:
     """Read-only streaming view of a single zip file."""
 
@@ -118,7 +151,10 @@ class ZipArchive:
             for info in zf.infolist():
                 if not info.is_dir() and fnmatch.fnmatchcase(info.filename, pattern):
                     with zf.open(info) as stream:
-                        yield Member(name=info.filename, size=info.file_size), stream
+                        member = Member(
+                            name=info.filename, size=info.file_size, mtime=_zip_mtime(info)
+                        )
+                        yield member, stream
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +192,7 @@ class TarArchive:
                     fileobj = tf.extractfile(m)
                     if fileobj is None:  # impossible: m.isfile() guarantees a regular file
                         raise AssertionError("extractfile returned None for a regular file")
-                    yield Member(name=m.name, size=m.size), fileobj
+                    yield Member(name=m.name, size=m.size, mtime=float(m.mtime)), fileobj
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +219,43 @@ class DirArchive:
         for name in self.iter_names():
             if fnmatch.fnmatchcase(name, pattern):
                 file_path = self._path / name
+                stat = file_path.stat()
                 with file_path.open("rb") as f:
-                    yield Member(name=name, size=file_path.stat().st_size), f
+                    yield Member(name=name, size=stat.st_size, mtime=stat.st_mtime), f
+
+
+# ---------------------------------------------------------------------------
+# SingleFileArchive
+# ---------------------------------------------------------------------------
+
+
+class SingleFileArchive:
+    """A bare (non-archive) export file as a one-member archive.
+
+    Some products export a single plain file — the Android on-device
+    Timeline.json, a lone WhatsApp chat .txt — and plugins only speak
+    Archive, so the reader seam adapts. The sole member's name is the file's
+    basename; detection globs therefore need a root-relative alternative to
+    match it.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def iter_names(self) -> Iterator[str]:
+        """The single member name: the file's basename."""
+        yield self._path.name
+
+    def iter_members(self, pattern: str) -> Iterator[tuple[Member, IO[bytes]]]:
+        """The (Member, stream) pair when the basename matches *pattern*.
+
+        A fresh handle per call — each iteration is independent, the same
+        contract the other implementations honour.
+        """
+        if fnmatch.fnmatchcase(self._path.name, pattern):
+            stat = self._path.stat()
+            with self._path.open("rb") as f:
+                yield Member(name=self._path.name, size=stat.st_size, mtime=stat.st_mtime), f
 
 
 # ---------------------------------------------------------------------------
@@ -215,29 +286,35 @@ class MultiPartArchive:
 
 
 def _make_single_archive(path: Path) -> "ZipArchive | TarArchive":
-    """Create a single-file archive by extension. Raises UnsupportedArchiveError."""
+    """Create a single-file archive by extension.
+
+    Both call sites guarantee a ``.zip``/``.tgz``/``.tar.gz`` name (the
+    multipart regex enforces it; the plain-file fallthrough checks
+    ``endswith`` first), so any other extension is an impossible branch —
+    unrecognized plain files open as :class:`SingleFileArchive` upstream.
+    """
     name = path.name
     if name.endswith(".zip"):
         return ZipArchive(path)
-    if name.endswith(".tgz") or name.endswith(".tar.gz"):
+    if name.endswith((".tgz", ".tar.gz")):
         return TarArchive(path)
-    raise UnsupportedArchiveError(
-        f"Unsupported archive format '{path.suffix}': {path}. Expected .zip, .tgz, or .tar.gz"
-    )
+    raise AssertionError(f"_make_single_archive called with a non-archive name: {path}")
 
 
 def open_archive(path: Path) -> Archive:
-    """Detect and open a zip / .tgz / .tar.gz / directory archive.
+    """Detect and open a zip / .tgz / .tar.gz / directory / plain-file archive.
 
     Multi-part sets — old naming (``takeout-20240115T123456Z-001.tgz``,
     ``…-002.tgz``, …) and real current Takeout naming
     (``takeout-20251212T171747Z-9-001.tgz``, ``…-12-001.tgz``, …) — are
     detected by filename pattern and automatically combined into a
     :class:`MultiPartArchive`, ordered numerically by (file, part). Opening
-    any part of the set loads the whole set.
+    any part of the set loads the whole set. An existing file without an
+    archive extension opens as a :class:`SingleFileArchive` — bare
+    single-file exports are real import shapes (#148's Timeline.json).
 
-    Raises :class:`~potluck.core.errors.UnsupportedArchiveError` for unrecognised
-    extensions or paths that do not exist.
+    Raises :class:`~potluck.core.errors.UnsupportedArchiveError` for paths
+    that do not exist.
     """
     if path.is_dir():
         return DirArchive(path)
@@ -246,14 +323,14 @@ def open_archive(path: Path) -> Archive:
         raise UnsupportedArchiveError(f"Path does not exist: {path}")
 
     # Multi-part detection
-    parsed = _parse_part_name(path.name)
+    parsed = parse_part_name(path.name)
     if parsed is not None:
         stem, ext, _ = parsed
         parent = path.parent
         # glob.escape: the stem is user-controlled and may contain glob
         # metacharacters ('[', ']', '*') — match it literally or siblings are
         # silently missed. The '*' spans both '-NNN' and '-N-NNN' tails;
-        # _parse_part_name re-validates every candidate, and the stem equality
+        # parse_part_name re-validates every candidate, and the stem equality
         # check rejects files whose stem merely extends this one (e.g.
         # 'takeout-test-9-001' globbed from stem 'takeout-test').
         # Zero-padded and bare file numbers ('-014-' vs '-14-') collide to
@@ -261,7 +338,7 @@ def open_archive(path: Path) -> Archive:
         siblings: list[tuple[tuple[int, int], Path]] = sorted(
             (candidate[2], p)
             for p in parent.glob(f"{glob.escape(stem)}-*.{ext}")
-            if (candidate := _parse_part_name(p.name)) is not None and candidate[0] == stem
+            if (candidate := parse_part_name(p.name)) is not None and candidate[0] == stem
         )
         if len(siblings) > 1:
             parts = tuple(_make_single_archive(p) for _, p in siblings)
@@ -269,5 +346,9 @@ def open_archive(path: Path) -> Archive:
         # Only one file in the "set" → treat as plain archive
         return _make_single_archive(path)
 
-    # Non-multi-part filename: detect by extension
-    return _make_single_archive(path)
+    # Non-multi-part filename: archives by extension; any other existing
+    # plain file is a single-member archive (its basename the sole member).
+    # The not-exists check above keeps typo'd paths failing fast.
+    if path.name.endswith((".zip", ".tgz", ".tar.gz")):
+        return _make_single_archive(path)
+    return SingleFileArchive(path)

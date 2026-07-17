@@ -34,3 +34,21 @@ def default_attachments_dir() -> Path:
 def default_uploads_dir() -> Path:
     """Default managed directory for archives uploaded through the API (#132)."""
     return data_dir() / "uploads"
+
+
+def default_gdrive_downloads_dir() -> Path:
+    """Default managed landing directory for Drive-pulled Takeout archives (#152).
+
+    Watched by the #151 folder watcher when the Drive puller is configured —
+    the puller only downloads; the watcher imports.
+    """
+    return data_dir() / "gdrive"
+
+
+def gdrive_token_path() -> Path:
+    """The Google OAuth token file (#152): refresh token + granted scopes.
+
+    Written 0600 and never stored in the database (see
+    docs/decisions/gdrive-takeout-pull.md §3).
+    """
+    return config_dir() / "gdrive_token.json"

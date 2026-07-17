@@ -35,13 +35,16 @@ from potluck.ingest.engine import run_import
 from potluck.models.search import SearchRequest
 from potluck.services.context import AppContext, create_context
 from potluck.services.imports import import_path
+from potluck.services.lifecycle import remove_import
 from potluck.services.search import search
 from potluck.storage.db import Database
+from potluck.testing.chrome import write_chrome_takeout
 from potluck.testing.generators import WORDS, synthetic_notes
 from potluck.testing.keep import write_keep_takeout
 from potluck.testing.mbox import TAIL_WORDS, synthetic_email_drafts, write_gmail_takeout
 from potluck.testing.server import free_port, spawn_serve, wait_for_health
 from potluck.testing.spa import referenced_assets, write_spa_dist
+from potluck.testing.whatsapp import write_whatsapp_export
 
 _NOTE_COUNT = 5000
 
@@ -283,6 +286,101 @@ def _keep_prefix_run(workdir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P4: WhatsApp ingest scenarios (#142)
+# ---------------------------------------------------------------------------
+
+
+def _whatsapp_ingest_scenario(name: str, tier: Tier, per_chat: int, chats: int) -> Scenario:
+    """Factory for WhatsApp chat-export ingest scenarios (zip; real txt parse).
+
+    *chats* spreads the corpus over ("us", "eu") locale dialects so both
+    timestamp paths are always measured; item_count = per_chat x chats
+    (logical export lines — the parser skips the 5% system lines).
+    """
+
+    def setup(workdir: Path) -> None:
+        archive = write_whatsapp_export(
+            workdir / "archives",
+            per_chat,
+            seed=42,
+            locales=("us", "eu"),
+            chats_per_locale=chats // 2,
+        )
+        if archive != workdir / "archives" / "whatsapp-synth-001.zip":
+            raise RuntimeError(f"whatsapp generator naming changed: {archive}")
+
+    def run(workdir: Path) -> None:
+        ctx = _make_ctx(workdir)
+        try:
+            import_path(ctx, workdir / "archives" / "whatsapp-synth-001.zip")
+        finally:
+            ctx.db.close()
+
+    return Scenario(name=name, tier=tier, item_count=per_chat * chats, setup=setup, run=run)
+
+
+# ---------------------------------------------------------------------------
+# P4: Chrome history ingest scenarios (#145)
+# ---------------------------------------------------------------------------
+
+
+def _chrome_ingest_scenario(name: str, tier: Tier, count: int) -> Scenario:
+    """Factory for Chrome Takeout history ingest scenarios (zip; real
+    incremental-JSON parse); item_count = history records (every record
+    imports — verbatim duplicates land via #N identity suffixes)."""
+
+    def setup(workdir: Path) -> None:
+        archive = write_chrome_takeout(workdir / "archives", count, seed=42)
+        if archive != workdir / "archives" / "chrome-synth-001.zip":
+            raise RuntimeError(f"chrome generator naming changed: {archive}")
+
+    def run(workdir: Path) -> None:
+        ctx = _make_ctx(workdir)
+        try:
+            import_path(ctx, workdir / "archives" / "chrome-synth-001.zip")
+        finally:
+            ctx.db.close()
+
+    return Scenario(name=name, tier=tier, item_count=count, setup=setup, run=run)
+
+
+# ---------------------------------------------------------------------------
+# P4: delete an import run (#153)
+# ---------------------------------------------------------------------------
+
+
+def _delete_import_run(workdir: Path) -> None:
+    """Measured work: one rm --import over the corpus built in setup.
+
+    The corpus is import #1 (run_import on a fresh bench DB); the delete is
+    one transaction — items, satellite rows (emails), FTS entries, ledger row.
+    """
+    ctx = _make_ctx(workdir)
+    try:
+        result = remove_import(ctx, 1)
+        if result.items_deleted == 0:
+            raise RuntimeError("scenario integrity check failed: nothing deleted")
+        with ctx.db.read() as conn:
+            remaining = int(conn.execute("SELECT count(*) FROM items").fetchone()[0])
+        if remaining != 0:
+            raise RuntimeError(f"scenario integrity check failed: {remaining} items left")
+    finally:
+        ctx.db.close()
+
+
+def _delete_import_scenario(name: str, tier: Tier, count: int) -> Scenario:
+    """Factory for delete-import scenarios: setup ingests *count* email drafts
+    (satellite rows + FTS included) as import #1; run deletes that import."""
+    return Scenario(
+        name=name,
+        tier=tier,
+        item_count=count,
+        setup=_email_corpus_setup(count),
+        run=_delete_import_run,
+    )
+
+
+# ---------------------------------------------------------------------------
 # P3: end-to-end REST search (#131)
 # ---------------------------------------------------------------------------
 
@@ -418,6 +516,22 @@ ALL_SCENARIOS = [
         setup=_imported_keep_10k_setup,
         run=_keep_prefix_run,
     ),
+    # P4 WhatsApp ingest (#142): smoke tracker + the full-tier 100k corpus.
+    # The < 2 min hard budget is asserted nightly in test_p4_budgets.py
+    # (1 rep, subprocess); the full-tier scenario tracks the trend.
+    _whatsapp_ingest_scenario("ingest_whatsapp_5k", "smoke", 2_500, 2),
+    _whatsapp_ingest_scenario("ingest_whatsapp_100k", "full", 25_000, 4),
+    # P4 Chrome history ingest (#145): smoke tracker + the full-tier 200k
+    # corpus. The < 2 min hard budget is asserted nightly in
+    # test_p4_budgets.py (1 rep, subprocess, peak-RSS gate); the full-tier
+    # scenario tracks the trend.
+    _chrome_ingest_scenario("ingest_chrome_10k", "smoke", 10_000),
+    _chrome_ingest_scenario("ingest_chrome_200k", "full", 200_000),
+    # P4 delete-import (#153): smoke tracker + the full-tier 50k corpus.
+    # The < 30 s hard budget is asserted nightly in test_p4_budgets.py;
+    # the full-tier scenario tracks the trend.
+    _delete_import_scenario("delete_import_10k", "smoke", 10_000),
+    _delete_import_scenario("delete_import_50k", "full", 50_000),
     # P3 REST search end-to-end (#131): nightly 100k budget anchor (p95
     # < 100 ms, asserted in test_p3_budgets.py) + smoke 10k PR-CI tracker
     Scenario(

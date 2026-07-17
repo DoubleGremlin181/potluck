@@ -1,0 +1,1 @@
+decoy: a plain text file no chat parser should read

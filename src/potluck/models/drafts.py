@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from potluck.models.items import ItemKind
 
@@ -37,6 +37,60 @@ class NoteDraft(BaseDraft):
     """Draft for a note item."""
 
     kind: Literal[ItemKind.NOTE] = ItemKind.NOTE
+
+
+class PostDraft(BaseDraft):
+    """Draft for a social post item (authored posts, comments, follows).
+
+    Everything lives in the base fields: title = post title (None for
+    comments), text = body, ts = creation time; source-specific context
+    (community, permalink, parent pointers) rides in meta. No satellite
+    table, so no extra_hash_parts — meta changes reconcile through the
+    engine's identity path.
+    """
+
+    kind: Literal[ItemKind.POST] = ItemKind.POST
+
+
+class BookmarkDraft(BaseDraft):
+    """Draft for a saved-link/bookmark item.
+
+    A bookmark records THAT something was saved, not the saved content
+    itself (exports carry the pointer only). text is typically None; the
+    exact link belongs in meta, with title carrying whatever human-readable
+    name the source provides or the link implies.
+    """
+
+    kind: Literal[ItemKind.BOOKMARK] = ItemKind.BOOKMARK
+
+
+class ActivityDraft(BaseDraft):
+    """Draft for a usage-activity item (browser history, app usage).
+
+    Everything lives in the base fields: title = page/app title, text = the
+    searchable title + URL composition, ts = when the visit happened;
+    source-specific context (transition type, device client id) rides in
+    meta. No satellite table, so no extra_hash_parts — meta changes reconcile
+    through the engine's identity path.
+    """
+
+    kind: Literal[ItemKind.ACTIVITY] = ItemKind.ACTIVITY
+
+
+class EventDraft(BaseDraft):
+    """Draft for a calendar event item.
+
+    Everything lives in the base fields: title = summary, text = the
+    searchable description + location composition, ts = the event start
+    (DTSTART) in UTC; source-specific context (calendar name, status, end
+    instant, all-day flag, recurrence rule/counts, attendee count) rides in
+    meta. No satellite table, so no extra_hash_parts — meta changes reconcile
+    through the engine's identity path. Recurring series are ONE draft per
+    VEVENT (master + explicit overrides), never expanded occurrences — see
+    potluck.ingest.sources.calendar for the policy.
+    """
+
+    kind: Literal[ItemKind.EVENT] = ItemKind.EVENT
 
 
 class EmailAttachment(BaseModel):
@@ -98,4 +152,181 @@ class EmailDraft(BaseDraft):
         )
 
 
-type ItemDraft = NoteDraft | EmailDraft
+class TransactionDraft(BaseDraft):
+    """Draft for a financial transaction; satellite fields land in the
+    transactions table.
+
+    Money discipline (#144): ``amount_milliunits`` is the exact signed amount
+    in integer milliunits (1/1000 of the budget's currency unit; outflows
+    negative). ``strict=True`` rejects float input outright — no float ever
+    carries money through the pipeline. title = payee, text = searchable
+    memo/category composition, ts = transaction date; the register carries no
+    currency column (it is a budget-level setting), so none is stored.
+    """
+
+    kind: Literal[ItemKind.TRANSACTION] = ItemKind.TRANSACTION
+    amount_milliunits: int = Field(strict=True)
+    account: str | None = None
+    payee: str | None = None
+    category: str | None = None
+    category_group: str | None = None
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (transactions row) — see
+        # BaseDraft.extra_hash_parts. All parts are fixed-position scalars.
+        return (
+            str(self.amount_milliunits),
+            self.account or "",
+            self.payee or "",
+            self.category or "",
+            self.category_group or "",
+        )
+
+
+class LocationDraft(BaseDraft):
+    """Draft for a location item (timeline visit / route / raw position);
+    satellite fields land in the locations table.
+
+    The base lat/lon fields are narrowed to REQUIRED, strict, range-validated
+    floats: a location item without coordinates is meaningless, and a parsing
+    bug (degree-sign string passed through unparsed, impossible latitude)
+    must die at the DTO boundary instead of entering storage. Routes carry
+    both end coordinates or neither (lat/lon = start, end_lat/end_lon = end);
+    title is the human place/activity name, ts the visit/route start; the
+    meta.type discriminator (visit | route | position) separates the flavors.
+    """
+
+    kind: Literal[ItemKind.LOCATION] = ItemKind.LOCATION
+    lat: float = Field(strict=True, ge=-90.0, le=90.0)
+    lon: float = Field(strict=True, ge=-180.0, le=180.0)
+    end_lat: float | None = Field(default=None, strict=True, ge=-90.0, le=90.0)
+    end_lon: float | None = Field(default=None, strict=True, ge=-180.0, le=180.0)
+    place_id: str | None = None
+    semantic_type: str | None = None
+    distance_m: float | None = Field(default=None, strict=True, ge=0.0)
+
+    @model_validator(mode="after")
+    def _ends_come_paired(self) -> "LocationDraft":
+        if (self.end_lat is None) != (self.end_lon is None):
+            raise ValueError("end_lat and end_lon must be set together (route ends are pairs)")
+        return self
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (locations row) — see
+        # BaseDraft.extra_hash_parts. lat/lon are base fields, already inside
+        # the base hash; only the satellite-only columns need covering here.
+        # repr() matches the base hash's float encoding.
+        return (
+            repr(self.end_lat) if self.end_lat is not None else "",
+            repr(self.end_lon) if self.end_lon is not None else "",
+            self.place_id or "",
+            self.semantic_type or "",
+            repr(self.distance_m) if self.distance_m is not None else "",
+        )
+
+
+class PhotoDraft(BaseDraft):
+    """Draft for a photo/video item; satellite fields land in the media table.
+
+    Photos AND videos are ``kind=photo`` with a ``meta.type`` discriminator
+    (photo | video) — the locked 12-kind vocabulary has no VIDEO kind (the
+    Reddit post/comment resolution). title = the export's original filename,
+    text = description + people names, ts = capture time (photoTakenTime →
+    EXIF DateTimeOriginal → creationTime), lat/lon = resolved GPS (geoData →
+    geoDataExif → EXIF), range-validated so a broken GPS parse dies at the
+    DTO boundary. sha256/size_bytes are derived from the streamed media
+    bytes and are required; the probe facts (dimensions, camera, altitude)
+    are optional. No archive path rides the draft — byte identity makes
+    paths transient detail (see migration 014).
+    """
+
+    kind: Literal[ItemKind.PHOTO] = ItemKind.PHOTO
+    lat: float | None = Field(default=None, strict=True, ge=-90.0, le=90.0)
+    lon: float | None = Field(default=None, strict=True, ge=-180.0, le=180.0)
+    width: int | None = Field(default=None, strict=True, gt=0)
+    height: int | None = Field(default=None, strict=True, gt=0)
+    camera_make: str | None = None
+    camera_model: str | None = None
+    gps_alt: float | None = Field(default=None, strict=True)
+    mime: str | None = None
+    size_bytes: int = Field(strict=True, ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _dimensions_come_paired(self) -> "PhotoDraft":
+        if (self.width is None) != (self.height is None):
+            raise ValueError("width and height must be set together (probed images have both)")
+        return self
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (media row) — see
+        # BaseDraft.extra_hash_parts. All parts are fixed-position scalars;
+        # repr() matches the base hash's float encoding.
+        return (
+            str(self.width) if self.width is not None else "",
+            str(self.height) if self.height is not None else "",
+            self.camera_make or "",
+            self.camera_model or "",
+            repr(self.gps_alt) if self.gps_alt is not None else "",
+            self.mime or "",
+            str(self.size_bytes),
+            self.sha256,
+        )
+
+
+class MessageMedia(BaseModel):
+    """Media reference carried on a MessageDraft; metadata only, never bytes.
+
+    Chat exports name the media file but expose neither size nor content at
+    parse time (pixels are deferred to P6), so this is deliberately thinner
+    than EmailAttachment.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    filename: str
+    mime: str | None = None
+
+
+class MessageDraft(BaseDraft):
+    """Draft for a chat message; satellite fields land in the messages table.
+
+    text = message body (None for bare media placeholders), ts = message
+    timestamp, title unused. chat_key is the deterministic conversation key —
+    every message in one chat shares it (chats are linear; no parent_id
+    chaining). sender is the display name exactly as exported (contact name
+    or phone string).
+    """
+
+    kind: Literal[ItemKind.MESSAGE] = ItemKind.MESSAGE
+    chat_key: str
+    chat_name: str | None = None
+    sender: str | None = None
+    is_media: bool = False
+    media: tuple[MessageMedia, ...] = ()
+
+    def extra_hash_parts(self) -> tuple[str, ...]:
+        # Covers EVERY satellite-persisted field (messages row + media files
+        # rows) — see BaseDraft.extra_hash_parts. Same separator scheme as
+        # EmailDraft: \x1f between media entries, \x1d within one entry.
+        return (
+            self.chat_key,
+            self.chat_name or "",
+            self.sender or "",
+            "1" if self.is_media else "0",
+            "\x1f".join(f"{m.filename}\x1d{m.mime or ''}" for m in self.media),
+        )
+
+
+type ItemDraft = (
+    NoteDraft
+    | EmailDraft
+    | MessageDraft
+    | PostDraft
+    | BookmarkDraft
+    | TransactionDraft
+    | ActivityDraft
+    | EventDraft
+    | LocationDraft
+    | PhotoDraft
+)
