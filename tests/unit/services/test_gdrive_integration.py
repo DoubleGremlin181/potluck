@@ -148,9 +148,25 @@ def test_prune_after_verified_import_end_to_end(ctx: AppContext, tmp_path: Path)
     assert gdrive_service.start_puller(gctx, transport=mock.transport()) is True
     assert watch_service.start_watcher(gctx) is True
     try:
-        _wait_for(lambda: sorted(mock.deleted) == sorted(ids), "prune of the imported set")
+        # Wait on the DURABLE terminal state — pruned_at stamped on every
+        # row — never on the mock's deleted list: _prune issues files.delete
+        # (which updates mock.deleted) BEFORE ops.mark_pruned queues its
+        # write to the single writer thread, so a wait keyed on the mock can
+        # win the race against the stamp and observe pruned_at=None rows
+        # (the main-CI flake this replaced). Stamps are written after the
+        # deletes on the same puller thread, so once they are visible every
+        # assertion below is a deterministic consequence.
+        def _all_stamped() -> bool:
+            with gctx.db.read() as conn:
+                row = conn.execute(
+                    "SELECT count(*) FROM gdrive_pulls WHERE pruned_at IS NOT NULL"
+                ).fetchone()
+            return int(row[0]) == len(ids)
+
+        _wait_for(_all_stamped, "prune stamps of the imported set")
         # Prune ran only after the import completed and was verified.
         assert len(_completed_keep_runs(gctx)) == 1
+        assert sorted(mock.deleted) == sorted(ids)  # exact recorded ids, nothing else
         with gctx.db.read() as conn:
             assert storage_gdrive_pulls.list_prunable(conn) == []  # all stamped pruned
             assert storage_gdrive_pulls.count_pulls(conn) == 2  # history retained
