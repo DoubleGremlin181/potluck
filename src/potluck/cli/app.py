@@ -767,6 +767,9 @@ def bench_compare(
     baseline: Path = typer.Argument(help="Baseline JSON (e.g. benchmarks/baselines-ci.json)."),
     current: Path = typer.Argument(help="Current run JSON."),
     tolerance: float = typer.Option(30.0, help="Allowed median regression in percent."),
+    min_delta: float = typer.Option(
+        0.0, help="Regression must also exceed this absolute delta in seconds (#209)."
+    ),
 ) -> None:
     """Compare a bench run against a baseline; exit 1 on any regression."""
     current_report = load_report(current)
@@ -774,7 +777,13 @@ def bench_compare(
     # "missing" — one full-tier baseline file serves both CI gates.
     in_tier = {s.name for s in scenarios_for(current_report.tier, ALL_SCENARIOS)}
     out_of_tier = frozenset(s.name for s in ALL_SCENARIOS if s.name not in in_tier)
-    regressions = compare(load_report(baseline), current_report, tolerance, out_of_tier=out_of_tier)
+    regressions = compare(
+        load_report(baseline),
+        current_report,
+        tolerance,
+        out_of_tier=out_of_tier,
+        min_delta_s=min_delta,
+    )
     if not regressions:
         typer.echo(f"OK: no regressions beyond {tolerance:.0f}% tolerance")
         return

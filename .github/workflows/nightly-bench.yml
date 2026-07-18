@@ -21,12 +21,19 @@ jobs:
       # Hard P1 budget assertions (ingest 10k < 30s, no-op re-import < 5s,
       # FTS p95 < 50ms @ 10k, 1x-vs-4x scaling) live in bench-marked tests.
       - run: uv run pytest -m bench -q
-      - run: >
-          uv run potluck bench compare
-          benchmarks/baselines-ci.json bench-full.json --tolerance 30
+      # Confirmation re-run on failure: see ci.yml's bench-smoke note (#209).
+      - name: Compare vs baselines (confirmation re-run on failure)
+        run: |
+          uv run potluck bench compare benchmarks/baselines-ci.json bench-full.json --tolerance 30 --min-delta 0.10 || {
+            echo "::warning::bench regression reported — running confirmation pass"
+            uv run potluck bench run --tier full --json bench-confirm.json
+            uv run potluck bench compare benchmarks/baselines-ci.json bench-confirm.json --tolerance 30 --min-delta 0.10
+          }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bench-full-${{ github.run_id }}
-          path: bench-full.json
+          path: |
+            bench-full.json
+            bench-confirm.json
           retention-days: 90

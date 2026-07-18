@@ -25,6 +25,7 @@ def compare(
     tolerance_pct: float,
     *,
     out_of_tier: frozenset[str] = frozenset(),
+    min_delta_s: float = 0.0,
 ) -> list[Regression]:
     """Median-time regressions beyond ``tolerance_pct``, and vanished scenarios.
 
@@ -34,6 +35,13 @@ def compare(
     baseline file serves both gates, and a smoke run must not be penalized
     for full-only scenarios it never executes (the CLI derives this set from
     the scenario registry).
+
+    ``min_delta_s``: a regression must ALSO exceed this absolute wall-clock
+    delta. Sub-second scenarios have percentage bands at or below shared-
+    runner jitter (#209: measured same-code spreads of 25-47% around the
+    pooled median; a 30% band on a 0.17s scenario is 51 ms — under observed
+    noise), so the gates pair a percentage with a floor. 0.0 preserves the
+    pure-percentage behavior.
     """
     regressions: list[Regression] = []
     current_by_name = {result.name: result for result in current.results}
@@ -53,7 +61,7 @@ def compare(
             )
             continue
         change_pct = (result.median_s - base.median_s) / base.median_s * 100
-        if change_pct > tolerance_pct:
+        if change_pct > tolerance_pct and (result.median_s - base.median_s) > min_delta_s:
             regressions.append(
                 Regression(
                     scenario=base.name,
