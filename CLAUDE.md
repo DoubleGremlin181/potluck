@@ -64,7 +64,7 @@ web/         Vite + React + TS + Tailwind + shadcn/ui (dist built in CI, served 
   (needs `web/dist` + playwright chromium)
 - `uv run ruff check` · `uv run ruff format --check` · `uv run mypy` · `uv run lint-imports`
 - `uv run potluck bench run --tier smoke|full --json out.json` ·
-  `uv run potluck bench compare benchmarks/baselines-ci.json out.json --tolerance 30`
+  `uv run potluck bench compare benchmarks/baselines-ci.json out.json --tolerance 30 --min-delta 0.10`
   (baselines are refreshed from CI artifacts only — never from a dev machine)
 - Web: `cd web && npm ci && npm run lint && npm run build` (Node is dev-only)
 - Always `uv`, never pip. Hooks: `uv run pre-commit install`.

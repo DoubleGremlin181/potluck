@@ -82,6 +82,39 @@ def test_compare_fails_on_regression(tmp_path: Path) -> None:
     assert "median_s" in result.output
 
 
+def test_compare_min_delta_floor_absorbs_small_absolute_jitter(tmp_path: Path) -> None:
+    """#209: sub-second scenarios exceed percentage bands on pure runner
+    jitter; a regression must also exceed the absolute floor."""
+    base, current = tmp_path / "base.json", tmp_path / "current.json"
+    base.write_text(_report(0.100).model_dump_json())
+    current.write_text(_report(0.190).model_dump_json())  # +90%, but only +0.09s
+    result = runner.invoke(
+        app,
+        ["bench", "compare", str(base), str(current), "--tolerance", "30", "--min-delta", "0.10"],
+    )
+    assert result.exit_code == 0, result.output
+
+
+def test_compare_min_delta_floor_still_fails_real_regressions(tmp_path: Path) -> None:
+    base, current = tmp_path / "base.json", tmp_path / "current.json"
+    base.write_text(_report(1.000).model_dump_json())
+    current.write_text(_report(1.400).model_dump_json())  # +40% AND +0.4s
+    result = runner.invoke(
+        app,
+        ["bench", "compare", str(base), str(current), "--tolerance", "30", "--min-delta", "0.10"],
+    )
+    assert result.exit_code == 1
+    assert "median_s" in result.output
+
+
+def test_compare_min_delta_defaults_to_pure_percentage(tmp_path: Path) -> None:
+    base, current = tmp_path / "base.json", tmp_path / "current.json"
+    base.write_text(_report(0.100).model_dump_json())
+    current.write_text(_report(0.190).model_dump_json())
+    result = runner.invoke(app, ["bench", "compare", str(base), str(current), "--tolerance", "30"])
+    assert result.exit_code == 1
+
+
 def test_compare_smoke_run_skips_full_only_baseline_scenarios(tmp_path: Path) -> None:
     """One baseline file serves both gates: a smoke-tier run is not penalized
     for full-only scenarios it never runs (e.g. ingest_keep_10k), while a

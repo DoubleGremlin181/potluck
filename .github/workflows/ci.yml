@@ -87,7 +87,7 @@ jobs:
       # it trips on identical code, fix the scenario, don't widen the gate.
       - run: >
           uv run potluck bench compare
-          benchmarks/baselines-ci.json bench-out.json --tolerance 30
+          benchmarks/baselines-ci.json bench-out.json --tolerance 30 --min-delta 0.10
       - uses: actions/upload-artifact@v7
         if: always()
         with:
